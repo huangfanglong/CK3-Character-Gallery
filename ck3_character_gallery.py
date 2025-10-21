@@ -144,31 +144,34 @@ class CharacterGallery(tk.Tk):
         self.geometry("1200x700")
         self.configure(bg="#2e2e2e")
 
-        # Data directory
+        # Data directory & file
         self.data_dir = "character_gallery_data"
-        self.images_dir = os.path.join(self.data_dir, "images")
-        self.data_file = os.path.join(self.data_dir, "characters.json")
+        self.data_file = os.path.join(self.data_dir, "galleries.json")
+        os.makedirs(self.data_dir, exist_ok=True)
 
-        os.makedirs(self.images_dir, exist_ok=True)
+        # Load or initialize galleries: list of dicts {name, characters:list}
+        if os.path.exists(self.data_file):
+            with open(self.data_file, 'r', encoding='utf-8') as f:
+                self.galleries = json.load(f)
+        else:
+            self.galleries = [{"name":"Default","characters":[]}]
 
-        # Load data (character container)
-        self.characters = []
+        # Current state
+        self.current_gallery = None
         self.current_index = None
 
         self.setup_ui()
-        self.load_data()
-        if self.characters:
-            self.select_character(0)
+        # Select first gallery
+        self.gallery_var.set(self.galleries[0]["name"])
+        self.load_gallery(self.galleries[0]["name"])
 
-        # Hotkeys
+        # Enable Ctrl+S hotkey to quick save
         self.bind_all("<Control-s>", lambda e: self.save_current())
         self.bind_all("<Control-S>", lambda e: self.save_current())
-        # Enable undo in DNA text and bind Ctrl+Z
+        # Enable Ctrl+Z hotkey for quick undo
         self.dna_text.config(undo=True, autoseparators=True, maxundo=-1)
         self.dna_text.bind("<Control-z>", lambda e: self.dna_text.edit_undo())
         self.dna_text.bind("<Control-Z>", lambda e: self.dna_text.edit_undo())
-        # Enable Delete key to delete selected characters
-        self.char_listbox.bind("<Delete>", lambda e: self.delete_character())
 
         # Persistent status bar
         self.status_label = ttk.Label(
@@ -186,12 +189,20 @@ class CharacterGallery(tk.Tk):
         main_frame = tk.Frame(self, bg="#2e2e2e")
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # LEFT: Character list
+        # LEFT: Gallery dropdown, search, list
         list_frame = tk.Frame(main_frame, bg="#3a3a3a", width=200)
         list_frame.pack(side="left", fill="y", padx=(0, 10))
         list_frame.pack_propagate(False)
 
-        ttk.Label(list_frame, text="Characters", font=("Arial", 12, "bold")).pack(pady=5)
+        # Gallery Combobox
+        self.gallery_var = tk.StringVar()
+        self.gallery_box = ttk.Combobox(
+            list_frame, textvariable=self.gallery_var,
+            values=[g["name"] for g in self.galleries]+["Create a new gallery..."],
+            state="readonly"
+        )
+        self.gallery_box.pack(fill="x", padx=5, pady=(5,2))
+        self.gallery_box.bind("<<ComboboxSelected>>", self.on_gallery_change)
 
         # Dynamic search box
         self.search_var = tk.StringVar()
@@ -199,6 +210,7 @@ class CharacterGallery(tk.Tk):
         search_entry.pack(fill="x", padx=5, pady=(0,5))
         search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
 
+        # Character list
         list_container = tk.Frame(list_frame, bg="#3a3a3a")
         list_container.pack(fill="both", expand=True)
 
@@ -214,6 +226,8 @@ class CharacterGallery(tk.Tk):
         scrollbar.config(command=self.char_listbox.yview)
 
         self.char_listbox.bind("<<ListboxSelect>>", self.on_select)
+        # Enable Delete hotkey to delete character
+        self.char_listbox.bind("<Delete>", lambda e: self.delete_character())
 
         btn_frame = tk.Frame(list_frame, bg="#3a3a3a")
         btn_frame.pack(fill="x", pady=5)
@@ -277,29 +291,45 @@ class CharacterGallery(tk.Tk):
         ttk.Button(btns_frame, text="Copy DNA", command=self.copy_dna, width=12)\
             .pack(side="right", padx=(5,0))
 
-    def load_data(self):
-        if os.path.exists(self.data_file):
-            with open(self.data_file, 'r', encoding='utf-8') as f:
-                self.characters = json.load(f)
+    def on_gallery_change(self, event):
+        name = self.gallery_var.get()
+        if name == "Create a new gallery...":
+            new_name = simpledialog.askstring("New Gallery","Enter gallery name:",parent=self)
+            if not new_name:
+                self.gallery_var.set(self.current_gallery["name"])
+                return
+            self.galleries.append({"name":new_name,"characters":[]})
+            self.save_galleries()
+            self.gallery_box["values"] = [g["name"] for g in self.galleries]+["Create a new gallery..."]
+            self.gallery_var.set(new_name)
+            self.load_gallery(new_name)
+        else:
+            self.load_gallery(name)
+
+    def load_gallery(self, name):
+        for g in self.galleries:
+            if g["name"] == name:
+                self.current_gallery = g
+                break
+        self.current_index = None
         self.refresh_list()
 
-    def save_data(self):
-        with open(self.data_file, 'w', encoding='utf-8') as f:
-            json.dump(self.characters, f, indent=2)
+    def save_galleries(self):
+        with open(self.data_file,'w',encoding='utf-8') as f:
+            json.dump(self.galleries,f,indent=2)
 
     def refresh_list(self):
-        self.char_listbox.delete(0, tk.END)
-        for i, char in enumerate(self.characters):
-            name = char.get('name', f'Character {i+1}')
-            self.char_listbox.insert(tk.END, name)
+        self.char_listbox.delete(0,tk.END)
+        for char in self.current_gallery["characters"]:
+            self.char_listbox.insert(tk.END,char.get("name",""))
 
     def filter_list(self):
         term = self.search_var.get().lower()
-        self.char_listbox.delete(0, tk.END)
-        for i, char in enumerate(self.characters):
-            name = char.get('name', f'Character {i+1}')
+        self.char_listbox.delete(0,tk.END)
+        for char in self.current_gallery["characters"]:
+            name = char.get("name","")
             if term in name.lower():
-                self.char_listbox.insert(tk.END, name)
+                self.char_listbox.insert(tk.END,name)
 
     def on_select(self, event):
         selection = self.char_listbox.curselection()
@@ -307,9 +337,9 @@ class CharacterGallery(tk.Tk):
             self.select_character(selection[0])
 
     def select_character(self, index):
-        if 0 <= index < len(self.characters):
+        if 0 <= index < len(self.current_gallery["characters"]):
             self.current_index = index
-            char = self.characters[index]
+            char = self.current_gallery["characters"][index]
 
             # Load portrait
             image_file = char.get('image')
@@ -343,10 +373,10 @@ class CharacterGallery(tk.Tk):
             'image': None,
             'dna': ''
         }
-        self.characters.append(new_char)
-        self.save_data()
+        self.current_gallery["characters"].append(new_char)
+        self.save_galleries()
         self.refresh_list()
-        idx = len(self.characters) - 1
+        idx = len(self.current_gallery["characters"]) - 1
         self.char_listbox.selection_clear(0, tk.END)
         self.char_listbox.selection_set(idx)
         self.select_character(idx)
@@ -360,20 +390,11 @@ class CharacterGallery(tk.Tk):
         if not messagebox.askyesno("Confirm", f"Delete {len(sel)} character(s)?"):
             return
         for idx in sorted(sel, reverse=True):
-            char = self.characters[idx]
-            if char.get('image') and os.path.exists(char['image']):
-                os.remove(char['image'])
-            del self.characters[idx]
-        self.save_data()
+            del self.current_gallery["characters"][idx]
+        self.save_galleries()
         self.refresh_list()
         self.status_label.config(text="Character entry deletion successful ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
-        if self.characters:
-            next_idx = min(sel[0], len(self.characters) - 1)
-            self.char_listbox.selection_set(next_idx)
-            self.select_character(next_idx)
-        else:
-            self.current_index = None
 
     def change_portrait(self):
         if self.current_index is None:
@@ -397,21 +418,22 @@ class CharacterGallery(tk.Tk):
                 cropped = cropped.resize((300, 300), Image.Resampling.LANCZOS)
 
                 # Save to data directory
-                char_id = self.characters[self.current_index]['id']
-                save_path = os.path.join(self.images_dir, f"{char_id}.png")
+                char_id = self.current_gallery["characters"][self.current_index]['id']
+                save_path = os.path.join(self.data_dir, "images", f"{char_id}.png")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 cropped.save(save_path)
 
-                self.characters[self.current_index]['image'] = save_path
-                self.save_data()
+                self.current_gallery["characters"][self.current_index]['image'] = save_path
+                self.save_galleries()
                 self.select_character(self.current_index)
 
     def on_dna_change(self, event=None):
         if self.current_index is not None:
-            self.characters[self.current_index]['dna'] = self.dna_text.get("1.0", tk.END).strip()
+            self.current_gallery["characters"][self.current_index]['dna'] = self.dna_text.get("1.0", tk.END).strip()
 
     def save_current(self):
         if self.current_index is not None:
-            self.save_data()
+            self.save_galleries()
             self.status_label.config(text="Character data saved successfully ✔️")
             self.after(5000, lambda: self.status_label.config(text="Idle"))
             messagebox.showinfo("Saved", "Character data saved successfully!")
@@ -425,9 +447,8 @@ class CharacterGallery(tk.Tk):
         new = pattern.sub(repl, text)
         self.dna_text.delete("1.0", tk.END)
         self.dna_text.insert(tk.END, new)
-        # Sync model so save_current writes this updated DNA
         if self.current_index is not None:
-            self.characters[self.current_index]['dna'] = new.strip()
+            self.current_gallery["characters"][self.current_index]['dna'] = new.strip()
         self.status_label.config(text="DNA homogenized ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
 
