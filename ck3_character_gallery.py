@@ -170,9 +170,10 @@ class CharacterGallery(tk.Tk):
 
         # Persistent status bar
         self.status_label = ttk.Label(
-            self, text="Idle", background="#2e2e2e", foreground="#888888"
+            self, text="Idle", background="#2e2e2e", foreground="#888888",
+            font=("TkDefaultFont", 8)
         )
-        self.status_label.pack(side="bottom", fill="x", padx=10, pady=0)
+        self.status_label.pack(side="bottom", fill="x", padx=5, pady=1)
 
     def setup_ui(self):
         style = ttk.Style()
@@ -189,6 +190,12 @@ class CharacterGallery(tk.Tk):
         list_frame.pack_propagate(False)
 
         ttk.Label(list_frame, text="Characters", font=("Arial", 12, "bold")).pack(pady=5)
+
+        # Dynamic search box
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
+        search_entry.pack(fill="x", padx=5, pady=(0,5))
+        search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
 
         list_container = tk.Frame(list_frame, bg="#3a3a3a")
         list_container.pack(fill="both", expand=True)
@@ -253,7 +260,7 @@ class CharacterGallery(tk.Tk):
         self.dna_text.config(yscrollcommand=dna_scroll_y.set)
         self.dna_text.bind("<KeyRelease>", self.on_dna_change)
 
-        # Clear, Homogenize, Copy buttons below the DNA box
+        # Clear, Homogenize, Save, Copy buttons below the DNA box
         btns_frame = tk.Frame(dna_frame, bg="#2e2e2e")
         btns_frame.pack(fill="x", pady=5)
         # Left-side buttons
@@ -283,6 +290,14 @@ class CharacterGallery(tk.Tk):
         for i, char in enumerate(self.characters):
             name = char.get('name', f'Character {i+1}')
             self.char_listbox.insert(tk.END, name)
+
+    def filter_list(self):
+        term = self.search_var.get().lower()
+        self.char_listbox.delete(0, tk.END)
+        for i, char in enumerate(self.characters):
+            name = char.get('name', f'Character {i+1}')
+            if term in name.lower():
+                self.char_listbox.insert(tk.END, name)
 
     def on_select(self, event):
         selection = self.char_listbox.curselection()
@@ -411,7 +426,7 @@ class CharacterGallery(tk.Tk):
         # Sync model so save_current writes this updated DNA
         if self.current_index is not None:
             self.characters[self.current_index]['dna'] = new.strip()
-        self.status_label.config(text="DNA homogenized")
+        self.status_label.config(text="DNA homogenized ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def copy_dna(self):
