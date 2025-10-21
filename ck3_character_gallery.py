@@ -195,18 +195,24 @@ class CharacterGallery(tk.Tk):
 
         ttk.Label(dna_frame, text="Character DNA", font=("Arial", 12, "bold")).pack(pady=5)
 
+        # Wrap the text and its scrollbar together
+        text_container = tk.Frame(dna_frame, bg="#2e2e2e")
+        text_container.pack(fill="both", expand=True)
+
         self.dna_text = tk.Text(
-            dna_frame, wrap="none", bg="#1e1e1e", fg="#eeeeee",
+            text_container, wrap="none", bg="#1e1e1e", fg="#eeeeee",
             font=("Consolas", 10), insertbackground="white"
         )
-        self.dna_text.pack(fill="both", expand=True)
+        self.dna_text.pack(side="left", fill="both", expand=True)
 
-        dna_scroll_y = ttk.Scrollbar(dna_frame, orient="vertical", command=self.dna_text.yview)
+        dna_scroll_y = ttk.Scrollbar(
+            text_container, orient="vertical", command=self.dna_text.yview
+        )
         dna_scroll_y.pack(side="right", fill="y")
         self.dna_text.config(yscrollcommand=dna_scroll_y.set)
-
         self.dna_text.bind("<KeyRelease>", self.on_dna_change)
 
+        # Save button below the text container
         save_frame = tk.Frame(dna_frame, bg="#2e2e2e")
         save_frame.pack(fill="x", pady=5)
         ttk.Button(save_frame, text="Save Changes", command=self.save_current).pack()
