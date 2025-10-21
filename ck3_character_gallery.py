@@ -160,6 +160,14 @@ class CharacterGallery(tk.Tk):
         if self.characters:
             self.select_character(0)
 
+        # Hotkeys
+        self.bind_all("<Control-s>", lambda e: self.save_current())
+        self.bind_all("<Control-S>", lambda e: self.save_current())
+        # Enable undo in DNA text and bind Ctrl+Z
+        self.dna_text.config(undo=True, autoseparators=True, maxundo=-1)
+        self.dna_text.bind("<Control-z>", lambda e: self.dna_text.edit_undo())
+        self.dna_text.bind("<Control-Z>", lambda e: self.dna_text.edit_undo())
+
     def setup_ui(self):
         style = ttk.Style()
         style.theme_use('clam')
@@ -239,10 +247,20 @@ class CharacterGallery(tk.Tk):
         self.dna_text.config(yscrollcommand=dna_scroll_y.set)
         self.dna_text.bind("<KeyRelease>", self.on_dna_change)
 
-        # Save button below the text container
-        save_frame = tk.Frame(dna_frame, bg="#2e2e2e")
-        save_frame.pack(fill="x", pady=5)
-        ttk.Button(save_frame, text="Save Changes", command=self.save_current).pack()
+        # Clear, Homogenize, Copy buttons below the DNA box
+        btns_frame = tk.Frame(dna_frame, bg="#2e2e2e")
+        btns_frame.pack(fill="x", pady=5)
+        # Left-side buttons
+        ttk.Button(btns_frame, text="Clear DNA", command=lambda: self.dna_text.delete('1.0', tk.END), width=12)\
+            .pack(side="left", padx=(0,5))
+        ttk.Button(btns_frame, text="Homogenize DNA", command=self.homogenize_dna, width=16)\
+            .pack(side="left", padx=(0,5))
+        # Center button
+        ttk.Button(btns_frame, text="Save Changes", command=self.save_current, width=12)\
+            .pack(side="left", expand=True)
+        # Right-side button
+        ttk.Button(btns_frame, text="Copy DNA", command=self.copy_dna, width=12)\
+            .pack(side="right", padx=(5,0))
 
     def load_data(self):
         if os.path.exists(self.data_file):
@@ -368,6 +386,29 @@ class CharacterGallery(tk.Tk):
         if self.current_index is not None:
             self.save_data()
             messagebox.showinfo("Saved", "Character data saved successfully!")
+
+    def homogenize_dna(self):
+        text = self.dna_text.get("1.0", tk.END)
+        import re
+        pattern = re.compile(r'^(\s*[\w_]+\s*=\s*\{\s*)("[^"]+"|\d+)\s+(\d+)\s+("[^"]+"|\d+)\s+(\d+)\s*(\})', re.MULTILINE)
+        def repl(m):
+            return f"{m.group(1)}{m.group(2)} {m.group(3)} {m.group(2)} {m.group(3)} {m.group(6)}"
+        new = pattern.sub(repl, text)
+        self.dna_text.delete("1.0", tk.END)
+        self.dna_text.insert(tk.END, new)
+        # Sync model so save_current writes this updated DNA
+        if self.current_index is not None:
+            self.characters[self.current_index]['dna'] = new.strip()
+
+    def copy_dna(self):
+        data = self.dna_text.get("1.0", tk.END).strip()
+        if data:
+            self.clipboard_clear()
+            self.clipboard_append(data)
+            self.status = ttk.Label(self, text="DNA copied to clipboard!", background="#2e2e2e", foreground="#888888")
+            self.status.pack(side="bottom", fill="x", padx=10, pady=5)
+        else:
+            messagebox.showinfo("Info", "No DNA to copy.")
 
 if __name__ == "__main__":
     app = CharacterGallery()
