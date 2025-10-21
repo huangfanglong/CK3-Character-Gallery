@@ -124,7 +124,7 @@ class CharacterGallery(tk.Tk):
 
         os.makedirs(self.images_dir, exist_ok=True)
 
-        # Load data
+        # Load data (character container)
         self.characters = []
         self.current_index = None
 
@@ -157,7 +157,7 @@ class CharacterGallery(tk.Tk):
 
         self.char_listbox = tk.Listbox(
             list_container, bg="#1e1e1e", fg="#eeeeee",
-            font=("Arial", 10), selectmode="single",
+            font=("Arial", 10), selectmode="extended",
             yscrollcommand=scrollbar.set, highlightthickness=0
         )
         self.char_listbox.pack(side="left", fill="both", expand=True)
@@ -280,19 +280,24 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.selection_set(len(self.characters) - 1)
 
     def delete_character(self):
-        if self.current_index is not None:
-            if messagebox.askyesno("Confirm", "Delete this character?"):
-                char = self.characters[self.current_index]
-                # Delete image file
-                if char.get('image') and os.path.exists(char['image']):
-                    os.remove(char['image'])
-                del self.characters[self.current_index]
-                self.save_data()
-                self.refresh_list()
-                if self.characters:
-                    self.select_character(min(self.current_index, len(self.characters) - 1))
-                else:
-                    self.current_index = None
+        sel = list(self.char_listbox.curselection())
+        if not sel:
+            return
+        if not messagebox.askyesno("Confirm", f"Delete {len(sel)} character(s)?"):
+            return
+        for idx in sorted(sel, reverse=True):
+            char = self.characters[idx]
+            if char.get('image') and os.path.exists(char['image']):
+                os.remove(char['image'])
+            del self.characters[idx]
+        self.save_data()
+        self.refresh_list()
+        if self.characters:
+            next_idx = min(sel[0], len(self.characters) - 1)
+            self.char_listbox.selection_set(next_idx)
+            self.select_character(next_idx)
+        else:
+            self.current_index = None
 
     def change_portrait(self):
         if self.current_index is None:
