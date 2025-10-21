@@ -167,6 +167,8 @@ class CharacterGallery(tk.Tk):
         self.dna_text.config(undo=True, autoseparators=True, maxundo=-1)
         self.dna_text.bind("<Control-z>", lambda e: self.dna_text.edit_undo())
         self.dna_text.bind("<Control-Z>", lambda e: self.dna_text.edit_undo())
+        # Enable Delete key to delete selected characters
+        self.char_listbox.bind("<Delete>", lambda e: self.delete_character())
 
         # Persistent status bar
         self.status_label = ttk.Label(
