@@ -7,7 +7,7 @@ import shutil
 import uuid
 
 class ImageCropper(tk.Toplevel):
-    """Modal dialog for cropping/repositioning images."""
+    """Modal dialog for cropping/repositioning images with zoom selection."""
     def __init__(self, parent, image_path):
         super().__init__(parent)
         self.title("Adjust Image Position")
@@ -22,26 +22,21 @@ class ImageCropper(tk.Toplevel):
         # Load original image
         self.original = Image.open(image_path)
         self.display_size = 500
+        self.crop_size = 300
 
-        # Scale image for display
+        # Scale image
         self.scale_factor = min(self.display_size / self.original.width,
                                 self.display_size / self.original.height)
-        display_width = int(self.original.width * self.scale_factor)
-        display_height = int(self.original.height * self.scale_factor)
-
-        self.display_image = self.original.resize((display_width, display_height), Image.Resampling.LANCZOS)
 
         # Canvas for image
         self.canvas = tk.Canvas(self, width=self.display_size, height=self.display_size,
-                               bg="#1e1e1e", highlightthickness=2, highlightbackground="#666666")
+                                bg="#1e1e1e", highlightthickness=2, highlightbackground="#666666")
         self.canvas.pack(pady=10)
 
-        self.photo = ImageTk.PhotoImage(self.display_image)
-        self.image_id = self.canvas.create_image(self.display_size//2, self.display_size//2,
-                                                 image=self.photo)
+        # Initial display
+        self._update_display_image()
 
-        # Crop box (300x300 in the center)
-        self.crop_size = 300
+        # Crop rectangle
         cx = self.display_size // 2
         cy = self.display_size // 2
         self.crop_rect = self.canvas.create_rectangle(
@@ -51,8 +46,8 @@ class ImageCropper(tk.Toplevel):
         )
 
         # Instructions
-        ttk.Label(self, text="Drag the image to reposition. Red box shows visible area.",
-                 background="#2e2e2e", foreground="#dddddd").pack()
+        ttk.Label(self, text="Drag the image to reposition, scroll to zoom. Red box shows visible area.",
+                  background="#2e2e2e", foreground="#dddddd").pack()
 
         # Buttons
         btn_frame = tk.Frame(self, bg="#2e2e2e")
@@ -60,12 +55,30 @@ class ImageCropper(tk.Toplevel):
         ttk.Button(btn_frame, text="OK", command=self.ok, width=10).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.cancel, width=10).pack(side="left", padx=5)
 
-        # Bind drag
+        # Bind events
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<MouseWheel>", self.on_zoom)       # Windows/macOS
+        self.canvas.bind("<Button-4>", self.on_zoom)         # Linux scroll up
+        self.canvas.bind("<Button-5>", self.on_zoom)         # Linux scroll down
 
         self.drag_start_x = 0
         self.drag_start_y = 0
+
+    def _update_display_image(self):
+        # Resize and draw on canvas
+        disp_w = int(self.original.width * self.scale_factor)
+        disp_h = int(self.original.height * self.scale_factor)
+        self.display_image = self.original.resize((disp_w, disp_h), Image.Resampling.LANCZOS)
+        self.photo = ImageTk.PhotoImage(self.display_image)
+        if hasattr(self, 'image_id'):
+            self.canvas.delete(self.image_id)
+        x = self.display_size // 2
+        y = self.display_size // 2
+        self.image_id = self.canvas.create_image(x, y, image=self.photo)
+        # Keep red outline crop box preview on top of image when zoomies
+        if hasattr(self, 'crop_rect'):
+            self.canvas.tag_raise(self.crop_rect)
 
     def on_press(self, event):
         self.drag_start_x = event.x
@@ -77,6 +90,20 @@ class ImageCropper(tk.Toplevel):
         self.canvas.move(self.image_id, dx, dy)
         self.drag_start_x = event.x
         self.drag_start_y = event.y
+
+    def on_zoom(self, event):
+        # Zoom in/out
+        factor = 1.1 if event.delta > 0 or event.num == 4 else 0.9
+        self.scale_factor *= factor
+        # Clamp scale_factor
+        min_scale = max(self.display_size / self.original.width,
+                        self.display_size / self.original.height) * 0.1
+        max_scale = 10.0
+        self.scale_factor = max(min_scale, min(self.scale_factor, max_scale))
+        # Redraw image centered at current canvas coords
+        coords = self.canvas.coords(self.image_id)
+        self._update_display_image()
+        self.canvas.coords(self.image_id, coords)
 
     def ok(self):
         # Get image position and calculate crop box in original coordinates
