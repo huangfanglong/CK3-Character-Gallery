@@ -232,7 +232,7 @@ class CharacterGallery(tk.Tk):
             portrait_frame, width=300, height=300,
             bg="#1e1e1e", highlightthickness=2, highlightbackground="#666666"
         )
-        self.portrait_canvas.pack(pady=10)
+        self.portrait_canvas.pack(pady=(0, 10))
 
         self.portrait_image_id = None
         self.portrait_photo = None
