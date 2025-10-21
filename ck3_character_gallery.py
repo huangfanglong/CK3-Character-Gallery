@@ -189,22 +189,35 @@ class CharacterGallery(tk.Tk):
         main_frame = tk.Frame(self, bg="#2e2e2e")
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # LEFT: Gallery dropdown, search, list
+        # LEFT: Gallery dropdown, menu, search, list
         list_frame = tk.Frame(main_frame, bg="#3a3a3a", width=200)
         list_frame.pack(side="left", fill="y", padx=(0, 10))
         list_frame.pack_propagate(False)
 
+        # Frame for combobox and menu button
+        top_frame = tk.Frame(list_frame, bg="#3a3a3a")
+        top_frame.pack(fill="x", pady=(5,2))
+
         # Gallery Combobox
         self.gallery_var = tk.StringVar()
         self.gallery_box = ttk.Combobox(
-            list_frame, textvariable=self.gallery_var,
+            top_frame, textvariable=self.gallery_var,
             values=[g["name"] for g in self.galleries]+["Create a new gallery..."],
             state="readonly"
         )
-        self.gallery_box.pack(fill="x", padx=5, pady=(5,2))
+        self.gallery_box.pack(side="left", fill="x", expand=True, padx=(5,0))
         self.gallery_box.bind("<<ComboboxSelected>>", self.on_gallery_change)
 
-        # Dynamic search box
+        # Menu button (...)
+        menu_btn = ttk.Menubutton(top_frame, text="...", width=3)
+        menu = tk.Menu(menu_btn, tearoff=False)
+        menu.add_command(label="Rename Gallery", command=self.rename_gallery)
+        menu.add_command(label="Delete Gallery", command=self.delete_gallery_confirm)
+        menu_btn["menu"] = menu
+        menu_btn.pack(side="left", padx=(2,5), pady=(2,0))
+        menu_btn.configure(padding=(2, 0, 2, 0))  # left, top, right, bottom
+
+        # Search box
         self.search_var = tk.StringVar()
         search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
         search_entry.pack(fill="x", padx=5, pady=(0,5))
@@ -305,6 +318,35 @@ class CharacterGallery(tk.Tk):
             self.load_gallery(new_name)
         else:
             self.load_gallery(name)
+
+    def rename_gallery(self):
+        old_name = self.current_gallery["name"]
+        new_name = simpledialog.askstring("Rename Gallery",f"Enter new name for '{old_name}':",parent=self)
+        if not new_name or new_name == old_name:
+            return
+        self.current_gallery["name"] = new_name
+        self.save_galleries()
+        vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
+        self.gallery_box["values"] = vals
+        self.gallery_var.set(new_name)
+        self.status_label.config(text=f"Gallery renamed to '{new_name}' ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
+
+    def delete_gallery_confirm(self):
+        if len(self.galleries) == 1:
+            messagebox.showwarning("Warning","Cannot delete the last gallery.")
+            return
+        name = self.current_gallery["name"]
+        if not messagebox.askyesno("Delete Gallery",f"Delete gallery '{name}' and all its characters?"):
+            return
+        self.galleries.remove(self.current_gallery)
+        self.save_galleries()
+        vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
+        self.gallery_box["values"] = vals
+        self.gallery_var.set(self.galleries[0]["name"])
+        self.load_gallery(self.galleries[0]["name"])
+        self.status_label.config(text=f"Gallery '{name}' deleted ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def load_gallery(self, name):
         for g in self.galleries:
