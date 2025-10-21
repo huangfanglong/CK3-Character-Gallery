@@ -339,9 +339,16 @@ class CharacterGallery(tk.Tk):
         name = self.current_gallery["name"]
         if not messagebox.askyesno("Delete Gallery",f"Delete gallery '{name}' and all its characters?"):
             return
+        # Remove all image files for this gallery
+        for char in self.current_gallery["characters"]:
+            img = char.get("image")
+            if img and os.path.exists(img):
+                os.remove(img)
+        # Remove gallery entry
         self.galleries.remove(self.current_gallery)
         self.save_galleries()
-        vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
+        # Refresh dropdown and select first
+        vals = [g["name"] for g in self.galleries] + ["Create a new gallery..."]
         self.gallery_box["values"] = vals
         self.gallery_var.set(self.galleries[0]["name"])
         self.load_gallery(self.galleries[0]["name"])
@@ -431,6 +438,13 @@ class CharacterGallery(tk.Tk):
             return
         if not messagebox.askyesno("Confirm", f"Delete {len(sel)} character(s)?"):
             return
+        # Remove files first
+        for idx in sel:
+            char = self.current_gallery["characters"][idx]
+            img = char.get("image")
+            if img and os.path.exists(img):
+                os.remove(img)
+        # Now remove character entries
         for idx in sorted(sel, reverse=True):
             del self.current_gallery["characters"][idx]
         self.save_galleries()
