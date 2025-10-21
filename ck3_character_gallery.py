@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 import os
 import json
@@ -93,7 +93,7 @@ class ImageCropper(tk.Toplevel):
 
     def on_zoom(self, event):
         # Zoom in/out
-        factor = 1.1 if event.delta > 0 or event.num == 4 else 0.9
+        factor = 1.1 if getattr(event, 'delta', 0) > 0 or getattr(event, 'num', None) == 4 else 0.9
         self.scale_factor *= factor
         # Clamp scale_factor
         min_scale = max(self.display_size / self.original.width,
@@ -292,19 +292,23 @@ class CharacterGallery(tk.Tk):
             self.dna_text.insert("1.0", char.get('dna', ''))
 
     def new_character(self):
+        name = simpledialog.askstring("New Character", "Enter character name:", parent=self)
+        if not name:
+            return
         char_id = str(uuid.uuid4())
         new_char = {
             'id': char_id,
-            'name': f'Character {len(self.characters) + 1}',
+            'name': name,
             'image': None,
             'dna': ''
         }
         self.characters.append(new_char)
         self.save_data()
         self.refresh_list()
-        self.select_character(len(self.characters) - 1)
+        idx = len(self.characters) - 1
         self.char_listbox.selection_clear(0, tk.END)
-        self.char_listbox.selection_set(len(self.characters) - 1)
+        self.char_listbox.selection_set(idx)
+        self.select_character(idx)
 
     def delete_character(self):
         sel = list(self.char_listbox.curselection())
