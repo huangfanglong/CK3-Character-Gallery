@@ -168,6 +168,12 @@ class CharacterGallery(tk.Tk):
         self.dna_text.bind("<Control-z>", lambda e: self.dna_text.edit_undo())
         self.dna_text.bind("<Control-Z>", lambda e: self.dna_text.edit_undo())
 
+        # Persistent status bar
+        self.status_label = ttk.Label(
+            self, text="Idle", background="#2e2e2e", foreground="#888888"
+        )
+        self.status_label.pack(side="bottom", fill="x", padx=10, pady=0)
+
     def setup_ui(self):
         style = ttk.Style()
         style.theme_use('clam')
@@ -327,6 +333,8 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.selection_clear(0, tk.END)
         self.char_listbox.selection_set(idx)
         self.select_character(idx)
+        self.status_label.config(text=f"Character entry '{name}' created ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def delete_character(self):
         sel = list(self.char_listbox.curselection())
@@ -341,6 +349,8 @@ class CharacterGallery(tk.Tk):
             del self.characters[idx]
         self.save_data()
         self.refresh_list()
+        self.status_label.config(text="Character entry deletion successful ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
         if self.characters:
             next_idx = min(sel[0], len(self.characters) - 1)
             self.char_listbox.selection_set(next_idx)
@@ -385,6 +395,8 @@ class CharacterGallery(tk.Tk):
     def save_current(self):
         if self.current_index is not None:
             self.save_data()
+            self.status_label.config(text="Character data saved successfully ✔️")
+            self.after(5000, lambda: self.status_label.config(text="Idle"))
             messagebox.showinfo("Saved", "Character data saved successfully!")
 
     def homogenize_dna(self):
@@ -399,14 +411,16 @@ class CharacterGallery(tk.Tk):
         # Sync model so save_current writes this updated DNA
         if self.current_index is not None:
             self.characters[self.current_index]['dna'] = new.strip()
+        self.status_label.config(text="DNA homogenized")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def copy_dna(self):
         data = self.dna_text.get("1.0", tk.END).strip()
         if data:
             self.clipboard_clear()
             self.clipboard_append(data)
-            self.status = ttk.Label(self, text="DNA copied to clipboard!", background="#2e2e2e", foreground="#888888")
-            self.status.pack(side="bottom", fill="x", padx=10, pady=5)
+            self.status_label.config(text="DNA copied to clipboard ✔️")
+            self.after(5000, lambda: self.status_label.config(text="Idle"))
         else:
             messagebox.showinfo("Info", "No DNA to copy.")
 
