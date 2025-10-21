@@ -449,6 +449,16 @@ class CharacterGallery(tk.Tk):
             del self.current_gallery["characters"][idx]
         self.save_galleries()
         self.refresh_list()
+        # Clear portrait and DNA if no entry selected
+        remaining = self.char_listbox.curselection()
+        if not remaining:
+            if self.portrait_image_id:
+                self.portrait_canvas.delete(self.portrait_image_id)
+            self.portrait_image_id = None
+            self.dna_text.delete("1.0", tk.END)
+            self.current_index = None
+        else:
+            self.select_character(remaining[0])
         self.status_label.config(text="Character entry deletion successful ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
 
