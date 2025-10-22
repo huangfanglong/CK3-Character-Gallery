@@ -137,6 +137,7 @@ class ImageCropper(tk.Toplevel):
         self.result = None
         self.destroy()
 
+
 class CharacterGallery(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -159,6 +160,10 @@ class CharacterGallery(tk.Tk):
         # Current state
         self.current_gallery = None
         self.current_index = None
+        # Track unsaved changes
+        self.dirty = False
+        # Override close button
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.setup_ui()
         # Select first gallery
@@ -304,6 +309,18 @@ class CharacterGallery(tk.Tk):
         ttk.Button(btns_frame, text="Copy DNA", command=self.copy_dna, width=12)\
             .pack(side="right", padx=(5,0))
 
+    def on_close(self):
+        if self.dirty:
+            resp = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "You have unsaved changes. Save before exit?"
+            )
+            if resp is None:
+                return
+            if resp:
+                self.save_current()
+        self.destroy()
+
     def on_gallery_change(self, event):
         name = self.gallery_var.get()
         if name == "Create a new gallery...":
@@ -312,6 +329,7 @@ class CharacterGallery(tk.Tk):
                 self.gallery_var.set(self.current_gallery["name"])
                 return
             self.galleries.append({"name":new_name,"characters":[]})
+            self.dirty = True
             self.save_galleries()
             self.gallery_box["values"] = [g["name"] for g in self.galleries]+["Create a new gallery..."]
             self.gallery_var.set(new_name)
@@ -325,6 +343,7 @@ class CharacterGallery(tk.Tk):
         if not new_name or new_name == old_name:
             return
         self.current_gallery["name"] = new_name
+        self.dirty = True
         self.save_galleries()
         vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
         self.gallery_box["values"] = vals
@@ -346,6 +365,7 @@ class CharacterGallery(tk.Tk):
                 os.remove(img)
         # Remove gallery entry
         self.galleries.remove(self.current_gallery)
+        self.dirty = True
         self.save_galleries()
         # Refresh dropdown and select first
         vals = [g["name"] for g in self.galleries] + ["Create a new gallery..."]
@@ -366,6 +386,7 @@ class CharacterGallery(tk.Tk):
     def save_galleries(self):
         with open(self.data_file,'w',encoding='utf-8') as f:
             json.dump(self.galleries,f,indent=2)
+        self.dirty = False
 
     def refresh_list(self):
         self.char_listbox.delete(0,tk.END)
@@ -423,6 +444,7 @@ class CharacterGallery(tk.Tk):
             'dna': ''
         }
         self.current_gallery["characters"].append(new_char)
+        self.dirty = True
         self.save_galleries()
         self.refresh_list()
         idx = len(self.current_gallery["characters"]) - 1
@@ -447,6 +469,7 @@ class CharacterGallery(tk.Tk):
         # Now remove character entries
         for idx in sorted(sel, reverse=True):
             del self.current_gallery["characters"][idx]
+        self.dirty = True
         self.save_galleries()
         self.refresh_list()
         # Clear portrait and DNA if no entry selected
@@ -490,12 +513,14 @@ class CharacterGallery(tk.Tk):
                 cropped.save(save_path)
 
                 self.current_gallery["characters"][self.current_index]['image'] = save_path
+                self.dirty = True
                 self.save_galleries()
                 self.select_character(self.current_index)
 
     def on_dna_change(self, event=None):
         if self.current_index is not None:
             self.current_gallery["characters"][self.current_index]['dna'] = self.dna_text.get("1.0", tk.END).strip()
+            self.dirty = True
 
     def save_current(self):
         if self.current_index is not None:
@@ -515,6 +540,7 @@ class CharacterGallery(tk.Tk):
         self.dna_text.insert(tk.END, new)
         if self.current_index is not None:
             self.current_gallery["characters"][self.current_index]['dna'] = new.strip()
+            self.dirty = True
         self.status_label.config(text="DNA homogenized ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
 
