@@ -4,7 +4,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 
 ## Features
 
-- **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them.
+- **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them. Import & Export them to save online or share them with others.
 - **Character Management**: Add, delete, and batch-delete character entries within each gallery.
 - **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
 - **DNA Displayer**:
@@ -41,12 +41,12 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 4. **Deleting Characters entries**: Supports hotkey **Delete** on keyboard and multi-select (holding down Ctrl + Click or Ctrl + Shift) for batch deletion.
 5. **Portrait Display**:
    - Each character entry in each gallery has its own portrait display and its corresponding DNA box.
-   - Click **Change Portrait** to add the display image for the character.
-   - Drag to reposition and scroll to zoom to select the area of portrait to display for each character entry (currently support 300x300).
+   - Click **Change Portrait** or directly on Portrait window to add the display image for the character. Alternatively (and perhaps more conveniently), you can also copy images directly from File Explorer or the Snipping Tool with Ctrl+C and select a character entry then Ctrl+V (Paste) it.
+   - Drag to reposition and scroll to zoom to select the area of portrait to display for each character entry (currently support 450x450).
    - Click **OK** to save the cropped portrait.
 6. **DNA Display**:
    - Some QoL buttons such as: **Clear**, **Homogenize DNA**, **Save Changes**, or **Copy DNA**.
-7. **Gallery Management**: Click the **...** menu next to the gallery dropdown to rename or delete the current gallery.
+7. **Gallery Management**: Click the **...** menu next to the gallery dropdown to rename or delete the current gallery, also support exporting & importing galleries. Sorting is also supported.
 
 ## Data Storage
 
