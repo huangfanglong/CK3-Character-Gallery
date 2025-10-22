@@ -383,11 +383,11 @@ class CharacterGallery(tk.Tk):
                     self.dirty = True
                     self.save_galleries()
                     self.select_character(self.current_index)
+                self.status_label.config(text="Portrait pasted successfully ✔️")
+                self.after(5000, lambda: self.status_label.config(text="Idle"))
             # Clean up temp
             if temp_path and temp_path.endswith("temp_clipboard.png") and os.path.exists(temp_path):
                 os.remove(temp_path)
-            self.status_label.config(text="Portrait pasted successfully ✔️")
-            self.after(5000, lambda: self.status_label.config(text="Idle"))
         except Exception as e:
             pass
 
