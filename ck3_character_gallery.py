@@ -178,6 +178,9 @@ class CharacterGallery(tk.Tk):
         self.dna_text.config(undo=True, autoseparators=True, maxundo=-1)
         self.dna_text.bind("<Control-z>", lambda e: self.dna_text.edit_undo())
         self.dna_text.bind("<Control-Z>", lambda e: self.dna_text.edit_undo())
+        # Enable Ctrl+V to paste image from clipboard
+        self.bind_all("<Control-v>", lambda e: self.paste_from_clipboard())
+        self.bind_all("<Control-V>", lambda e: self.paste_from_clipboard())
 
         # Persistent status bar
         self.status_label = ttk.Label(
@@ -283,6 +286,8 @@ class CharacterGallery(tk.Tk):
             bg="#1e1e1e", highlightthickness=2, highlightbackground="#666666"
         )
         self.portrait_canvas.pack(pady=(0, 10))
+        # Enable click on canvas to change portrait
+        self.portrait_canvas.bind("<Button-1>", lambda e: self.change_portrait())
 
         self.portrait_image_id = None
         self.portrait_photo = None
@@ -338,6 +343,47 @@ class CharacterGallery(tk.Tk):
             if resp:
                 self.save_current()
         self.destroy()
+
+    def paste_from_clipboard(self):
+        if self.current_index is None:
+            return
+        try:
+            from PIL import ImageGrab
+            result = ImageGrab.grabclipboard()
+            img = None
+            temp_path = None
+            # If raw PIL image, use it
+            if isinstance(result, Image.Image):
+                img = result
+                temp_path = os.path.join(self.data_dir, "temp_clipboard.png")
+                img.save(temp_path)
+            # If file list, use first file path (if it's an image)
+            elif isinstance(result, list) and result:
+                file_path = result[0]
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in [".png", ".jpg", ".jpeg", ".bmp", ".gif"]:
+                    temp_path = file_path
+                    img = Image.open(temp_path)
+            if img and temp_path:
+                cropper = ImageCropper(self, temp_path)
+                self.wait_window(cropper)
+                if cropper.result:
+                    cropped = img.crop(cropper.result)
+                    cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
+                    char_id = self.current_gallery["characters"][self.current_index]['id']
+                    save_path = os.path.join(self.data_dir, "images", f"{char_id}.png")
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    cropped.save(save_path)
+                    self.current_gallery["characters"][self.current_index]['image'] = save_path
+                    self.current_gallery["characters"][self.current_index]["modified"] = time.time()
+                    self.dirty = True
+                    self.save_galleries()
+                    self.select_character(self.current_index)
+            # Clean up temp
+            if temp_path and temp_path.endswith("temp_clipboard.png") and os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception as e:
+            pass
 
     def show_char_menu(self, event):
         idx = self.char_listbox.nearest(event.y)
