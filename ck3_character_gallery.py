@@ -5,6 +5,7 @@ import os
 import json
 import shutil
 import uuid
+import time
 
 class ImageCropper(tk.Toplevel):
     """Modal dialog for cropping/repositioning images with zoom selection."""
@@ -218,6 +219,15 @@ class CharacterGallery(tk.Tk):
         menu = tk.Menu(menu_btn, tearoff=False)
         menu.add_command(label="Rename Gallery", command=self.rename_gallery)
         menu.add_command(label="Delete Gallery", command=self.delete_gallery_confirm)
+        menu.add_separator()
+        # Sorting submenu
+        sort_sub = tk.Menu(menu, tearoff=False)
+        sort_sub.add_command(label="Name A→Z", command=lambda: self.sort_characters("name_asc"))
+        sort_sub.add_command(label="Name Z→A", command=lambda: self.sort_characters("name_desc"))
+        sort_sub.add_command(label="Created ↑", command=lambda: self.sort_characters("created_asc"))
+        sort_sub.add_command(label="Created ↓", command=lambda: self.sort_characters("created_desc"))
+        sort_sub.add_command(label="Modified ↓", command=lambda: self.sort_characters("modified_desc"))
+        menu.add_cascade(label="Sort Characters", menu=sort_sub)
         menu_btn["menu"] = menu
         menu_btn.pack(side="left", padx=(2,5), pady=(2,0))
         menu_btn.configure(padding=(2, 0, 2, 0))  # left, top, right, bottom
@@ -246,6 +256,14 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.bind("<<ListboxSelect>>", self.on_select)
         # Enable Delete hotkey to delete character
         self.char_listbox.bind("<Delete>", lambda e: self.delete_character())
+        # Enable drag-drop reordering
+        self.char_listbox.bind("<ButtonPress-1>", self.start_drag)
+        self.char_listbox.bind("<ButtonRelease-1>", self.on_drop)
+
+        # Context menu  
+        self.char_menu = tk.Menu(self, tearoff=False)
+        self.char_menu.add_command(label="Rename Character", command=self.rename_character)
+        self.char_listbox.bind("<Button-3>", lambda e: self.show_char_menu(e))
 
         btn_frame = tk.Frame(list_frame, bg="#3a3a3a")
         btn_frame.pack(fill="x", pady=5)
@@ -321,6 +339,52 @@ class CharacterGallery(tk.Tk):
                 self.save_current()
         self.destroy()
 
+    def show_char_menu(self, event):
+        idx = self.char_listbox.nearest(event.y)
+        if idx >= 0:
+            self.char_listbox.selection_clear(0, tk.END)
+            self.char_listbox.selection_set(idx)
+            self.current_index = idx
+            self.char_menu.tk_popup(event.x_root, event.y_root)
+
+    def rename_character(self):
+        idx = self.current_index
+        old_name = self.current_gallery["characters"][idx]["name"]
+        new_name = simpledialog.askstring("Rename Character", f"Enter new name for '{old_name}':", parent=self)
+        if new_name and new_name != old_name:
+            self.current_gallery["characters"][idx]["name"] = new_name
+            self.current_gallery["characters"][idx]["modified"] = time.time()
+            self.dirty = True
+            self.save_galleries()
+            self.refresh_list()
+            self.char_listbox.selection_set(idx)
+
+    def sort_characters(self, mode):
+        lst = self.current_gallery["characters"]
+        if mode=="name_asc": lst.sort(key=lambda c: c["name"].lower())
+        elif mode=="name_desc": lst.sort(key=lambda c: c["name"].lower(), reverse=True)
+        elif mode=="created_asc": lst.sort(key=lambda c: c.get("created",0))
+        elif mode=="created_desc": lst.sort(key=lambda c: c.get("created",0), reverse=True)
+        elif mode=="modified_desc": lst.sort(key=lambda c: c.get("modified",0), reverse=True)
+        self.dirty = True
+        self.save_galleries()
+        self.refresh_list()
+
+    def start_drag(self, event):
+        self._drag_idx = self.char_listbox.nearest(event.y)
+
+    def on_drop(self, event):
+        dst = self.char_listbox.nearest(event.y)
+        if dst!=self._drag_idx:
+            lst = self.current_gallery["characters"]
+            item = lst.pop(self._drag_idx)
+            lst.insert(dst, item)
+            self.current_gallery["characters"][dst]["modified"] = time.time()
+            self.dirty=True
+            self.save_galleries()
+            self.refresh_list()
+            self.char_listbox.selection_set(dst)
+
     def on_gallery_change(self, event):
         name = self.gallery_var.get()
         if name == "Create a new gallery...":
@@ -343,6 +407,7 @@ class CharacterGallery(tk.Tk):
         if not new_name or new_name == old_name:
             return
         self.current_gallery["name"] = new_name
+        self.current_gallery["modified"] = time.time()
         self.dirty = True
         self.save_galleries()
         vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
