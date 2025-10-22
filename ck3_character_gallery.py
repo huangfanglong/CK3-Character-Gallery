@@ -223,6 +223,10 @@ class CharacterGallery(tk.Tk):
         menu.add_command(label="Rename Gallery", command=self.rename_gallery)
         menu.add_command(label="Delete Gallery", command=self.delete_gallery_confirm)
         menu.add_separator()
+        # Import/export gallery buttons
+        menu.add_command(label="Export Gallery", command=self.export_gallery)
+        menu.add_command(label="Import Gallery", command=self.import_gallery)
+        menu.add_separator()
         # Sorting submenu
         sort_sub = tk.Menu(menu, tearoff=False)
         sort_sub.add_command(label="Name A→Z", command=lambda: self.sort_characters("name_asc"))
@@ -499,6 +503,65 @@ class CharacterGallery(tk.Tk):
                 break
         self.current_index = None
         self.refresh_list()
+
+    def export_gallery(self):
+        name = self.current_gallery["name"]
+        dest = filedialog.askdirectory(title=f"Export gallery '{name}' to folder")
+        if not dest:
+            return
+        out_dir = os.path.join(dest, name)
+        if os.path.exists(out_dir):
+            if not messagebox.askyesno("Overwrite?", f"Folder '{out_dir}' exists. Overwrite?"):
+                return
+            shutil.rmtree(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        # Save characters JSON
+        with open(os.path.join(out_dir, "characters.json"), "w", encoding="utf-8") as f:
+            json.dump(self.current_gallery["characters"], f, indent=2)
+        # Copy images
+        images_out = os.path.join(out_dir, "images")
+        os.makedirs(images_out, exist_ok=True)
+        for char in self.current_gallery["characters"]:
+            img = char.get("image")
+            if img and os.path.exists(img):
+                shutil.copy2(img, os.path.join(images_out, os.path.basename(img)))
+        messagebox.showinfo("Exported", f"Gallery '{name}' exported to {out_dir}")
+
+    def import_gallery(self):
+        folder = filedialog.askdirectory(title="Select gallery folder to import")
+        if not folder:
+            return
+        json_file = os.path.join(folder, "characters.json")
+        images_folder = os.path.join(folder, "images")
+        if not os.path.exists(json_file):
+            messagebox.showerror("Error", "No characters.json found in selected folder.")
+            return
+        with open(json_file, 'r', encoding='utf-8') as f:
+            chars = json.load(f)
+        gallery_name = simpledialog.askstring("Import Gallery", "Enter name for imported gallery:", parent=self)
+        if not gallery_name:
+            return
+        new_gallery = {"name": gallery_name, "characters": []}
+        # Create images dir in data_dir
+        for char in chars:
+            cid = char.get("id", str(uuid.uuid4()))
+            char['id'] = cid
+            src_img = os.path.join(images_folder, f"{cid}.png")
+            if os.path.exists(src_img):
+                dest_img = os.path.join(self.data_dir, "images", f"{cid}.png")
+                os.makedirs(os.path.dirname(dest_img), exist_ok=True)
+                shutil.copy2(src_img, dest_img)
+                char['image'] = dest_img
+            else:
+                char['image'] = None
+            new_gallery["characters"].append(char)
+        self.galleries.append(new_gallery)
+        self.dirty = True
+        self.save_galleries()
+        self.gallery_box["values"] = [g["name"] for g in self.galleries] + ["Create a new gallery..."]
+        self.gallery_var.set(gallery_name)
+        self.load_gallery(gallery_name)
+        messagebox.showinfo("Imported", f"Gallery '{gallery_name}' imported successfully")
 
     def save_galleries(self):
         with open(self.data_file,'w',encoding='utf-8') as f:
