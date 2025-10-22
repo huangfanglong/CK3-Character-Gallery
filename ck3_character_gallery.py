@@ -11,7 +11,7 @@ class ImageCropper(tk.Toplevel):
     def __init__(self, parent, image_path):
         super().__init__(parent)
         self.title("Adjust Image Position")
-        self.geometry("600x650")
+        self.geometry("700x800")
         self.configure(bg="#2e2e2e")
         self.transient(parent)
         self.grab_set()
@@ -21,7 +21,7 @@ class ImageCropper(tk.Toplevel):
 
         # Load original image
         self.original = Image.open(image_path)
-        self.display_size = 500
+        self.display_size = 600
         self.crop_size = 300
 
         # Scale image
@@ -142,7 +142,7 @@ class CharacterGallery(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CK3 Character Gallery")
-        self.geometry("1200x700")
+        self.geometry("1600x900")
         self.configure(bg="#2e2e2e")
 
         # Data directory & file
@@ -254,14 +254,14 @@ class CharacterGallery(tk.Tk):
         ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=8).pack(side="right", padx=2)
 
         # MIDDLE: Portrait
-        portrait_frame = tk.Frame(main_frame, bg="#2e2e2e", width=350)
+        portrait_frame = tk.Frame(main_frame, bg="#2e2e2e", width=525)
         portrait_frame.pack(side="left", fill="y", padx=10)
         portrait_frame.pack_propagate(False)
 
         ttk.Label(portrait_frame, text="Portrait", font=("Arial", 12, "bold")).pack(pady=5)
 
         self.portrait_canvas = tk.Canvas(
-            portrait_frame, width=300, height=300,
+            portrait_frame, width=450, height=450,
             bg="#1e1e1e", highlightthickness=2, highlightbackground="#666666"
         )
         self.portrait_canvas.pack(pady=(0, 10))
@@ -272,7 +272,7 @@ class CharacterGallery(tk.Tk):
         ttk.Button(portrait_frame, text="Change Portrait", command=self.change_portrait).pack(pady=5)
 
         # RIGHT: DNA text
-        dna_frame = tk.Frame(main_frame, bg="#2e2e2e")
+        dna_frame = tk.Frame(main_frame, bg="#2e2e2e", width=675)
         dna_frame.pack(side="right", fill="both", expand=True)
 
         ttk.Label(dna_frame, text="Character DNA", font=("Arial", 12, "bold")).pack(pady=5)
@@ -415,13 +415,13 @@ class CharacterGallery(tk.Tk):
             image_file = char.get('image')
             if image_file and os.path.exists(image_file):
                 img = Image.open(image_file)
-                img = img.resize((300, 300), Image.Resampling.LANCZOS)
+                img = img.resize((450, 450), Image.Resampling.LANCZOS)
                 self.portrait_photo = ImageTk.PhotoImage(img)
 
                 if self.portrait_image_id:
                     self.portrait_canvas.delete(self.portrait_image_id)
                 self.portrait_image_id = self.portrait_canvas.create_image(
-                    150, 150, image=self.portrait_photo
+                    225, 225, image=self.portrait_photo
                 )
             else:
                 if self.portrait_image_id:
@@ -504,7 +504,7 @@ class CharacterGallery(tk.Tk):
                 # Crop and save
                 img = Image.open(file_path)
                 cropped = img.crop(cropper.result)
-                cropped = cropped.resize((300, 300), Image.Resampling.LANCZOS)
+                cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
 
                 # Save to data directory
                 char_id = self.current_gallery["characters"][self.current_index]['id']
