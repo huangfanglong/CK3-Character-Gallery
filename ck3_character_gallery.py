@@ -382,6 +382,8 @@ class CharacterGallery(tk.Tk):
             # Clean up temp
             if temp_path and temp_path.endswith("temp_clipboard.png") and os.path.exists(temp_path):
                 os.remove(temp_path)
+            self.status_label.config(text="Portrait pasted successfully ✔️")
+            self.after(5000, lambda: self.status_label.config(text="Idle"))
         except Exception as e:
             pass
 
@@ -404,6 +406,8 @@ class CharacterGallery(tk.Tk):
             self.save_galleries()
             self.refresh_list()
             self.char_listbox.selection_set(idx)
+            self.status_label.config(text=f"Character '{old_name}' renamed to '{new_name}' ✔️")
+            self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def sort_characters(self, mode):
         lst = self.current_gallery["characters"]
@@ -415,6 +419,8 @@ class CharacterGallery(tk.Tk):
         self.dirty = True
         self.save_galleries()
         self.refresh_list()
+        self.status_label.config(text="Character entries sorted ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def start_drag(self, event):
         self._drag_idx = self.char_listbox.nearest(event.y)
@@ -627,6 +633,9 @@ class CharacterGallery(tk.Tk):
                 self.dirty = True
                 self.save_galleries()
                 self.select_character(self.current_index)
+
+                self.status_label.config(text="Portrait updated successfully ✔️")
+                self.after(5000, lambda: self.status_label.config(text="Idle"))
 
     def on_dna_change(self, event=None):
         if self.current_index is not None:
