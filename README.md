@@ -2,6 +2,8 @@
 
 A desktop application for managing and organizing Crusader Kings 3 character DNAs.
 
+![alt text](https://i.imgur.com/B1tV1Yq.png)
+
 ## Features
 
 - **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them. Import & Export them to save online or share them with others.
