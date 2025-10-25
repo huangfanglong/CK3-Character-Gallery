@@ -181,6 +181,14 @@ class CharacterGallery(tk.Tk):
         # Enable Ctrl+V to paste image from clipboard
         self.bind_all("<Control-v>", lambda e: self.paste_from_clipboard())
         self.bind_all("<Control-V>", lambda e: self.paste_from_clipboard())
+        # Enable Ctrl+N to create new Character entry
+        self.bind_all("<Control-n>", lambda e: self.new_character())
+        self.bind_all("<Control-N>", lambda e: self.new_character())
+        # Enable F2 to rename character
+        self.bind_all("<F2>", lambda e: self.rename_character())
+        # Enable Ctrl+E to export gallery
+        self.bind_all("<Control-e>", lambda e: self.export_gallery())
+        self.bind_all("<Control-E>", lambda e: self.export_gallery())
 
         # Persistent status bar
         self.status_label = ttk.Label(
