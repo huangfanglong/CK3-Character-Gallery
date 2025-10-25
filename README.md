@@ -34,7 +34,13 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
    ```bash
    python ck3_character_gallery.py
    ```
-   Or run the .exe
+
+## Or Build Executable (Optional)
+   To create a standalone `.exe` file:
+   ```bash
+   pyinstaller --onefile --noconsole ck3_character_gallery.py
+   ```
+   And then run the .exe
 
 ## Usage
 
