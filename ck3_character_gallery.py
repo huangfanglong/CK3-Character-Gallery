@@ -171,6 +171,7 @@ class CharacterGallery(tk.Tk):
         self.gallery_var.set(self.galleries[0]["name"])
         self.load_gallery(self.galleries[0]["name"])
 
+        # Hotkeys Binding
         # Enable Ctrl+S hotkey to quick save
         self.bind_all("<Control-s>", lambda e: self.save_current())
         self.bind_all("<Control-S>", lambda e: self.save_current())
@@ -189,6 +190,12 @@ class CharacterGallery(tk.Tk):
         # Enable Ctrl+E to export gallery
         self.bind_all("<Control-e>", lambda e: self.export_gallery())
         self.bind_all("<Control-E>", lambda e: self.export_gallery())
+        # Enable Ctrl+F to focus search
+        self.bind_all("<Control-f>", lambda e: self.focus_search())
+        self.bind_all("<Control-F>", lambda e: self.focus_search())
+        # Enable Ctrl+D to duplicate character
+        self.bind_all("<Control-d>", lambda e: self.duplicate_character())
+        self.bind_all("<Control-D>", lambda e: self.duplicate_character())
 
         # Persistent status bar
         self.status_label = ttk.Label(
@@ -249,9 +256,9 @@ class CharacterGallery(tk.Tk):
 
         # Search box
         self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
-        search_entry.pack(fill="x", padx=5, pady=(0,5))
-        search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
+        self.search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
+        self.search_entry.pack(fill="x", padx=5, pady=(0,5))
+        self.search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
 
         # Character list
         list_container = tk.Frame(list_frame, bg="#3a3a3a")
@@ -306,6 +313,17 @@ class CharacterGallery(tk.Tk):
 
         ttk.Button(portrait_frame, text="Change Portrait", command=self.change_portrait).pack(pady=5)
 
+        # Tag box
+        ttk.Label(portrait_frame, text="Tags", font=("Arial", 12, "bold")).pack(pady=(20,5))
+        ttk.Label(portrait_frame, text="(separate by comma)", font=("Arial", 8), 
+                 foreground="#888888").pack()
+        self.tags_text = tk.Text(
+            portrait_frame, wrap="word", bg="#1e1e1e", fg="#eeeeee",
+            font=("Arial", 10), insertbackground="white", height=3, width=65
+        )
+        self.tags_text.pack(padx=10, pady=5)
+        self.tags_text.bind("<KeyRelease>", self.on_tags_change)
+
         # RIGHT: DNA text
         dna_frame = tk.Frame(main_frame, bg="#2e2e2e", width=675)
         dna_frame.pack(side="right", fill="both", expand=True)
@@ -343,6 +361,10 @@ class CharacterGallery(tk.Tk):
         # Right-side button
         ttk.Button(btns_frame, text="Copy DNA", command=self.copy_dna, width=12)\
             .pack(side="right", padx=(5,0))
+    
+    def focus_search(self):
+        self.search_entry.focus_set()
+        self.search_entry.select_range(0, tk.END)
 
     def on_close(self):
         if self.dirty:
@@ -584,10 +606,19 @@ class CharacterGallery(tk.Tk):
     def filter_list(self):
         term = self.search_var.get().lower()
         self.char_listbox.delete(0,tk.END)
-        for char in self.current_gallery["characters"]:
-            name = char.get("name","")
-            if term in name.lower():
-                self.char_listbox.insert(tk.END,name)
+        # Check if tag search
+        if term.startswith(("tag:", "tags:")):
+            search_tags = [t.strip() for t in term.replace("tags:", "tag:", 1)[4:].split(',') if t.strip()]
+            for char in self.current_gallery["characters"]:
+                char_tags = [t.lower() for t in char.get('tags', [])]
+                if any(st in char_tags for st in search_tags):
+                    self.char_listbox.insert(tk.END,char.get("name",""))
+        else:
+            # Normal name search
+            for char in self.current_gallery["characters"]:
+                name = char.get("name","")
+                if term in name.lower():
+                    self.char_listbox.insert(tk.END,name)
 
     def on_select(self, event):
         selection = self.char_listbox.curselection()
@@ -619,6 +650,10 @@ class CharacterGallery(tk.Tk):
             # Load DNA
             self.dna_text.delete("1.0", tk.END)
             self.dna_text.insert("1.0", char.get('dna', ''))
+            # Load tags
+            self.tags_text.delete("1.0", tk.END)
+            tags = char.get('tags', [])
+            self.tags_text.insert("1.0", ', '.join(tags))
 
     def new_character(self):
         name = simpledialog.askstring("New Character", "Enter character name:", parent=self)
@@ -629,7 +664,8 @@ class CharacterGallery(tk.Tk):
             'id': char_id,
             'name': name,
             'image': None,
-            'dna': ''
+            'dna': '',
+            'tags': []
         }
         self.current_gallery["characters"].append(new_char)
         self.dirty = True
@@ -673,6 +709,37 @@ class CharacterGallery(tk.Tk):
         self.status_label.config(text="Character entry deletion successful ✔️")
         self.after(5000, lambda: self.status_label.config(text="Idle"))
 
+    def duplicate_character(self):
+        if self.current_index is None:
+            return
+        char = self.current_gallery["characters"][self.current_index]
+        new_id = str(uuid.uuid4())
+        dup_char = {
+            'id': new_id,
+            'name': char['name'] + " (Copy)",
+            'image': None,
+            'dna': char['dna'],
+            'tags': char.get('tags', []).copy(),
+            'created': time.time(),
+            'modified': time.time()
+        }
+        # Copy image if exists
+        if char.get('image') and os.path.exists(char['image']):
+            old_img = char['image']
+            new_img = os.path.join(self.data_dir, "images", f"{new_id}.png")
+            shutil.copy2(old_img, new_img)
+            dup_char['image'] = new_img
+        self.current_gallery["characters"].append(dup_char)
+        self.dirty = True
+        self.save_galleries()
+        self.refresh_list()
+        idx = len(self.current_gallery["characters"]) - 1
+        self.char_listbox.selection_clear(0, tk.END)
+        self.char_listbox.selection_set(idx)
+        self.select_character(idx)
+        self.status_label.config(text=f"Character '{char['name']}' duplicated ✔️")
+        self.after(5000, lambda: self.status_label.config(text="Idle"))
+
     def change_portrait(self):
         if self.current_index is None:
             messagebox.showwarning("Warning", "Please select a character first.")
@@ -707,6 +774,13 @@ class CharacterGallery(tk.Tk):
 
                 self.status_label.config(text="Portrait updated successfully ✔️")
                 self.after(5000, lambda: self.status_label.config(text="Idle"))
+
+    def on_tags_change(self, event=None):
+        if self.current_index is not None:
+            tags_str = self.tags_text.get("1.0", tk.END).strip()
+            tags = [t.strip() for t in tags_str.split(',') if t.strip()]
+            self.current_gallery["characters"][self.current_index]['tags'] = tags
+            self.dirty = True
 
     def on_dna_change(self, event=None):
         if self.current_index is not None:
