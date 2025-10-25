@@ -32,6 +32,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
    ```bash
    python ck3_character_gallery.py
    ```
+   Or run the .exe
 
 ## Usage
 
