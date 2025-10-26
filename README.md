@@ -54,6 +54,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 3. Then it prompts a window to reposition the image to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
 4. And then just Copy the DNA and paste it inside the Character DNA box.
 5. Save (Ctrl + S).
+6. **To use Tags** & narrow character entry list to specific tags, start with "tags:" or "tag:" in the search box followed by the tag, separate by comma if multiple.
 
 ## Data Storage
 
