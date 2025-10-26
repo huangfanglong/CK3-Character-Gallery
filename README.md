@@ -7,7 +7,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 ## Features
 
 - **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them. Import & Export them to save online or share them with others.
-- **Character Management**: Add, delete, and batch-delete character entries within each gallery.
+- **Character Management**: Add, delete, and batch-delete character entries within each gallery. Give each character entry specific tags and ability to search & narrow them in the search box.
 - **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
 - **DNA Displayer**:
   - View and edit raw character DNA strings.
@@ -16,9 +16,11 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
   - Ctrl+S: Save current character data.
   - Ctrl+Z: Undo DNA edits.
   - Ctrl+N: New Character entry
-  - F2: Renames selected character
+  - Ctrl+D: Duplicate character entry
   - Ctrl+E: Exports current gallery
+  - Ctrl+F: Search
   - Delete: Remove selected characters.
+  - F2: Renames selected character
 
 ## Installation
 
@@ -47,18 +49,11 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 
 ## Usage
 
-1. **Gallery Selection**: Supports multiple galleries for better organizations and convenience (e.g: one gallery for male, one for female). Use the dropdown at top-left to switch between galleries/sets or create a new one.
-2. **Search**: Type in the search box to filter character names instantly.
-3. **Adding Characters entries**: Click **+ New**, enter a name, then optionally add a portrait.
-4. **Deleting Characters entries**: Supports hotkey **Delete** on keyboard and multi-select (holding down Ctrl + Click or Ctrl + Shift) for batch deletion.
-5. **Portrait Display**:
-   - Each character entry in each gallery has its own portrait display and its corresponding DNA box.
-   - Click **Change Portrait** or directly on Portrait window to add the display image for the character. Alternatively (and perhaps more conveniently), you can also copy images directly from File Explorer or the Snipping Tool with Ctrl+C and select a character entry then Ctrl+V (Paste) it.
-   - Drag to reposition and scroll to zoom to select the area of portrait to display for each character entry (currently support 450x450).
-   - Click **OK** to save the cropped portrait.
-6. **DNA Display**:
-   - Some QoL buttons such as: **Clear**, **Homogenize DNA**, **Save Changes**, or **Copy DNA**.
-7. **Gallery Management**: Click the **...** menu next to the gallery dropdown to rename or delete the current gallery, also support exporting & importing galleries. Sorting is also supported.
+1. Ctrl+N to create new character entry (or click the +New button).
+2. Click 'Change Portrait', or click directly in the Portrait box, or Copy (Ctrl+C) a picture of the character (I usually Ctrl+C directly from Snipping Tool after taking a snip in-game) and then Ctrl+V with that character entry selected.
+3. Then it prompts a window to reposition the image (4th photo) to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
+4. And then just Copy the DNA and paste it inside the Character DNA box.
+5. Save (Ctrl + S).
 
 ## Data Storage
 
