@@ -2,7 +2,7 @@
 
 A desktop application for managing and organizing Crusader Kings 3 character DNAs.
 
-![alt text](https://i.imgur.com/B1tV1Yq.png)
+![alt text](https://i.imgur.com/PuKypMQ.png)
 
 ## Features
 
@@ -55,6 +55,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 4. And then just Copy the DNA and paste it inside the Character DNA box.
 5. Save (Ctrl + S).
 6. **To use Tags** & narrow character entry list to specific tags, start with "tags:" or "tag:" in the search box followed by the tag, separate by comma if multiple.
+![alt text](https://i.imgur.com/7FjG0IL.png)
 
 ## Data Storage
 
