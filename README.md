@@ -51,7 +51,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 
 1. Ctrl+N to create new character entry (or click the +New button).
 2. Click 'Change Portrait', or click directly in the Portrait box, or Copy (Ctrl+C) a picture of the character (I usually Ctrl+C directly from Snipping Tool after taking a snip in-game) and then Ctrl+V with that character entry selected.
-3. Then it prompts a window to reposition the image (4th photo) to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
+3. Then it prompts a window to reposition the image to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
 4. And then just Copy the DNA and paste it inside the Character DNA box.
 5. Save (Ctrl + S).
 
