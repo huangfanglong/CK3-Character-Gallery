@@ -198,8 +198,8 @@ class CharacterGallery(tk.Tk):
         self.bind_all("<Control-D>", lambda e: self.duplicate_character())
 
         # Persistent status bar
-        self.status_label = ttk.Label(
-            self, text="Idle", background="#2e2e2e", foreground="#888888",
+        self.status_label = tk.Label(
+            self, text="Idle", bg="#2e2e2e", fg="#888888",
             font=("TkDefaultFont", 8)
         )
         self.status_label.pack(side="bottom", fill="x", padx=5, pady=1)
@@ -366,6 +366,10 @@ class CharacterGallery(tk.Tk):
         self.search_entry.focus_set()
         self.search_entry.select_range(0, tk.END)
 
+    def set_status(self, message):
+        self.status_label.config(text=message, fg="#00FF00")
+        self.after(5000, lambda: self.status_label.config(text="Idle", fg="#888888"))
+
     def on_close(self):
         if self.dirty:
             resp = messagebox.askyesnocancel(
@@ -413,8 +417,7 @@ class CharacterGallery(tk.Tk):
                     self.dirty = True
                     self.save_galleries()
                     self.select_character(self.current_index)
-                self.status_label.config(text="Portrait pasted successfully ✔️")
-                self.after(5000, lambda: self.status_label.config(text="Idle"))
+                    self.set_status("Portrait pasted successfully ✔️")
             # Clean up temp
             if temp_path and temp_path.endswith("temp_clipboard.png") and os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -430,6 +433,8 @@ class CharacterGallery(tk.Tk):
             self.char_menu.tk_popup(event.x_root, event.y_root)
 
     def rename_character(self):
+        if self.current_index is None:
+            return
         idx = self.current_index
         old_name = self.current_gallery["characters"][idx]["name"]
         new_name = simpledialog.askstring("Rename Character", f"Enter new name for '{old_name}':", parent=self)
@@ -440,8 +445,7 @@ class CharacterGallery(tk.Tk):
             self.save_galleries()
             self.refresh_list()
             self.char_listbox.selection_set(idx)
-            self.status_label.config(text=f"Character '{old_name}' renamed to '{new_name}' ✔️")
-            self.after(5000, lambda: self.status_label.config(text="Idle"))
+            self.set_status(f"Character '{old_name}' renamed to '{new_name}' ✔️")
 
     def sort_characters(self, mode):
         lst = self.current_gallery["characters"]
@@ -453,8 +457,7 @@ class CharacterGallery(tk.Tk):
         self.dirty = True
         self.save_galleries()
         self.refresh_list()
-        self.status_label.config(text="Character entries sorted ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status("Character entries sorted ✔️")
 
     def start_drag(self, event):
         self._drag_idx = self.char_listbox.nearest(event.y)
@@ -499,8 +502,7 @@ class CharacterGallery(tk.Tk):
         vals = [g["name"] for g in self.galleries]+["Create a new gallery..."]
         self.gallery_box["values"] = vals
         self.gallery_var.set(new_name)
-        self.status_label.config(text=f"Gallery renamed to '{new_name}' ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status(f"Gallery renamed to '{new_name}' ✔️")
 
     def delete_gallery_confirm(self):
         if len(self.galleries) == 1:
@@ -523,8 +525,7 @@ class CharacterGallery(tk.Tk):
         self.gallery_box["values"] = vals
         self.gallery_var.set(self.galleries[0]["name"])
         self.load_gallery(self.galleries[0]["name"])
-        self.status_label.config(text=f"Gallery '{name}' deleted ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status(f"Gallery '{name}' deleted ✔️")
 
     def load_gallery(self, name):
         for g in self.galleries:
@@ -665,7 +666,9 @@ class CharacterGallery(tk.Tk):
             'name': name,
             'image': None,
             'dna': '',
-            'tags': []
+            'tags': [],
+            'created': time.time(),
+            'modified': time.time()
         }
         self.current_gallery["characters"].append(new_char)
         self.dirty = True
@@ -675,8 +678,7 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.selection_clear(0, tk.END)
         self.char_listbox.selection_set(idx)
         self.select_character(idx)
-        self.status_label.config(text=f"Character entry '{name}' created ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status(f"Character entry '{name}' created ✔️")
 
     def delete_character(self):
         sel = list(self.char_listbox.curselection())
@@ -703,11 +705,11 @@ class CharacterGallery(tk.Tk):
                 self.portrait_canvas.delete(self.portrait_image_id)
             self.portrait_image_id = None
             self.dna_text.delete("1.0", tk.END)
+            self.tags_text.delete("1.0", tk.END)
             self.current_index = None
         else:
             self.select_character(remaining[0])
-        self.status_label.config(text="Character entry deletion successful ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status("Character entry deletion successful ✔️")
 
     def duplicate_character(self):
         if self.current_index is None:
@@ -737,8 +739,7 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.selection_clear(0, tk.END)
         self.char_listbox.selection_set(idx)
         self.select_character(idx)
-        self.status_label.config(text=f"Character '{char['name']}' duplicated ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status(f"Character '{char['name']}' duplicated ✔️")
 
     def change_portrait(self):
         if self.current_index is None:
@@ -768,30 +769,30 @@ class CharacterGallery(tk.Tk):
                 cropped.save(save_path)
 
                 self.current_gallery["characters"][self.current_index]['image'] = save_path
+                self.current_gallery["characters"][self.current_index]['modified'] = time.time()
                 self.dirty = True
                 self.save_galleries()
                 self.select_character(self.current_index)
-
-                self.status_label.config(text="Portrait updated successfully ✔️")
-                self.after(5000, lambda: self.status_label.config(text="Idle"))
+                self.set_status("Portrait updated successfully ✔️")
 
     def on_tags_change(self, event=None):
         if self.current_index is not None:
             tags_str = self.tags_text.get("1.0", tk.END).strip()
             tags = [t.strip() for t in tags_str.split(',') if t.strip()]
             self.current_gallery["characters"][self.current_index]['tags'] = tags
+            self.current_gallery["characters"][self.current_index]['modified'] = time.time()
             self.dirty = True
 
     def on_dna_change(self, event=None):
         if self.current_index is not None:
             self.current_gallery["characters"][self.current_index]['dna'] = self.dna_text.get("1.0", tk.END).strip()
+            self.current_gallery["characters"][self.current_index]['modified'] = time.time()
             self.dirty = True
 
     def save_current(self):
         if self.current_index is not None:
             self.save_galleries()
-            self.status_label.config(text="Character data saved successfully ✔️")
-            self.after(5000, lambda: self.status_label.config(text="Idle"))
+            self.set_status("Character data saved successfully ✔️")
             messagebox.showinfo("Saved", "Character data saved successfully!")
 
     def homogenize_dna(self):
@@ -805,17 +806,16 @@ class CharacterGallery(tk.Tk):
         self.dna_text.insert(tk.END, new)
         if self.current_index is not None:
             self.current_gallery["characters"][self.current_index]['dna'] = new.strip()
+            self.current_gallery["characters"][self.current_index]['modified'] = time.time()
             self.dirty = True
-        self.status_label.config(text="DNA homogenized ✔️")
-        self.after(5000, lambda: self.status_label.config(text="Idle"))
+        self.set_status("DNA homogenized ✔️")
 
     def copy_dna(self):
         data = self.dna_text.get("1.0", tk.END).strip()
         if data:
             self.clipboard_clear()
             self.clipboard_append(data)
-            self.status_label.config(text="DNA copied to clipboard ✔️")
-            self.after(5000, lambda: self.status_label.config(text="Idle"))
+            self.set_status("DNA copied to clipboard ✔️")
         else:
             messagebox.showinfo("Info", "No DNA to copy.")
 
