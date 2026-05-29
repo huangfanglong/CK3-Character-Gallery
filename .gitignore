@@ -1,5 +1,4 @@
 # Random unknown files
-[^.]*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -210,5 +209,5 @@ marimo/_lsp/
 __marimo__/
 
 # Data files
-*.json
-*.png
+character_gallery_data/*.json
+character_gallery_data/images/*.png

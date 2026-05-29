@@ -1,5 +1,7 @@
 # CK3 Character Gallery
 
+[![Tests](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml)
+
 A desktop application for managing and organizing Crusader Kings 3 character DNAs.
 
 ![alt text](https://i.imgur.com/PuKypMQ.png)
@@ -26,24 +28,29 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 
 1. **Requirements**:
    - Python 3.10+
-   - Tkinter (should be bundled with most Python installs)
-   - Pillow (`pip install pillow`)
+   - Tkinter (bundled with most Python installs)
+   - Pillow (see `requirements.txt`)
 
 2. **Clone the repository**:
    ```bash
    git clone https://github.com/huangfanglong/CK3-Character-Gallery.git
-   cd ck3-character-gallery
+   cd CK3-Character-Gallery
    ```
 
-3. **Run the application**:
+3. **Install dependencies**:
    ```bash
-   python ck3_character_gallery.py
+   pip install -r requirements.txt
+   ```
+
+4. **Run the application**:
+   ```bash
+   python main.py
    ```
 
 ## Or Build Executable (Optional)
    To create a standalone `.exe` file:
    ```bash
-   pyinstaller --onefile --noconsole ck3_character_gallery.py
+   pyinstaller --onefile --noconsole main.py
    ```
    And then run the .exe
 
