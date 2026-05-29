@@ -58,9 +58,15 @@ class DataManager:
             )
 
     def save(self) -> None:
-        """Persist the galleries list to the JSON data file on disk."""
-        with open(self.data_file, "w", encoding="utf-8") as f:
+        """Persist the galleries list to the JSON data file on disk.
+
+        Writes to a temporary file first, then atomically replaces the
+        real file so a crash during save never leaves corrupt data.
+        """
+        tmp = self.data_file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.galleries, f, indent=2)
+        os.replace(tmp, self.data_file)
 
     def find_gallery(self, name: str) -> GalleryDict | None:
         """Find a gallery by its name.
@@ -180,9 +186,10 @@ class DataManager:
 
         new_gallery: GalleryDict = {"name": gallery_name, "characters": []}
         for char in chars:
-            cid = char.get("id", str(uuid.uuid4()))
+            old_id = char.get("id")
+            cid = str(uuid.uuid4())
             char["id"] = cid
-            src_img = os.path.join(images_folder, f"{cid}.png")
+            src_img = os.path.join(images_folder, f"{old_id}.png")
             if os.path.exists(src_img):
                 char["image"] = self.copy_image_to_storage(src_img, cid)
             else:

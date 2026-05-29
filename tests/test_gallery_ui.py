@@ -88,6 +88,7 @@ class TestCharacterGalleryDataMethods:
         self.dm.save()
         self.app.load_gallery(self._INITIAL_GALLERIES[0]["name"])
         self.app.search_var.set("")
+        self.app._placeholder_active = False
 
     @classmethod
     def teardown_class(cls):

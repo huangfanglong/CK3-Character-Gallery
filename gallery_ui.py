@@ -140,7 +140,13 @@ class CharacterGallery(tk.Tk):
 
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
+        self._placeholder_text = "Search name or use tag:keyword..."
+        self._placeholder_active = True
+        self.search_entry.insert(0, self._placeholder_text)
+        self.search_entry.config(foreground="#888888")
         self.search_entry.pack(fill="x", padx=5, pady=(0, 5))
+        self.search_entry.bind("<FocusIn>", self._on_search_focus_in)
+        self.search_entry.bind("<FocusOut>", self._on_search_focus_out)
         self.search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
 
         list_container = tk.Frame(list_frame, bg="#3a3a3a")
@@ -335,6 +341,12 @@ class CharacterGallery(tk.Tk):
             if not new_name:
                 self.gallery_var.set(self.current_gallery["name"])
                 return
+            if self.data_manager.find_gallery(new_name):
+                messagebox.showwarning(
+                    "Duplicate", f"A gallery named '{new_name}' already exists."
+                )
+                self.gallery_var.set(self.current_gallery["name"])
+                return
             self.data_manager.galleries.append({"name": new_name, "characters": []})
             self.dirty = True
             self.save_galleries()
@@ -362,6 +374,11 @@ class CharacterGallery(tk.Tk):
             "Rename Gallery", f"Enter new name for '{old_name}':", parent=self
         )
         if not new_name or new_name == old_name:
+            return
+        if self.data_manager.find_gallery(new_name):
+            messagebox.showwarning(
+                "Duplicate", f"A gallery named '{new_name}' already exists."
+            )
             return
         self.current_gallery["name"] = new_name
         self.current_gallery["modified"] = time.time()
@@ -440,18 +457,36 @@ class CharacterGallery(tk.Tk):
     def refresh_list(self) -> None:
         """Repopulate the character listbox, preserving any active search filter."""
         assert self.current_gallery is not None
-        if self.search_var.get().strip():
+        if not self._placeholder_active and self.search_var.get().strip():
             self.filter_list()
-        else:
-            self.char_listbox.delete(0, tk.END)
-            self._char_indices.clear()
-            for i, char in enumerate(self.current_gallery["characters"]):
-                self.char_listbox.insert(tk.END, char.get("name", ""))
-                self._char_indices.append(i)
+            return
+        self.char_listbox.delete(0, tk.END)
+        self._char_indices.clear()
+        for i, char in enumerate(self.current_gallery["characters"]):
+            self.char_listbox.insert(tk.END, char.get("name", ""))
+            self._char_indices.append(i)
+
+    def _on_search_focus_in(self, event: tk.Event | None = None) -> None:
+        """Clear the placeholder text when the search box receives focus."""
+        if self._placeholder_active:
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.config(foreground="#eeeeee")
+            self._placeholder_active = False
+
+    def _on_search_focus_out(self, event: tk.Event | None = None) -> None:
+        """Restore the placeholder text when the search box loses focus and is empty."""
+        if not self.search_var.get().strip():
+            self._placeholder_active = True
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.insert(0, self._placeholder_text)
+            self.search_entry.config(foreground="#888888")
 
     def filter_list(self) -> None:
         """Filter the character listbox by search term or tag query."""
         assert self.current_gallery is not None
+        if self._placeholder_active:
+            self.refresh_list()
+            return
         term = self.search_var.get().lower()
         self.char_listbox.delete(0, tk.END)
         self._char_indices.clear()
