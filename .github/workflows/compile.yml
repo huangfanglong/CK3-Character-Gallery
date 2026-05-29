@@ -25,4 +25,4 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Compile check all source modules
-        run: python -m py_compile main.py gallery_ui.py data_manager.py image_cropper.py utils.py
+        run: python -m py_compile main.py gallery_ui.py data_manager.py image_cropper.py utils.py dialogs.py

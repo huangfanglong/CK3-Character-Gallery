@@ -210,7 +210,7 @@ class TestCharacterGalleryDataMethods:
         assert "Bob" in char_names
         # Select Bob and delete
         with mock.patch(
-            "tkinter.messagebox.askyesno", return_value=True
+            "gallery_ui.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         char_names = [c["name"] for c in self.app.current_gallery["characters"]]
@@ -266,7 +266,7 @@ class TestCharacterGalleryDataMethods:
         self.app.on_select(None)
         assert self.app.current_index == 2
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value="Chuck"
+            "gallery_ui.ask_string", return_value="Chuck"
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][2]["name"] == "Chuck"
@@ -282,7 +282,7 @@ class TestCharacterGalleryDataMethods:
         assert len(list(self.app.char_listbox.get(0, "end"))) == 1
         self.app.char_listbox.selection_set(0)
         with mock.patch(
-            "tkinter.messagebox.askyesno", return_value=True
+            "gallery_ui.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         items = list(self.app.char_listbox.get(0, "end"))
@@ -333,7 +333,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value=None
+            "gallery_ui.ask_string", return_value=None
         ):
             self.app.new_character()
         assert len(self.app.current_gallery["characters"]) == before
@@ -343,7 +343,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value="Diana"
+            "gallery_ui.ask_string", return_value="Diana"
         ):
             self.app.new_character()
         after = len(self.app.current_gallery["characters"])
@@ -362,7 +362,7 @@ class TestCharacterGalleryDataMethods:
         self.app.char_listbox.selection_set(0)
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "tkinter.messagebox.askyesno", return_value=False
+            "gallery_ui.ask_yesno", return_value=False
         ):
             self.app.delete_character()
         assert len(self.app.current_gallery["characters"]) == before
@@ -387,7 +387,7 @@ class TestCharacterGalleryDataMethods:
         self.app.char_listbox.selection_set(idx)
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "tkinter.messagebox.askyesno", return_value=True
+            "gallery_ui.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         assert len(self.app.current_gallery["characters"]) == before - 1
@@ -423,7 +423,7 @@ class TestCharacterGalleryDataMethods:
         self.app.current_index = 0
         old_name = self.app.current_gallery["characters"][0]["name"]
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value=None
+            "gallery_ui.ask_string", return_value=None
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][0]["name"] == old_name
@@ -433,7 +433,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         self.app.current_index = 0
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value="Alicia"
+            "gallery_ui.ask_string", return_value="Alicia"
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][0]["name"] == "Alicia"
@@ -498,7 +498,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery changes the gallery name."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value="Renamed"
+            "gallery_ui.ask_string", return_value="Renamed"
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -511,7 +511,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery does nothing if user cancels."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value=None
+            "gallery_ui.ask_string", return_value=None
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -521,7 +521,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery does nothing if new name equals old name."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value=old_name
+            "gallery_ui.ask_string", return_value=old_name
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -532,7 +532,7 @@ class TestCharacterGalleryDataMethods:
         self.dm.galleries = [{"name": "Only", "characters": []}]
         self.dm.save()
         self.app.load_gallery("Only")
-        with mock.patch("tkinter.messagebox.showwarning") as mock_warn:
+        with mock.patch("gallery_ui.show_warning") as mock_warn:
             self.app.delete_gallery_confirm()
             mock_warn.assert_called_once()
         assert len(self.dm.galleries) == 1
@@ -545,7 +545,7 @@ class TestCharacterGalleryDataMethods:
         self.dm.save()
         self.app.load_gallery("TempDel")
         with mock.patch(
-            "tkinter.messagebox.askyesno", return_value=True
+            "gallery_ui.ask_yesno", return_value=True
         ):
             self.app.delete_gallery_confirm()
         assert len(self.dm.galleries) == old_count
@@ -564,7 +564,7 @@ class TestCharacterGalleryDataMethods:
         """Selecting 'Create new gallery' adds a new gallery."""
         self.app.gallery_var.set("Create a new gallery...")
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value="Fresh"
+            "gallery_ui.ask_string", return_value="Fresh"
         ):
             self.app.on_gallery_change()
         assert self.dm.find_gallery("Fresh") is not None
@@ -580,7 +580,7 @@ class TestCharacterGalleryDataMethods:
         old_name = self.app.current_gallery["name"]
         self.app.gallery_var.set("Create a new gallery...")
         with mock.patch(
-            "tkinter.simpledialog.askstring", return_value=None
+            "gallery_ui.ask_string", return_value=None
         ):
             self.app.on_gallery_change()
         assert self.app.current_gallery["name"] == old_name
@@ -594,7 +594,7 @@ class TestCharacterGalleryDataMethods:
         try:
             with mock.patch(
                 "tkinter.filedialog.askdirectory", return_value=export_dir
-            ), mock.patch("tkinter.messagebox.showinfo"):
+            ), mock.patch("gallery_ui.show_info"):
                 self.app.export_gallery()
             out = os.path.join(export_dir, "Test Gallery")
             assert os.path.isdir(out)
@@ -624,7 +624,7 @@ class TestCharacterGalleryDataMethods:
             "tkinter.filedialog.askdirectory",
             return_value=tempfile.gettempdir(),
         ):
-            with mock.patch("tkinter.messagebox.showerror") as mock_err:
+            with mock.patch("gallery_ui.show_error") as mock_err:
                 self.app.import_gallery()
                 mock_err.assert_called_once()
 
@@ -645,9 +645,9 @@ class TestCharacterGalleryDataMethods:
                 "tkinter.filedialog.askdirectory", return_value=src
             ):
                 with mock.patch(
-                    "tkinter.simpledialog.askstring",
+                    "gallery_ui.ask_string",
                     return_value="Imported Gallery",
-                ), mock.patch("tkinter.messagebox.showinfo"):
+                ), mock.patch("gallery_ui.show_info"):
                     self.app.import_gallery()
 
             g = self.dm.find_gallery("Imported Gallery")
@@ -677,7 +677,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         self.app.current_index = 0
         with mock.patch(
-            "tkinter.messagebox.showinfo"
+            "gallery_ui.show_info"
         ) as mock_info:
             self.app.save_current()
             mock_info.assert_called_once()
@@ -762,7 +762,7 @@ class TestCharacterGalleryDataMethods:
         """copy_dna shows info when DNA is empty."""
         self.app.dna_text.delete("1.0", "end")
         with mock.patch(
-            "tkinter.messagebox.showinfo"
+            "gallery_ui.show_info"
         ) as mock_info:
             self.app.copy_dna()
             mock_info.assert_called_once()
@@ -820,8 +820,8 @@ class TestCharacterGalleryDataMethods:
         """on_close saves when dirty and user confirms."""
         self.app.dirty = True
         with mock.patch(
-            "tkinter.messagebox.askyesnocancel", return_value=True
-        ), mock.patch("tkinter.messagebox.showinfo"), mock.patch.object(
+            "gallery_ui.ask_yesnocancel", return_value=True
+        ), mock.patch("gallery_ui.show_info"), mock.patch.object(
             self.app, "destroy"
         ) as mock_destroy:
             self.app.on_close()
@@ -831,7 +831,7 @@ class TestCharacterGalleryDataMethods:
         """on_close destroys without saving when user chooses no."""
         self.app.dirty = True
         with mock.patch(
-            "tkinter.messagebox.askyesnocancel", return_value=False
+            "gallery_ui.ask_yesnocancel", return_value=False
         ), mock.patch.object(self.app, "destroy") as mock_destroy:
             self.app.on_close()
             mock_destroy.assert_called_once()
@@ -840,7 +840,7 @@ class TestCharacterGalleryDataMethods:
         """on_close returns without destroying when user cancels."""
         self.app.dirty = True
         with mock.patch(
-            "tkinter.messagebox.askyesnocancel", return_value=None
+            "gallery_ui.ask_yesnocancel", return_value=None
         ), mock.patch.object(self.app, "destroy") as mock_destroy:
             self.app.on_close()
             mock_destroy.assert_not_called()
@@ -921,7 +921,7 @@ class TestCharacterGalleryDataMethods:
         """change_portrait warns if no character is selected."""
         self.app.current_index = None
         with mock.patch(
-            "tkinter.messagebox.showwarning"
+            "gallery_ui.show_warning"
         ) as mock_warn:
             self.app.change_portrait()
             mock_warn.assert_called_once()

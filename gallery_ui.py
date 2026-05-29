@@ -10,14 +10,21 @@ import sys
 import time
 import tkinter as tk
 import uuid
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, ttk
 from typing import Any
 
+import sv_ttk
 from PIL import Image, ImageGrab, ImageTk
 
-import sv_ttk
-
 from data_manager import DataManager
+from dialogs import (
+    ask_string,
+    ask_yesno,
+    ask_yesnocancel,
+    show_error,
+    show_info,
+    show_warning,
+)
 from image_cropper import ImageCropper
 from utils import homogenize_dna
 
@@ -347,8 +354,8 @@ class CharacterGallery(tk.Tk):
 
     def _show_shortcuts(self) -> None:
         """Show a dialog listing all keyboard shortcuts."""
-        messagebox.showinfo(
-            "Keyboard Shortcuts",
+        show_info(
+            self, "Keyboard Shortcuts",
             "Ctrl+S     Save current character\n"
             "Ctrl+Z     Undo DNA edit\n"
             "Ctrl+N     New character entry\n"
@@ -395,7 +402,7 @@ class CharacterGallery(tk.Tk):
         if self.current_index is not None:
             self.save_galleries()
             self.set_status("Character data saved successfully \u2714\ufe0f")
-            messagebox.showinfo("Saved", "Character data saved successfully!")
+            show_info(self, "Saved", "Character data saved successfully!")
 
     # ------------------------------------------------------------------
     # Gallery management
@@ -406,15 +413,15 @@ class CharacterGallery(tk.Tk):
         assert self.current_gallery is not None
         name = self.gallery_var.get()
         if name == "Create a new gallery...":
-            new_name = simpledialog.askstring(
-                "New Gallery", "Enter gallery name:", parent=self
+            new_name = ask_string(
+                self, "New Gallery", "Enter gallery name:"
             )
             if not new_name:
                 self.gallery_var.set(self.current_gallery["name"])
                 return
             if self.data_manager.find_gallery(new_name):
-                messagebox.showwarning(
-                    "Duplicate", f"A gallery named '{new_name}' already exists."
+                show_warning(
+                    self, "Duplicate", f"A gallery named '{new_name}' already exists."
                 )
                 self.gallery_var.set(self.current_gallery["name"])
                 return
@@ -443,14 +450,14 @@ class CharacterGallery(tk.Tk):
         """Prompt the user to rename the current gallery."""
         assert self.current_gallery is not None
         old_name = self.current_gallery["name"]
-        new_name = simpledialog.askstring(
-            "Rename Gallery", f"Enter new name for '{old_name}':", parent=self
+        new_name = ask_string(
+            self, "Rename Gallery", f"Enter new name for '{old_name}':"
         )
         if not new_name or new_name == old_name:
             return
         if self.data_manager.find_gallery(new_name):
-            messagebox.showwarning(
-                "Duplicate", f"A gallery named '{new_name}' already exists."
+            show_warning(
+                self, "Duplicate", f"A gallery named '{new_name}' already exists."
             )
             return
         self.current_gallery["name"] = new_name
@@ -466,11 +473,11 @@ class CharacterGallery(tk.Tk):
         """Prompt for confirmation, then delete the current gallery."""
         assert self.current_gallery is not None
         if len(self.data_manager.galleries) == 1:
-            messagebox.showwarning("Warning", "Cannot delete the last gallery.")
+            show_warning(self, "Warning", "Cannot delete the last gallery.")
             return
         name = self.current_gallery["name"]
-        if not messagebox.askyesno(
-            "Delete Gallery", f"Delete gallery '{name}' and all its characters?"
+        if not ask_yesno(
+            self, "Delete Gallery", f"Delete gallery '{name}' and all its characters?"
         ):
             return
         self.data_manager.delete_gallery_images(self.current_gallery)
@@ -495,12 +502,12 @@ class CharacterGallery(tk.Tk):
             return
         out_dir = os.path.join(dest, name)
         if os.path.exists(out_dir):
-            if not messagebox.askyesno(
-                "Overwrite?", f"Folder '{out_dir}' exists. Overwrite?"
+            if not ask_yesno(
+                self, "Overwrite?", f"Folder '{out_dir}' exists. Overwrite?"
             ):
                 return
         self.data_manager.export_gallery(self.current_gallery, dest)
-        messagebox.showinfo("Exported", f"Gallery '{name}' exported to {out_dir}")
+        show_info(self, "Exported", f"Gallery '{name}' exported to {out_dir}")
 
     def import_gallery(self) -> None:
         """Import a gallery from a folder on disk."""
@@ -509,10 +516,10 @@ class CharacterGallery(tk.Tk):
             return
         json_file = os.path.join(folder, "characters.json")
         if not os.path.exists(json_file):
-            messagebox.showerror("Error", "No characters.json found in selected folder.")
+            show_error(self, "Error", "No characters.json found in selected folder.")
             return
-        gallery_name = simpledialog.askstring(
-            "Import Gallery", "Enter name for imported gallery:", parent=self
+        gallery_name = ask_string(
+            self, "Import Gallery", "Enter name for imported gallery:"
         )
         if not gallery_name:
             return
@@ -523,7 +530,7 @@ class CharacterGallery(tk.Tk):
         self.gallery_var.set(gallery_name)
         self.after(1, self.gallery_box.selection_clear)
         self.load_gallery(gallery_name)
-        messagebox.showinfo("Imported", f"Gallery '{gallery_name}' imported successfully")
+        show_info(self, "Imported", f"Gallery '{gallery_name}' imported successfully")
 
     # ------------------------------------------------------------------
     # Character list display
@@ -640,7 +647,7 @@ class CharacterGallery(tk.Tk):
     def new_character(self) -> None:
         """Create a new character entry in the current gallery."""
         assert self.current_gallery is not None
-        name = simpledialog.askstring("New Character", "Enter character name:", parent=self)
+        name = ask_string(self, "New Character", "Enter character name:")
         if not name:
             return
         new_char = self.data_manager.create_character(name)
@@ -660,7 +667,7 @@ class CharacterGallery(tk.Tk):
         sel = list(self.char_listbox.curselection())
         if not sel:
             return
-        if not messagebox.askyesno("Confirm", f"Delete {len(sel)} character(s)?"):
+        if not ask_yesno(self, "Confirm", f"Delete {len(sel)} character(s)?"):
             return
         char_indices = [self._char_idx(idx) for idx in sel]
         for idx in char_indices:
@@ -720,8 +727,8 @@ class CharacterGallery(tk.Tk):
             return
         idx = self.current_index
         old_name = self.current_gallery["characters"][idx]["name"]
-        new_name = simpledialog.askstring(
-            "Rename Character", f"Enter new name for '{old_name}':", parent=self
+        new_name = ask_string(
+            self, "Rename Character", f"Enter new name for '{old_name}':"
         )
         if new_name and new_name != old_name:
             self.current_gallery["characters"][idx]["name"] = new_name
@@ -786,7 +793,7 @@ class CharacterGallery(tk.Tk):
         """Open a file dialog to select and crop a new portrait image."""
         assert self.current_gallery is not None
         if self.current_index is None:
-            messagebox.showwarning("Warning", "Please select a character first.")
+            show_warning(self, "Warning", "Please select a character first.")
             return
         file_path = filedialog.askopenfilename(
             title="Select Portrait Image",
@@ -891,7 +898,7 @@ class CharacterGallery(tk.Tk):
             self.clipboard_append(data)
             self.set_status("DNA copied to clipboard \u2714\ufe0f")
         else:
-            messagebox.showinfo("Info", "No DNA to copy.")
+            show_info(self, "Info", "No DNA to copy.")
 
     # ------------------------------------------------------------------
     # Misc
@@ -914,8 +921,8 @@ class CharacterGallery(tk.Tk):
     def on_close(self) -> None:
         """Handle the window close event, prompting to save unsaved changes."""
         if self.dirty:
-            resp = messagebox.askyesnocancel(
-                "Unsaved Changes",
+            resp = ask_yesnocancel(
+                self, "Unsaved Changes",
                 "You have unsaved changes. Save before exit?",
             )
             if resp is None:
