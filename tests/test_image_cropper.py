@@ -7,9 +7,9 @@ Uses a single session-scoped Tk root to avoid the Windows CI hang
 that occurs when creating multiple Tk() instances in the same process.
 """
 
+import gc
 import os
 import tempfile
-import gc
 import tkinter as tk
 
 import pytest

@@ -9,9 +9,10 @@ new_character, delete_character, duplicate_character, change_portrait,
 on_tags_change, on_dna_change, save_current, homogenize_dna, copy_dna.
 """
 
-import os
-import tempfile
 import json
+import os
+import shutil
+import tempfile
 from unittest import mock
 
 from data_manager import DataManager
@@ -494,7 +495,6 @@ class TestCharacterGalleryDataMethods:
             assert os.path.isfile(os.path.join(out, "characters.json"))
             assert os.path.isdir(os.path.join(out, "images"))
         finally:
-            import shutil
             shutil.rmtree(export_dir, ignore_errors=True)
 
     def test_export_gallery_cancelled(self):
@@ -552,7 +552,6 @@ class TestCharacterGalleryDataMethods:
             self.dm.galleries.remove(g)
             self.dm.save()
         finally:
-            import shutil
             shutil.rmtree(src, ignore_errors=True)
 
     # ── Persistence ───────────────────────────────────────────────────
@@ -797,6 +796,3 @@ class TestCharacterGalleryDataMethods:
             "tkinter.filedialog.askopenfilename", return_value=""
         ):
             self.app.change_portrait()  # should not raise
-
-
-import shutil  # noqa: E402

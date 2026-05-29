@@ -6,6 +6,7 @@ select the visible region of a source image before saving it as a portrait.
 
 import tkinter as tk
 from tkinter import ttk
+
 from PIL import Image, ImageTk
 
 
@@ -36,6 +37,7 @@ class ImageCropper(tk.Toplevel):
         self.original: Image.Image = Image.open(image_path)
         self.display_size: int = 600
         self.crop_size: int = 300
+        self.image_id: int | None = None
 
         self.scale_factor: float = min(
             self.display_size / self.original.width,
@@ -52,8 +54,6 @@ class ImageCropper(tk.Toplevel):
         )
         self.canvas.pack(pady=10)
 
-        self._update_display_image()
-
         cx = self.display_size // 2
         cy = self.display_size // 2
         self.crop_rect = self.canvas.create_rectangle(
@@ -64,6 +64,8 @@ class ImageCropper(tk.Toplevel):
             outline="red",
             width=3,
         )
+
+        self._update_display_image()
 
         ttk.Label(
             self,
@@ -92,12 +94,12 @@ class ImageCropper(tk.Toplevel):
         disp_h = int(self.original.height * self.scale_factor)
         self.display_image = self.original.resize((disp_w, disp_h), Image.Resampling.LANCZOS)
         self.photo = ImageTk.PhotoImage(self.display_image)
-        if hasattr(self, "image_id"):
+        if self.image_id is not None:
             self.canvas.delete(self.image_id)
         x = self.display_size // 2
         y = self.display_size // 2
         self.image_id = self.canvas.create_image(x, y, image=self.photo)
-        if hasattr(self, "crop_rect"):
+        if self.crop_rect is not None:
             self.canvas.tag_raise(self.crop_rect)
 
     def on_press(self, event: tk.Event) -> None:
@@ -107,6 +109,7 @@ class ImageCropper(tk.Toplevel):
 
     def on_drag(self, event: tk.Event) -> None:
         """Drag the image by the delta from the last recorded cursor position."""
+        assert self.image_id is not None
         dx = event.x - self.drag_start_x
         dy = event.y - self.drag_start_y
         self.canvas.move(self.image_id, dx, dy)
@@ -127,12 +130,14 @@ class ImageCropper(tk.Toplevel):
         max_scale = 10.0
         self.scale_factor = max(min_scale, min(self.scale_factor, max_scale))
 
+        assert self.image_id is not None
         coords = self.canvas.coords(self.image_id)
         self._update_display_image()
         self.canvas.coords(self.image_id, coords)
 
     def ok(self) -> None:
         """Calculate the crop rectangle in original image space and close the dialog."""
+        assert self.image_id is not None
         coords = self.canvas.coords(self.image_id)
         img_x, img_y = coords[0], coords[1]
 

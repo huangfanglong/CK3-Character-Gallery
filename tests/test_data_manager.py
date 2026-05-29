@@ -5,15 +5,11 @@ Run with: python -m pytest tests/ -v
 
 import json
 import os
-import shutil
-import tempfile
-import time
 
 import pytest
 
 from data_manager import DataManager
 from utils import homogenize_dna
-
 
 # ---------------------------------------------------------------------------
 # DataManager tests

@@ -4,13 +4,14 @@ Provides the three-panel UI for managing character galleries, viewing/editing
 portraits, DNA data, and tags.
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
-from PIL import Image, ImageTk, ImageGrab
 import os
-import uuid
 import time
+import tkinter as tk
+import uuid
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
+
+from PIL import Image, ImageGrab, ImageTk
 
 from data_manager import DataManager
 from image_cropper import ImageCropper
@@ -318,6 +319,7 @@ class CharacterGallery(tk.Tk):
 
     def on_gallery_change(self, event: tk.Event | None = None) -> None:
         """Handle gallery combobox selection, including 'Create new gallery'."""
+        assert self.current_gallery is not None
         name = self.gallery_var.get()
         if name == "Create a new gallery...":
             new_name = simpledialog.askstring(
@@ -347,6 +349,7 @@ class CharacterGallery(tk.Tk):
 
     def rename_gallery(self) -> None:
         """Prompt the user to rename the current gallery."""
+        assert self.current_gallery is not None
         old_name = self.current_gallery["name"]
         new_name = simpledialog.askstring(
             "Rename Gallery", f"Enter new name for '{old_name}':", parent=self
@@ -363,6 +366,7 @@ class CharacterGallery(tk.Tk):
 
     def delete_gallery_confirm(self) -> None:
         """Prompt for confirmation, then delete the current gallery."""
+        assert self.current_gallery is not None
         if len(self.data_manager.galleries) == 1:
             messagebox.showwarning("Warning", "Cannot delete the last gallery.")
             return
@@ -386,6 +390,7 @@ class CharacterGallery(tk.Tk):
 
     def export_gallery(self) -> None:
         """Export the current gallery to a folder on disk."""
+        assert self.current_gallery is not None
         name = self.current_gallery["name"]
         dest = filedialog.askdirectory(title=f"Export gallery '{name}' to folder")
         if not dest:
@@ -427,12 +432,14 @@ class CharacterGallery(tk.Tk):
 
     def refresh_list(self) -> None:
         """Repopulate the character listbox from the current gallery's characters."""
+        assert self.current_gallery is not None
         self.char_listbox.delete(0, tk.END)
         for char in self.current_gallery["characters"]:
             self.char_listbox.insert(tk.END, char.get("name", ""))
 
     def filter_list(self) -> None:
         """Filter the character listbox by search term or tag query."""
+        assert self.current_gallery is not None
         term = self.search_var.get().lower()
         self.char_listbox.delete(0, tk.END)
         if term.startswith(("tag:", "tags:")):
@@ -459,13 +466,14 @@ class CharacterGallery(tk.Tk):
         Args:
             index: Index of the character within the current gallery's character list.
         """
+        assert self.current_gallery is not None
         if 0 <= index < len(self.current_gallery["characters"]):
             self.current_index = index
             char = self.current_gallery["characters"][index]
 
             image_file = char.get("image")
             if image_file and os.path.exists(image_file):
-                img = Image.open(image_file)
+                img: Image.Image = Image.open(image_file)
                 img = img.resize((450, 450), Image.Resampling.LANCZOS)
                 self.portrait_photo = ImageTk.PhotoImage(img)
                 if self.portrait_image_id:
@@ -490,6 +498,7 @@ class CharacterGallery(tk.Tk):
 
     def new_character(self) -> None:
         """Create a new character entry in the current gallery."""
+        assert self.current_gallery is not None
         name = simpledialog.askstring("New Character", "Enter character name:", parent=self)
         if not name:
             return
@@ -506,6 +515,7 @@ class CharacterGallery(tk.Tk):
 
     def delete_character(self) -> None:
         """Delete the selected character(s) after confirmation."""
+        assert self.current_gallery is not None
         sel = list(self.char_listbox.curselection())
         if not sel:
             return
@@ -533,6 +543,7 @@ class CharacterGallery(tk.Tk):
 
     def duplicate_character(self) -> None:
         """Duplicate the currently selected character."""
+        assert self.current_gallery is not None
         if self.current_index is None:
             return
         char = self.current_gallery["characters"][self.current_index]
@@ -562,6 +573,7 @@ class CharacterGallery(tk.Tk):
 
     def rename_character(self) -> None:
         """Rename the currently selected character."""
+        assert self.current_gallery is not None
         if self.current_index is None:
             return
         idx = self.current_index
@@ -589,6 +601,7 @@ class CharacterGallery(tk.Tk):
             mode: Sort mode - one of 'name_asc', 'name_desc', 'created_asc',
                   'created_desc', 'modified_desc'.
         """
+        assert self.current_gallery is not None
         lst = self.current_gallery["characters"]
         if mode == "name_asc":
             lst.sort(key=lambda c: c["name"].lower())
@@ -611,6 +624,7 @@ class CharacterGallery(tk.Tk):
 
     def on_drop(self, event: tk.Event) -> None:
         """Complete a drag-drop reorder, moving the character to the drop position."""
+        assert self.current_gallery is not None
         dst = self.char_listbox.nearest(event.y)
         if dst != self._drag_idx:
             lst = self.current_gallery["characters"]
@@ -628,6 +642,7 @@ class CharacterGallery(tk.Tk):
 
     def change_portrait(self) -> None:
         """Open a file dialog to select and crop a new portrait image."""
+        assert self.current_gallery is not None
         if self.current_index is None:
             messagebox.showwarning("Warning", "Please select a character first.")
             return
@@ -655,6 +670,7 @@ class CharacterGallery(tk.Tk):
 
     def paste_from_clipboard(self) -> None:
         """Paste an image from the system clipboard as the current character's portrait."""
+        assert self.current_gallery is not None
         if self.current_index is None:
             return
         try:
@@ -698,6 +714,7 @@ class CharacterGallery(tk.Tk):
 
     def on_tags_change(self, event: tk.Event | None = None) -> None:
         """Update the character's tags from the tags text widget on every keystroke."""
+        assert self.current_gallery is not None
         if self.current_index is not None:
             tags_str = self.tags_text.get("1.0", tk.END).strip()
             tags = [t.strip() for t in tags_str.split(",") if t.strip()]
@@ -707,6 +724,7 @@ class CharacterGallery(tk.Tk):
 
     def on_dna_change(self, event: tk.Event | None = None) -> None:
         """Update the character's DNA string from the DNA text widget on every keystroke."""
+        assert self.current_gallery is not None
         if self.current_index is not None:
             dna = self.dna_text.get("1.0", tk.END).strip()
             self.current_gallery["characters"][self.current_index]["dna"] = dna
@@ -715,6 +733,7 @@ class CharacterGallery(tk.Tk):
 
     def on_homogenize_dna(self) -> None:
         """Apply DNA homogenisation to the current DNA text and update the character."""
+        assert self.current_gallery is not None
         text = self.dna_text.get("1.0", tk.END)
         new_text = homogenize_dna(text)
         self.dna_text.delete("1.0", tk.END)

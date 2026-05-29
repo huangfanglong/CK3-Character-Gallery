@@ -7,8 +7,8 @@ as well as managing character portrait images on disk.
 import json
 import os
 import shutil
-import uuid
 import time
+import uuid
 from typing import Any
 
 CharacterDict = dict[str, Any]
@@ -42,7 +42,7 @@ class DataManager:
             return
 
         try:
-            with open(self.data_file, "r", encoding="utf-8") as f:
+            with open(self.data_file, encoding="utf-8") as f:
                 self.galleries = json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
             backup = self.data_file + ".backup"
@@ -175,7 +175,7 @@ class DataManager:
         json_file = os.path.join(folder, "characters.json")
         images_folder = os.path.join(folder, "images")
 
-        with open(json_file, "r", encoding="utf-8") as f:
+        with open(json_file, encoding="utf-8") as f:
             chars: list[dict[str, Any]] = json.load(f)
 
         new_gallery: GalleryDict = {"name": gallery_name, "characters": []}
