@@ -15,6 +15,8 @@ from typing import Any
 
 from PIL import Image, ImageGrab, ImageTk
 
+import sv_ttk
+
 from data_manager import DataManager
 from image_cropper import ImageCropper
 from utils import homogenize_dna
@@ -33,7 +35,7 @@ class CharacterGallery(tk.Tk):
         super().__init__()
         self.title("CK3 Character Gallery")
         self.geometry("1600x900")
-        self.configure(bg="#2e2e2e")
+        self.configure(bg="#1c1c1c")
         self._set_app_icon()
 
         self.data_manager = data_manager or DataManager()
@@ -61,7 +63,7 @@ class CharacterGallery(tk.Tk):
         self.status_label = tk.Label(
             self,
             text="Idle",
-            bg="#2e2e2e",
+            bg="#1c1c1c",
             fg="#888888",
             font=("TkDefaultFont", 8),
         )
@@ -96,12 +98,9 @@ class CharacterGallery(tk.Tk):
 
     def setup_ui(self) -> None:
         """Build the three-panel application layout."""
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TButton", foreground="#ffffff", background="#555555")
-        style.configure("TLabel", foreground="#dddddd", background="#2e2e2e")
+        sv_ttk.set_theme("dark")
 
-        main_frame = tk.Frame(self, bg="#2e2e2e")
+        main_frame = tk.Frame(self, bg="#1c1c1c")
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._build_left_panel(main_frame)
@@ -110,11 +109,11 @@ class CharacterGallery(tk.Tk):
 
     def _build_left_panel(self, parent: tk.Frame) -> None:
         """Build the gallery selector, search box, and character list."""
-        list_frame = tk.Frame(parent, bg="#3a3a3a", width=200)
+        list_frame = tk.Frame(parent, bg="#1c1c1c", width=250)
         list_frame.pack(side="left", fill="y", padx=(0, 10))
         list_frame.pack_propagate(False)
 
-        top_frame = tk.Frame(list_frame, bg="#3a3a3a")
+        top_frame = tk.Frame(list_frame, bg="#1c1c1c")
         top_frame.pack(fill="x", pady=(5, 2))
 
         self.gallery_var = tk.StringVar()
@@ -127,26 +126,36 @@ class CharacterGallery(tk.Tk):
         self.gallery_box.pack(side="left", fill="x", expand=True, padx=(5, 0))
         self.gallery_box.bind("<<ComboboxSelected>>", self.on_gallery_change)
 
-        menu_btn = ttk.Menubutton(top_frame, text="...", width=3)
-        menu = tk.Menu(menu_btn, tearoff=False)
-        menu.add_command(label="Rename Gallery", command=self.rename_gallery)
-        menu.add_command(label="Delete Gallery", command=self.delete_gallery_confirm)
-        menu.add_separator()
-        menu.add_command(label="Export Gallery", command=self.export_gallery)
-        menu.add_command(label="Import Gallery", command=self.import_gallery)
-        menu.add_separator()
-        sort_sub = tk.Menu(menu, tearoff=False)
+        self.gallery_menu = tk.Menu(self, tearoff=False,
+            bg="#2b2b2b", fg="#cccccc")
+        self.gallery_menu.add_command(label="Rename Gallery", command=self.rename_gallery)
+        self.gallery_menu.add_command(label="Delete Gallery", command=self.delete_gallery_confirm)
+        self.gallery_menu.add_separator()
+        self.gallery_menu.add_command(label="Export Gallery", command=self.export_gallery)
+        self.gallery_menu.add_command(label="Import Gallery", command=self.import_gallery)
+        self.gallery_menu.add_separator()
+        sort_sub = tk.Menu(self.gallery_menu, tearoff=False,
+            bg="#2b2b2b", fg="#cccccc")
         sort_sub.add_command(label="Name A→Z", command=lambda: self.sort_characters("name_asc"))
         sort_sub.add_command(label="Name Z→A", command=lambda: self.sort_characters("name_desc"))
         sort_sub.add_command(label="Created ↑", command=lambda: self.sort_characters("created_asc"))
         sort_sub.add_command(label="Created ↓", command=lambda: self.sort_characters("created_desc"))
         sort_sub.add_command(label="Modified ↓", command=lambda: self.sort_characters("modified_desc"))
-        menu.add_cascade(label="Sort Characters", menu=sort_sub)
-        menu.add_separator()
-        menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
-        menu_btn["menu"] = menu
-        menu_btn.pack(side="left", padx=(2, 5), pady=(2, 0))
-        menu_btn.configure(padding=(2, 0, 2, 0))
+        self.gallery_menu.add_cascade(label="Sort Characters", menu=sort_sub)
+        self.gallery_menu.add_separator()
+        self.gallery_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
+
+        menu_btn = tk.Button(
+            top_frame, text="\u2699", font=("Segoe UI", 12),
+            bg="#1c1c1c", fg="#cccccc", bd=0, relief="flat",
+            activebackground="#555555", activeforeground="#ffffff",
+            command=lambda: self.gallery_menu.tk_popup(
+                menu_btn.winfo_rootx(), menu_btn.winfo_rooty() + menu_btn.winfo_height()
+            ),
+        )
+        menu_btn.bind("<Enter>", lambda e: menu_btn.config(bg="#3a3a3a"))
+        menu_btn.bind("<Leave>", lambda e: menu_btn.config(bg="#1c1c1c"))
+        menu_btn.pack(side="left", padx=2)
 
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
@@ -159,15 +168,15 @@ class CharacterGallery(tk.Tk):
         self.search_entry.bind("<FocusOut>", self._on_search_focus_out)
         self.search_entry.bind("<KeyRelease>", lambda e: self.filter_list())
 
-        list_container = tk.Frame(list_frame, bg="#3a3a3a")
-        list_container.pack(fill="both", expand=True)
+        list_container = tk.Frame(list_frame, bg="#1c1c1c")
+        list_container.pack(fill="both", expand=True, padx=5)
 
         scrollbar = ttk.Scrollbar(list_container)
         scrollbar.pack(side="right", fill="y")
 
         self.char_listbox = tk.Listbox(
             list_container,
-            bg="#1e1e1e",
+            bg="#1c1c1c",
             fg="#eeeeee",
             font=("Arial", 10),
             selectmode="extended",
@@ -182,7 +191,8 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.bind("<ButtonPress-1>", self.start_drag)
         self.char_listbox.bind("<ButtonRelease-1>", self.on_drop)
 
-        self.char_menu = tk.Menu(self, tearoff=False)
+        self.char_menu = tk.Menu(self, tearoff=False,
+            bg="#2b2b2b", fg="#cccccc")
         self.char_menu.add_command(label="Rename", command=self.rename_character)
         self.char_menu.add_command(label="Duplicate", command=self.duplicate_character)
         self.char_menu.add_command(label="Copy DNA", command=self.copy_dna)
@@ -193,24 +203,24 @@ class CharacterGallery(tk.Tk):
         self.char_count_label = tk.Label(
             list_frame,
             text="",
-            bg="#3a3a3a",
+            bg="#1c1c1c",
             fg="#888888",
             font=("TkDefaultFont", 8),
         )
         self.char_count_label.pack(fill="x", padx=5, pady=(2, 0))
 
-        btn_frame = tk.Frame(list_frame, bg="#3a3a3a")
-        btn_frame.pack(fill="x", pady=5)
-        ttk.Button(btn_frame, text="+ New (Ctrl+N)", command=self.new_character, width=16).pack(
+        btn_frame = tk.Frame(list_frame, bg="#1c1c1c")
+        btn_frame.pack(fill="x", pady=5, padx=5)
+        ttk.Button(btn_frame, text="+ New", command=self.new_character, width=12).pack(
             side="left", padx=2
         )
-        ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=8).pack(
+        ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=12).pack(
             side="right", padx=2
         )
 
     def _build_middle_panel(self, parent: tk.Frame) -> None:
         """Build the portrait display and tag editor."""
-        portrait_frame = tk.Frame(parent, bg="#2e2e2e", width=525)
+        portrait_frame = tk.Frame(parent, bg="#1c1c1c", width=525)
         portrait_frame.pack(side="left", fill="y", padx=10)
         portrait_frame.pack_propagate(False)
 
@@ -220,7 +230,7 @@ class CharacterGallery(tk.Tk):
             portrait_frame,
             width=450,
             height=450,
-            bg="#1e1e1e",
+            bg="#1c1c1c",
             highlightthickness=2,
             highlightbackground="#666666",
         )
@@ -230,7 +240,7 @@ class CharacterGallery(tk.Tk):
         self.portrait_image_id: int | None = None
         self.portrait_photo: ImageTk.PhotoImage | None = None
 
-        ttk.Button(portrait_frame, text="Change Portrait (Ctrl+V)", command=self.change_portrait).pack(pady=5)
+        ttk.Button(portrait_frame, text="Change Portrait", command=self.change_portrait).pack(pady=5)
 
         ttk.Label(portrait_frame, text="Tags", font=("Arial", 12, "bold")).pack(pady=(20, 5))
         ttk.Label(
@@ -242,7 +252,7 @@ class CharacterGallery(tk.Tk):
         self.tags_text = tk.Text(
             portrait_frame,
             wrap="word",
-            bg="#1e1e1e",
+            bg="#1c1c1c",
             fg="#eeeeee",
             font=("Arial", 10),
             insertbackground="white",
@@ -254,18 +264,18 @@ class CharacterGallery(tk.Tk):
 
     def _build_right_panel(self, parent: tk.Frame) -> None:
         """Build the DNA text editor with action buttons."""
-        dna_frame = tk.Frame(parent, bg="#2e2e2e", width=675)
+        dna_frame = tk.Frame(parent, bg="#1c1c1c", width=675)
         dna_frame.pack(side="right", fill="both", expand=True)
 
         ttk.Label(dna_frame, text="Character DNA", font=("Arial", 12, "bold")).pack(pady=5)
 
-        text_container = tk.Frame(dna_frame, bg="#2e2e2e")
+        text_container = tk.Frame(dna_frame, bg="#1c1c1c")
         text_container.pack(fill="both", expand=True)
 
         self.dna_text = tk.Text(
             text_container,
             wrap="none",
-            bg="#1e1e1e",
+            bg="#1c1c1c",
             fg="#eeeeee",
             font=("Consolas", 10),
             insertbackground="white",
@@ -277,7 +287,7 @@ class CharacterGallery(tk.Tk):
         self.dna_text.config(yscrollcommand=dna_scroll_y.set)
         self.dna_text.bind("<KeyRelease>", self.on_dna_change)
 
-        btns_frame = tk.Frame(dna_frame, bg="#2e2e2e")
+        btns_frame = tk.Frame(dna_frame, bg="#1c1c1c")
         btns_frame.pack(fill="x", pady=5)
         ttk.Button(
             btns_frame,
@@ -293,7 +303,7 @@ class CharacterGallery(tk.Tk):
         ).pack(side="left", padx=(0, 5))
         ttk.Button(
             btns_frame,
-            text="Save Changes (Ctrl+S)",
+            text="Save Changes",
             command=self.save_current,
             width=12,
         ).pack(side="left", expand=True)
@@ -413,9 +423,11 @@ class CharacterGallery(tk.Tk):
             self.save_galleries()
             self._update_gallery_combobox()
             self.gallery_var.set(new_name)
+            self.after(1, self.gallery_box.selection_clear)
             self.load_gallery(new_name)
         else:
             self.load_gallery(name)
+            self.after(1, self.gallery_box.selection_clear)
 
     def load_gallery(self, name: str) -> None:
         """Switch the active gallery to the one with the given name.
@@ -447,6 +459,7 @@ class CharacterGallery(tk.Tk):
         self.save_galleries()
         self._update_gallery_combobox()
         self.gallery_var.set(new_name)
+        self.after(1, self.gallery_box.selection_clear)
         self.set_status(f"Gallery renamed to '{new_name}' \u2714\ufe0f")
 
     def delete_gallery_confirm(self) -> None:
@@ -508,6 +521,7 @@ class CharacterGallery(tk.Tk):
         self.save_galleries()
         self._update_gallery_combobox()
         self.gallery_var.set(gallery_name)
+        self.after(1, self.gallery_box.selection_clear)
         self.load_gallery(gallery_name)
         messagebox.showinfo("Imported", f"Gallery '{gallery_name}' imported successfully")
 
