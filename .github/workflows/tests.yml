@@ -13,6 +13,7 @@ on:
 jobs:
   tests-windows:
     runs-on: windows-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
@@ -27,11 +28,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
 
-      - name: Run gallery UI + data manager tests
-        run: python -m pytest tests/test_gallery_ui.py tests/test_data_manager.py -v
-
-      - name: Run image cropper tests
-        run: python -m pytest tests/test_image_cropper.py -v
+      - name: Run tests
+        run: python -m pytest tests/ -v
 
   tests-linux:
     runs-on: ubuntu-latest

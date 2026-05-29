@@ -751,7 +751,8 @@ class TestCharacterGalleryDataMethods:
         event.y = 20
         event.x_root = 100
         event.y_root = 100
-        self.app.show_char_menu(event)
+        with mock.patch.object(self.app.char_menu, "tk_popup"):
+            self.app.show_char_menu(event)
 
     # ── Clipboard ─────────────────────────────────────────────────────
 
