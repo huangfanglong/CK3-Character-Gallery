@@ -124,6 +124,7 @@ class ImageCropper(tk.Toplevel):
         self.scale_factor = self._initial_scale
         self._update_display_image()
         center = self.display_size // 2
+        assert self.image_id is not None
         self.canvas.coords(self.image_id, (center, center))
 
     def on_press(self, event: tk.Event) -> None:

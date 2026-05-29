@@ -9,7 +9,7 @@ module = ["tkinter", "tkinter.ttk"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["PIL", "PIL.Image", "PIL.ImageTk", "PIL.ImageGrab"]
+module = ["PIL"]
 ignore_missing_imports = true
 
 [tool.ruff]

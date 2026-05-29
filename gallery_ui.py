@@ -33,6 +33,7 @@ class CharacterGallery(tk.Tk):
         self.title("CK3 Character Gallery")
         self.geometry("1600x900")
         self.configure(bg="#2e2e2e")
+        self._set_app_icon()
 
         self.data_manager = data_manager or DataManager()
 
@@ -305,6 +306,13 @@ class CharacterGallery(tk.Tk):
     # ------------------------------------------------------------------
     # Gallery combobox utilities
     # ------------------------------------------------------------------
+
+    def _set_app_icon(self) -> None:
+        """Set the window and taskbar icon from an .ico file if available."""
+        for candidate in ("app.ico", os.path.join("assets", "app.ico")):
+            if os.path.isfile(candidate):
+                self.iconbitmap(candidate)
+                return
 
     def _update_gallery_combobox(self) -> None:
         """Refresh the gallery dropdown values from the data manager."""
