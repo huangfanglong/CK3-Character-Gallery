@@ -438,13 +438,16 @@ class CharacterGallery(tk.Tk):
     # ------------------------------------------------------------------
 
     def refresh_list(self) -> None:
-        """Repopulate the character listbox from the current gallery's characters."""
+        """Repopulate the character listbox, preserving any active search filter."""
         assert self.current_gallery is not None
-        self.char_listbox.delete(0, tk.END)
-        self._char_indices.clear()
-        for i, char in enumerate(self.current_gallery["characters"]):
-            self.char_listbox.insert(tk.END, char.get("name", ""))
-            self._char_indices.append(i)
+        if self.search_var.get().strip():
+            self.filter_list()
+        else:
+            self.char_listbox.delete(0, tk.END)
+            self._char_indices.clear()
+            for i, char in enumerate(self.current_gallery["characters"]):
+                self.char_listbox.insert(tk.END, char.get("name", ""))
+                self._char_indices.append(i)
 
     def filter_list(self) -> None:
         """Filter the character listbox by search term or tag query."""

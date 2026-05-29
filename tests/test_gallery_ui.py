@@ -87,6 +87,7 @@ class TestCharacterGalleryDataMethods:
         )
         self.dm.save()
         self.app.load_gallery(self._INITIAL_GALLERIES[0]["name"])
+        self.app.search_var.set("")
 
     @classmethod
     def teardown_class(cls):
@@ -247,11 +248,30 @@ class TestCharacterGalleryDataMethods:
         # Restore
         self.app.current_gallery["characters"][2]["name"] = "Charlie"
         self.dm.save()
-        """on_select calls select_character with the selected index."""
+
+    def test_filter_persists_after_delete(self):
+        """Active filter must remain applied after a character is deleted."""
         self.app.load_gallery("Test Gallery")
-        self.app.char_listbox.selection_set(1)
-        self.app.on_select(None)
-        assert self.app.current_index == 1
+        self.app.search_var.set("bob")
+        self.app.filter_list()
+        assert len(list(self.app.char_listbox.get(0, "end"))) == 1
+        self.app.char_listbox.selection_set(0)
+        with mock.patch(
+            "tkinter.messagebox.askyesno", return_value=True
+        ):
+            self.app.delete_character()
+        items = list(self.app.char_listbox.get(0, "end"))
+        assert "Bob" not in items
+        assert len(items) == 0
+
+    def test_filter_persists_after_sort(self):
+        """Active filter must remain applied after sorting."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("char")
+        self.app.filter_list()
+        self.app.sort_characters("name_asc")
+        items = list(self.app.char_listbox.get(0, "end"))
+        assert items == ["Charlie"]
 
     def test_select_character_loads_dna(self):
         """select_character loads DNA text into dna_text widget."""

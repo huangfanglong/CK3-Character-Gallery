@@ -18,12 +18,13 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 - **Hotkeys**:
   - Ctrl+S: Save current character data.
   - Ctrl+Z: Undo DNA edits.
-  - Ctrl+N: New Character entry
-  - Ctrl+D: Duplicate character entry
-  - Ctrl+E: Exports current gallery
-  - Ctrl+F: Search
+  - Ctrl+N: New Character entry.
+  - Ctrl+D: Duplicate character entry.
+  - Ctrl+E: Exports current gallery.
+  - Ctrl+F: Search.
+  - Ctrl+V: Support pasting an image from clipboard to be used as Portrait img on the selected entry.
   - Delete: Remove selected characters.
-  - F2: Renames selected character
+  - F2: Renames selected character.
 
 ## Installation
 
