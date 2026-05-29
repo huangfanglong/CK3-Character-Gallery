@@ -4,6 +4,7 @@ Provides the three-panel UI for managing character galleries, viewing/editing
 portraits, DNA data, and tags.
 """
 
+import json
 import os
 import time
 import tkinter as tk
@@ -49,6 +50,11 @@ class CharacterGallery(tk.Tk):
         self.load_gallery(self.data_manager.galleries[0]["name"])
 
         self._bind_hotkeys()
+
+        self._geometry_file = os.path.join(
+            self.data_manager.data_dir, "window.json"
+        )
+        self._restore_geometry()
 
         self.status_label = tk.Label(
             self,
@@ -134,6 +140,8 @@ class CharacterGallery(tk.Tk):
         sort_sub.add_command(label="Created ↓", command=lambda: self.sort_characters("created_desc"))
         sort_sub.add_command(label="Modified ↓", command=lambda: self.sort_characters("modified_desc"))
         menu.add_cascade(label="Sort Characters", menu=sort_sub)
+        menu.add_separator()
+        menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
         menu_btn["menu"] = menu
         menu_btn.pack(side="left", padx=(2, 5), pady=(2, 0))
         menu_btn.configure(padding=(2, 0, 2, 0))
@@ -173,12 +181,25 @@ class CharacterGallery(tk.Tk):
         self.char_listbox.bind("<ButtonRelease-1>", self.on_drop)
 
         self.char_menu = tk.Menu(self, tearoff=False)
-        self.char_menu.add_command(label="Rename Character", command=self.rename_character)
+        self.char_menu.add_command(label="Rename", command=self.rename_character)
+        self.char_menu.add_command(label="Duplicate", command=self.duplicate_character)
+        self.char_menu.add_command(label="Copy DNA", command=self.copy_dna)
+        self.char_menu.add_separator()
+        self.char_menu.add_command(label="Delete", command=self.delete_character)
         self.char_listbox.bind("<Button-3>", lambda e: self.show_char_menu(e))
+
+        self.char_count_label = tk.Label(
+            list_frame,
+            text="",
+            bg="#3a3a3a",
+            fg="#888888",
+            font=("TkDefaultFont", 8),
+        )
+        self.char_count_label.pack(fill="x", padx=5, pady=(2, 0))
 
         btn_frame = tk.Frame(list_frame, bg="#3a3a3a")
         btn_frame.pack(fill="x", pady=5)
-        ttk.Button(btn_frame, text="+ New", command=self.new_character, width=8).pack(
+        ttk.Button(btn_frame, text="+ New (Ctrl+N)", command=self.new_character, width=16).pack(
             side="left", padx=2
         )
         ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=8).pack(
@@ -207,7 +228,7 @@ class CharacterGallery(tk.Tk):
         self.portrait_image_id: int | None = None
         self.portrait_photo: ImageTk.PhotoImage | None = None
 
-        ttk.Button(portrait_frame, text="Change Portrait", command=self.change_portrait).pack(pady=5)
+        ttk.Button(portrait_frame, text="Change Portrait (Ctrl+V)", command=self.change_portrait).pack(pady=5)
 
         ttk.Label(portrait_frame, text="Tags", font=("Arial", 12, "bold")).pack(pady=(20, 5))
         ttk.Label(
@@ -270,7 +291,7 @@ class CharacterGallery(tk.Tk):
         ).pack(side="left", padx=(0, 5))
         ttk.Button(
             btns_frame,
-            text="Save Changes",
+            text="Save Changes (Ctrl+S)",
             command=self.save_current,
             width=12,
         ).pack(side="left", expand=True)
@@ -288,6 +309,21 @@ class CharacterGallery(tk.Tk):
     def _update_gallery_combobox(self) -> None:
         """Refresh the gallery dropdown values from the data manager."""
         self.gallery_box["values"] = self.data_manager.get_gallery_choices()
+
+    def _show_shortcuts(self) -> None:
+        """Show a dialog listing all keyboard shortcuts."""
+        messagebox.showinfo(
+            "Keyboard Shortcuts",
+            "Ctrl+S     Save current character\n"
+            "Ctrl+Z     Undo DNA edit\n"
+            "Ctrl+N     New character entry\n"
+            "Ctrl+D     Duplicate character\n"
+            "Ctrl+E     Export current gallery\n"
+            "Ctrl+F     Focus search box\n"
+            "Ctrl+V     Paste portrait from clipboard\n"
+            "Delete      Remove selected character(s)\n"
+            "F2          Rename selected character",
+        )
 
     def _char_idx(self, listbox_idx: int) -> int:
         """Convert a listbox display index to the actual character array index."""
@@ -454,6 +490,16 @@ class CharacterGallery(tk.Tk):
     # Character list display
     # ------------------------------------------------------------------
 
+    def _update_char_count(self, filtered: bool = False) -> None:
+        """Update the character counter label below the listbox."""
+        assert self.current_gallery is not None
+        shown = self.char_listbox.size()
+        total = len(self.current_gallery["characters"])
+        if filtered:
+            self.char_count_label.config(text=f"Showing {shown} of {total} characters")
+        else:
+            self.char_count_label.config(text=f"{total} characters")
+
     def refresh_list(self) -> None:
         """Repopulate the character listbox, preserving any active search filter."""
         assert self.current_gallery is not None
@@ -465,12 +511,13 @@ class CharacterGallery(tk.Tk):
         for i, char in enumerate(self.current_gallery["characters"]):
             self.char_listbox.insert(tk.END, char.get("name", ""))
             self._char_indices.append(i)
+        self._update_char_count()
 
     def _on_search_focus_in(self, event: tk.Event | None = None) -> None:
         """Clear the placeholder text when the search box receives focus."""
         if self._placeholder_active:
             self.search_entry.delete(0, tk.END)
-            self.search_entry.config(foreground="#eeeeee")
+            self.search_entry.config(foreground="")
             self._placeholder_active = False
 
     def _on_search_focus_out(self, event: tk.Event | None = None) -> None:
@@ -488,6 +535,9 @@ class CharacterGallery(tk.Tk):
             self.refresh_list()
             return
         term = self.search_var.get().lower()
+        if not term:
+            self.refresh_list()
+            return
         self.char_listbox.delete(0, tk.END)
         self._char_indices.clear()
         if term.startswith(("tag:", "tags:")):
@@ -498,11 +548,13 @@ class CharacterGallery(tk.Tk):
                 if any(st in char_tags for st in search_tags):
                     self.char_listbox.insert(tk.END, char.get("name", ""))
                     self._char_indices.append(i)
+            self._update_char_count(filtered=True)
         else:
             for i, char in enumerate(self.current_gallery["characters"]):
                 if term in char.get("name", "").lower():
                     self.char_listbox.insert(tk.END, char.get("name", ""))
                     self._char_indices.append(i)
+            self._update_char_count(filtered=True)
 
     def on_select(self, event: tk.Event) -> None:
         """Handle listbox selection change to load a character."""
@@ -831,4 +883,22 @@ class CharacterGallery(tk.Tk):
                 return
             if resp:
                 self.save_current()
+        self._save_geometry()
         self.destroy()
+
+    def _restore_geometry(self) -> None:
+        """Restore the window position and size from a previous session."""
+        try:
+            with open(self._geometry_file, encoding="utf-8") as f:
+                geom = json.load(f)
+            self.geometry(geom)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def _save_geometry(self) -> None:
+        """Persist the current window geometry for the next session."""
+        try:
+            with open(self._geometry_file, "w", encoding="utf-8") as f:
+                json.dump(self.geometry(), f)
+        except OSError:
+            pass

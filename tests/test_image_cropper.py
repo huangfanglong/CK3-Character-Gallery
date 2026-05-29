@@ -264,3 +264,35 @@ class TestImageCropperInit:
             assert disp_h == cropper.display_image.height
         finally:
             _cleanup(cropper, path)
+
+    def test_initial_scale_stored(self, tk_root):
+        """_initial_scale is recorded on init and used for reset."""
+        cropper, path = _make_cropper(tk_root, img_size=(800, 600))
+        try:
+            expected = min(600 / 800, 600 / 600)
+            assert abs(cropper._initial_scale - expected) < 0.01
+            assert abs(cropper.scale_factor - cropper._initial_scale) < 0.01
+        finally:
+            _cleanup(cropper, path)
+
+    def test_reset_zoom_restores_initial(self, tk_root):
+        """_reset_zoom restores the scale to the initial value."""
+        cropper, path = _make_cropper(tk_root, img_size=(800, 600))
+        try:
+            cropper.scale_factor = 3.0
+            cropper._update_display_image()
+            cropper._reset_zoom()
+            assert abs(cropper.scale_factor - cropper._initial_scale) < 0.01
+        finally:
+            _cleanup(cropper, path)
+
+    def test_zoom_label_updates(self, tk_root):
+        """_update_zoom_label sets the label to the current zoom percentage."""
+        cropper, path = _make_cropper(tk_root, img_size=(800, 600))
+        try:
+            cropper._update_zoom_label()
+            label_text = cropper.zoom_label.cget("text")
+            assert label_text.startswith("Zoom: ")
+            assert "%" in label_text
+        finally:
+            _cleanup(cropper, path)

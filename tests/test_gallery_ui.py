@@ -217,6 +217,30 @@ class TestCharacterGalleryDataMethods:
         assert "Bob" not in char_names
         assert "Alice" in char_names
 
+    def test_char_counter_unfiltered(self):
+        """Character counter shows total count when no filter is active."""
+        self.app.load_gallery("Test Gallery")
+        assert self.app.char_count_label.cget("text") == "3 characters"
+
+    def test_char_counter_filtered(self):
+        """Character counter shows 'showing X of Y' when filter is active."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("ali")
+        self.app._placeholder_active = False
+        self.app.filter_list()
+        assert self.app.char_count_label.cget("text") == "Showing 1 of 3 characters"
+
+    def test_char_counter_clears_with_filter(self):
+        """Counter reverts to total when filter is cleared."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("ali")
+        self.app._placeholder_active = False
+        self.app.filter_list()
+        assert "Showing 1 of 3" in self.app.char_count_label.cget("text")
+        self.app.search_var.set("")
+        self.app.filter_list()
+        assert self.app.char_count_label.cget("text") == "3 characters"
+
     def test_filter_then_show_char_menu_sets_correct_index(self):
         """show_char_menu must set current_index correctly when filter is active."""
         self.app.load_gallery("Test Gallery")
@@ -831,6 +855,38 @@ class TestCharacterGalleryDataMethods:
         event.y_root = 100
         with mock.patch.object(self.app.char_menu, "tk_popup"):
             self.app.show_char_menu(event)
+
+    def test_char_menu_has_all_items(self):
+        """Context menu must include Rename, Duplicate, Copy DNA, and Delete."""
+        import tkinter as tk
+        labels = []
+        for i in range(self.app.char_menu.index("end") + 1):
+            try:
+                labels.append(self.app.char_menu.entrycget(i, "label"))
+            except tk.TclError:
+                pass
+        assert "Rename" in labels
+        assert "Duplicate" in labels
+        assert "Copy DNA" in labels
+        assert "Delete" in labels
+
+    def test_geometry_save_restore(self):
+        """_save_geometry writes valid JSON; _restore_geometry reads it without error."""
+        self.app._save_geometry()
+        geom_file = self.app._geometry_file
+        assert os.path.exists(geom_file)
+        with open(geom_file, encoding="utf-8") as f:
+            saved = json.load(f)
+        assert isinstance(saved, str)
+        assert "x" in saved
+        self.app._restore_geometry()  # should not raise
+
+    def test_geometry_missing_file_does_not_crash(self):
+        """_restore_geometry handles a missing file gracefully."""
+        import os
+        if os.path.exists(self.app._geometry_file):
+            os.remove(self.app._geometry_file)
+        self.app._restore_geometry()  # should not raise
 
     # ── Clipboard ─────────────────────────────────────────────────────
 

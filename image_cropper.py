@@ -43,6 +43,7 @@ class ImageCropper(tk.Toplevel):
             self.display_size / self.original.width,
             self.display_size / self.original.height,
         )
+        self._initial_scale: float = self.scale_factor
 
         self.canvas = tk.Canvas(
             self,
@@ -65,6 +66,15 @@ class ImageCropper(tk.Toplevel):
             width=3,
         )
 
+        self.zoom_label = ttk.Label(
+            self,
+            text="",
+            background="#2e2e2e",
+            foreground="#aaaaaa",
+            font=("TkDefaultFont", 9),
+        )
+        self.zoom_label.pack()
+
         self._update_display_image()
 
         ttk.Label(
@@ -76,6 +86,7 @@ class ImageCropper(tk.Toplevel):
 
         btn_frame = tk.Frame(self, bg="#2e2e2e")
         btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Reset Zoom", command=self._reset_zoom, width=12).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="OK", command=self.ok, width=10).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Cancel", command=self.cancel, width=10).pack(side="left", padx=5)
 
@@ -101,6 +112,19 @@ class ImageCropper(tk.Toplevel):
         self.image_id = self.canvas.create_image(x, y, image=self.photo)
         if self.crop_rect is not None:
             self.canvas.tag_raise(self.crop_rect)
+        self._update_zoom_label()
+
+    def _update_zoom_label(self) -> None:
+        """Refresh the zoom percentage label."""
+        pct = int(self.scale_factor * 100)
+        self.zoom_label.config(text=f"Zoom: {pct}%")
+
+    def _reset_zoom(self) -> None:
+        """Reset the zoom level to the initial scale factor."""
+        self.scale_factor = self._initial_scale
+        self._update_display_image()
+        center = self.display_size // 2
+        self.canvas.coords(self.image_id, (center, center))
 
     def on_press(self, event: tk.Event) -> None:
         """Begin a drag operation, recording the starting cursor position."""
