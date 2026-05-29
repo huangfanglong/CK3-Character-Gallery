@@ -6,6 +6,7 @@ portraits, DNA data, and tags.
 
 import json
 import os
+import sys
 import time
 import tkinter as tk
 import uuid
@@ -308,10 +309,26 @@ class CharacterGallery(tk.Tk):
     # ------------------------------------------------------------------
 
     def _set_app_icon(self) -> None:
-        """Set the window and taskbar icon from an .ico file if available."""
-        for candidate in ("app.ico", os.path.join("assets", "app.ico")):
-            if os.path.isfile(candidate):
-                self.iconbitmap(candidate)
+        """Set the window and taskbar icon from image files if available.
+
+        Prefers a PNG via iconphoto() for the taskbar (higher resolution),
+        falls back to an ICO via iconbitmap() for the title bar.
+        """
+        candidates = [
+            ("app.png", True),
+            (os.path.join("assets", "app.png"), True),
+            ("app.ico", False),
+            (os.path.join("assets", "app.ico"), False),
+        ]
+        base = getattr(sys, "_MEIPASS", None)
+        if base:
+            candidates.insert(0, (os.path.join(base, "app.png"), True))
+        for path, use_photo in candidates:
+            if os.path.isfile(path):
+                if use_photo:
+                    self.iconphoto(False, tk.PhotoImage(file=path))
+                else:
+                    self.iconbitmap(path)
                 return
 
     def _update_gallery_combobox(self) -> None:

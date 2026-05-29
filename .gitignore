@@ -212,5 +212,6 @@ __marimo__/
 character_gallery_data/*.json
 character_gallery_data/images/*.png
 
-# App icon (optional)
+# App icons (optional)
 app.ico
+app.png

@@ -55,12 +55,12 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
    pyinstaller --onefile --noconsole main.py
    ```
 
-   To create a standalone `.exe` file with a custom icon:
+   To create a standalone `.exe` file with a custom icon (OPTIONAL):
    ```bash
-   pyinstaller --onefile --noconsole --icon app.ico main.py
+   pyinstaller --onefile --noconsole --icon app.ico --add-data "app.png;." main.py
    ```
-   Place an `app.ico` file in the project root. The same icon will be used
-   for the window title bar and taskbar when running via `python main.py`.
+   Place `app.ico` (small, for the .exe file icon) and `app.png` (higher
+   resolution, for the taskbar) in the project root.
 
    And then run the .exe
 
