@@ -6,16 +6,13 @@ Run with: python -m pytest tests/ -v
 import json
 import os
 import shutil
-import sys
 import tempfile
 import time
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from data_manager import DataManager  # noqa: E402
-from utils import homogenize_dna  # noqa: E402
+from data_manager import DataManager
+from utils import homogenize_dna
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +33,27 @@ class TestDataManager:
         assert len(dm.galleries) == 1
         assert dm.galleries[0]["name"] == "Default"
         assert dm.galleries[0]["characters"] == []
+
+    def test_corrupt_json_falls_back_to_default(self, tmp_path):
+        """A corrupt JSON file is backed up and a fresh gallery is loaded."""
+        data_dir = tmp_path / "test_corrupt"
+        data_dir.mkdir()
+        corrupt_file = data_dir / "galleries.json"
+        corrupt_file.write_text("this is not valid json {{{", encoding="utf-8")
+
+        dm = DataManager(data_dir=str(data_dir))
+        assert len(dm.galleries) == 1
+        assert dm.galleries[0]["name"] == "Default"
+        assert os.path.exists(str(corrupt_file) + ".backup")
+
+    def test_missing_json_file_creates_default(self, tmp_path):
+        """When no JSON file exists, a default gallery is created."""
+        data_dir = tmp_path / "test_empty"
+        data_dir.mkdir()
+
+        dm = DataManager(data_dir=str(data_dir))
+        assert len(dm.galleries) == 1
+        assert dm.galleries[0]["name"] == "Default"
 
     def test_save_and_reload(self, dm):
         """Data should persist after save() and reload via a new DataManager."""

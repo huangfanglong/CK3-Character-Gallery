@@ -8,14 +8,12 @@ that occurs when creating multiple Tk() instances in the same process.
 """
 
 import os
-import sys
 import tempfile
 import gc
 import tkinter as tk
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from image_cropper import ImageCropper
 
 

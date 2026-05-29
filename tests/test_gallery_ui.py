@@ -10,12 +10,9 @@ on_tags_change, on_dna_change, save_current, homogenize_dna, copy_dna.
 """
 
 import os
-import sys
 import tempfile
 import json
 from unittest import mock
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from data_manager import DataManager
 

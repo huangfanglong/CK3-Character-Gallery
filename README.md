@@ -1,5 +1,6 @@
 # CK3 Character Gallery
 
+[![Build](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/compile.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/compile.yml)
 [![Tests](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml)
 
 A desktop application for managing and organizing Crusader Kings 3 character DNAs.

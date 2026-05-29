@@ -32,12 +32,30 @@ class DataManager:
         self._load()
 
     def _load(self) -> None:
-        """Load galleries from the JSON data file, or initialise with a default gallery."""
-        if os.path.exists(self.data_file):
+        """Load galleries from the JSON data file, or initialise with a default gallery.
+
+        If the data file exists but is corrupt (invalid JSON), the file is backed up
+        and a fresh default gallery is created so the application can still start.
+        """
+        if not os.path.exists(self.data_file):
+            self.galleries = [{"name": "Default", "characters": []}]
+            return
+
+        try:
             with open(self.data_file, "r", encoding="utf-8") as f:
                 self.galleries = json.load(f)
-        else:
+        except (json.JSONDecodeError, OSError) as exc:
+            backup = self.data_file + ".backup"
+            try:
+                os.replace(self.data_file, backup)
+            except OSError:
+                pass
             self.galleries = [{"name": "Default", "characters": []}]
+            print(
+                f"Warning: Could not load {self.data_file}: {exc}. "
+                f"Original backed up to {backup}. Starting with a fresh gallery.",
+                flush=True,
+            )
 
     def save(self) -> None:
         """Persist the galleries list to the JSON data file on disk."""
