@@ -668,18 +668,26 @@ class CharacterGallery(tk.Tk):
             self.wait_window(cropper)
             if cropper.result:
                 img = Image.open(file_path)
-                cropped = img.crop(cropper.result)
-                cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
-                char_id = self.current_gallery["characters"][self.current_index]["id"]
-                save_path = self.data_manager.get_image_path(char_id)
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                cropped.save(save_path)
-                self.current_gallery["characters"][self.current_index]["image"] = save_path
-                self.current_gallery["characters"][self.current_index]["modified"] = time.time()
-                self.dirty = True
-                self.save_galleries()
-                self.select_character(self.current_index)
-                self.set_status("Portrait updated successfully \u2714\ufe0f")
+                self._save_cropped_image(img, cropper.result, "Portrait updated successfully \u2714\ufe0f")
+
+    def _save_cropped_image(
+        self, img: Image.Image, crop_box: tuple[int, int, int, int], status_msg: str
+    ) -> None:
+        """Crop, resize, and save an image as the current character's portrait."""
+        assert self.current_gallery is not None
+        assert self.current_index is not None
+        cropped = img.crop(crop_box)
+        cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
+        char_id = self.current_gallery["characters"][self.current_index]["id"]
+        save_path = self.data_manager.get_image_path(char_id)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        cropped.save(save_path)
+        self.current_gallery["characters"][self.current_index]["image"] = save_path
+        self.current_gallery["characters"][self.current_index]["modified"] = time.time()
+        self.dirty = True
+        self.save_galleries()
+        self.select_character(self.current_index)
+        self.set_status(status_msg)
 
     def paste_from_clipboard(self) -> None:
         """Paste an image from the system clipboard as the current character's portrait."""
@@ -704,18 +712,7 @@ class CharacterGallery(tk.Tk):
                 cropper = ImageCropper(self, temp_path)
                 self.wait_window(cropper)
                 if cropper.result:
-                    cropped = img.crop(cropper.result)
-                    cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
-                    char_id = self.current_gallery["characters"][self.current_index]["id"]
-                    save_path = self.data_manager.get_image_path(char_id)
-                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                    cropped.save(save_path)
-                    self.current_gallery["characters"][self.current_index]["image"] = save_path
-                    self.current_gallery["characters"][self.current_index]["modified"] = time.time()
-                    self.dirty = True
-                    self.save_galleries()
-                    self.select_character(self.current_index)
-                    self.set_status("Portrait pasted successfully \u2714\ufe0f")
+                    self._save_cropped_image(img, cropper.result, "Portrait pasted successfully \u2714\ufe0f")
             if temp_path and temp_path.endswith("temp_clipboard.png") and os.path.exists(temp_path):
                 os.remove(temp_path)
         except Exception as e:

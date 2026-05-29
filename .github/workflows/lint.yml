@@ -5,9 +5,7 @@ env:
 
 on:
   push:
-    branches: [main, master, good-devs]
   pull_request:
-    branches: [main, master, good-devs]
   workflow_dispatch:
 
 jobs:
