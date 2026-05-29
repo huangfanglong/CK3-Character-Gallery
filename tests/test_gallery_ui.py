@@ -185,7 +185,68 @@ class TestCharacterGalleryDataMethods:
         items = list(self.app.char_listbox.get(0, "end"))
         assert len(items) == 3
 
-    def test_on_select_loads_character(self):
+    def test_filter_then_select_loads_correct_character(self):
+        """select_character must load the correct character when filter is active."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("char")
+        self.app.filter_list()
+        # After filtering, listbox shows only "Charlie" at index 0
+        self.app.char_listbox.selection_set(0)
+        self.app.on_select(None)
+        assert self.app.current_index == 2  # Charlie is at array index 2, not 0
+
+    def test_filter_then_delete_removes_correct_character(self):
+        """delete_character must remove the correct character when filter is active."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("bob")
+        self.app.filter_list()
+        # Listbox shows only "Bob" at index 0
+        self.app.char_listbox.selection_set(0)
+        self.app.current_index = 0  # set by on_select via _char_idx in real usage
+        # Bob is at array index 1; if buggy, index 0 (Alice) would be deleted
+        char_names = [c["name"] for c in self.app.current_gallery["characters"]]
+        assert "Bob" in char_names
+        # Select Bob and delete
+        with mock.patch(
+            "tkinter.messagebox.askyesno", return_value=True
+        ):
+            self.app.delete_character()
+        char_names = [c["name"] for c in self.app.current_gallery["characters"]]
+        assert "Bob" not in char_names
+        assert "Alice" in char_names
+
+    def test_filter_then_show_char_menu_sets_correct_index(self):
+        """show_char_menu must set current_index correctly when filter is active."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("ali")
+        self.app.filter_list()
+        # Simulate right-click on "Alice" (listbox index 0, array index 0)
+        import tkinter as tk
+        event = tk.Event()
+        event.y = 0
+        event.x_root = 100
+        event.y_root = 100
+        with mock.patch.object(self.app.char_menu, "tk_popup"):
+            self.app.show_char_menu(event)
+        assert self.app.current_index == 0  # Alice is at array index 0
+
+    def test_filter_then_rename_updates_correct_character(self):
+        """rename_character must rename the correct character when filter active."""
+        self.app.load_gallery("Test Gallery")
+        self.app.search_var.set("charlie")
+        self.app.filter_list()
+        # Simulate user clicking Charlie (listbox idx 0, array idx 2)
+        self.app.char_listbox.selection_set(0)
+        self.app.on_select(None)
+        assert self.app.current_index == 2
+        with mock.patch(
+            "tkinter.simpledialog.askstring", return_value="Chuck"
+        ):
+            self.app.rename_character()
+        assert self.app.current_gallery["characters"][2]["name"] == "Chuck"
+        # Restore
+        self.app.current_gallery["characters"][2]["name"] = "Charlie"
+        self.dm.save()
         """on_select calls select_character with the selected index."""
         self.app.load_gallery("Test Gallery")
         self.app.char_listbox.selection_set(1)

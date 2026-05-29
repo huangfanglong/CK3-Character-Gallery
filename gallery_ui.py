@@ -39,6 +39,7 @@ class CharacterGallery(tk.Tk):
         self.current_index: int | None = None
         self.dirty: bool = False
         self._drag_idx: int | None = None
+        self._char_indices: list[int] = []
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -282,6 +283,12 @@ class CharacterGallery(tk.Tk):
         """Refresh the gallery dropdown values from the data manager."""
         self.gallery_box["values"] = self.data_manager.get_gallery_choices()
 
+    def _char_idx(self, listbox_idx: int) -> int:
+        """Convert a listbox display index to the actual character array index."""
+        if 0 <= listbox_idx < len(self._char_indices):
+            return self._char_indices[listbox_idx]
+        return listbox_idx
+
     # ------------------------------------------------------------------
     # Status bar
     # ------------------------------------------------------------------
@@ -434,31 +441,36 @@ class CharacterGallery(tk.Tk):
         """Repopulate the character listbox from the current gallery's characters."""
         assert self.current_gallery is not None
         self.char_listbox.delete(0, tk.END)
-        for char in self.current_gallery["characters"]:
+        self._char_indices.clear()
+        for i, char in enumerate(self.current_gallery["characters"]):
             self.char_listbox.insert(tk.END, char.get("name", ""))
+            self._char_indices.append(i)
 
     def filter_list(self) -> None:
         """Filter the character listbox by search term or tag query."""
         assert self.current_gallery is not None
         term = self.search_var.get().lower()
         self.char_listbox.delete(0, tk.END)
+        self._char_indices.clear()
         if term.startswith(("tag:", "tags:")):
             cleaned = term.replace("tags:", "tag:", 1)
             search_tags = [t.strip() for t in cleaned[4:].split(",") if t.strip()]
-            for char in self.current_gallery["characters"]:
+            for i, char in enumerate(self.current_gallery["characters"]):
                 char_tags = [t.lower() for t in char.get("tags", [])]
                 if any(st in char_tags for st in search_tags):
                     self.char_listbox.insert(tk.END, char.get("name", ""))
+                    self._char_indices.append(i)
         else:
-            for char in self.current_gallery["characters"]:
+            for i, char in enumerate(self.current_gallery["characters"]):
                 if term in char.get("name", "").lower():
                     self.char_listbox.insert(tk.END, char.get("name", ""))
+                    self._char_indices.append(i)
 
     def on_select(self, event: tk.Event) -> None:
         """Handle listbox selection change to load a character."""
         selection = self.char_listbox.curselection()
         if selection:
-            self.select_character(selection[0])
+            self.select_character(self._char_idx(selection[0]))
 
     def select_character(self, index: int) -> None:
         """Load a character's portrait, DNA, and tags into the UI.
@@ -521,10 +533,11 @@ class CharacterGallery(tk.Tk):
             return
         if not messagebox.askyesno("Confirm", f"Delete {len(sel)} character(s)?"):
             return
-        for idx in sel:
+        char_indices = [self._char_idx(idx) for idx in sel]
+        for idx in char_indices:
             char = self.current_gallery["characters"][idx]
             self.data_manager.delete_image(char.get("image"))
-        for idx in sorted(sel, reverse=True):
+        for idx in sorted(char_indices, reverse=True):
             del self.current_gallery["characters"][idx]
         self.dirty = True
         self.save_galleries()
@@ -620,12 +633,12 @@ class CharacterGallery(tk.Tk):
 
     def start_drag(self, event: tk.Event) -> None:
         """Record the starting index of a drag-drop reorder operation."""
-        self._drag_idx = self.char_listbox.nearest(event.y)
+        self._drag_idx = self._char_idx(self.char_listbox.nearest(event.y))
 
     def on_drop(self, event: tk.Event) -> None:
         """Complete a drag-drop reorder, moving the character to the drop position."""
         assert self.current_gallery is not None
-        dst = self.char_listbox.nearest(event.y)
+        dst = self._char_idx(self.char_listbox.nearest(event.y))
         if dst != self._drag_idx:
             lst = self.current_gallery["characters"]
             item = lst.pop(self._drag_idx)
@@ -765,7 +778,7 @@ class CharacterGallery(tk.Tk):
 
     def show_char_menu(self, event: tk.Event) -> None:
         """Show the right-click context menu for a character in the listbox."""
-        idx = self.char_listbox.nearest(event.y)
+        idx = self._char_idx(self.char_listbox.nearest(event.y))
         if idx >= 0:
             self.char_listbox.selection_clear(0, tk.END)
             self.char_listbox.selection_set(idx)
