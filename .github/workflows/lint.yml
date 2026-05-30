@@ -27,4 +27,4 @@ jobs:
         run: ruff check .
 
       - name: Run mypy
-        run: mypy main.py gallery_ui.py data_manager.py image_cropper.py utils.py dialogs.py
+        run: mypy main.py gallery_ui.py data_manager.py image_cropper.py utils.py dialogs.py tooltip.py

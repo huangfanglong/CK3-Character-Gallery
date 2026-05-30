@@ -19,6 +19,7 @@ from PIL import Image, ImageGrab, ImageTk
 import dialogs
 from data_manager import DataManager
 from image_cropper import ImageCropper
+from tooltip import ToolTip
 from utils import homogenize_dna
 
 
@@ -157,6 +158,7 @@ class CharacterGallery(tk.Tk):
         menu_btn.bind("<Enter>", lambda e: menu_btn.config(bg="#3a3a3a"))
         menu_btn.bind("<Leave>", lambda e: menu_btn.config(bg="#1c1c1c"))
         menu_btn.pack(side="left", padx=2)
+        ToolTip(menu_btn, "Gallery menu")
 
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(list_frame, textvariable=self.search_var)
@@ -212,12 +214,12 @@ class CharacterGallery(tk.Tk):
 
         btn_frame = tk.Frame(list_frame, bg="#1c1c1c")
         btn_frame.pack(fill="x", pady=5, padx=5)
-        ttk.Button(btn_frame, text="+ New", command=self.new_character, width=12).pack(
-            side="left", padx=2
-        )
-        ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=12).pack(
-            side="right", padx=2
-        )
+        btn = ttk.Button(btn_frame, text="+ New", command=self.new_character, width=12)
+        btn.pack(side="left", padx=2)
+        ToolTip(btn, "Create a new character entry (Ctrl+N)")
+        btn = ttk.Button(btn_frame, text="Delete", command=self.delete_character, width=12)
+        btn.pack(side="right", padx=2)
+        ToolTip(btn, "Remove selected character(s) (Delete)")
 
     def _build_middle_panel(self, parent: tk.Frame) -> None:
         """Build the portrait display and tag editor."""
@@ -248,11 +250,17 @@ class CharacterGallery(tk.Tk):
 
         portrait_btn_frame = ttk.Frame(portrait_frame)
         portrait_btn_frame.pack(pady=5)
-        ttk.Button(portrait_btn_frame, text="-", width=3,
-                   command=self._remove_portrait_slot).pack(side="left", padx=2)
-        ttk.Button(portrait_btn_frame, text="Change", command=self.change_portrait).pack(side="left", padx=2)
-        ttk.Button(portrait_btn_frame, text="+", width=3,
-                   command=self._add_portrait_slot).pack(side="left", padx=2)
+        btn = ttk.Button(portrait_btn_frame, text="-", width=3,
+                         command=self._remove_portrait_slot)
+        btn.pack(side="left", padx=2)
+        ToolTip(btn, "Remove current portrait slot")
+        btn = ttk.Button(portrait_btn_frame, text="Change", command=self.change_portrait)
+        btn.pack(side="left", padx=2)
+        ToolTip(btn, "Replace portrait in current slot")
+        btn = ttk.Button(portrait_btn_frame, text="+", width=3,
+                         command=self._add_portrait_slot)
+        btn.pack(side="left", padx=2)
+        ToolTip(btn, "Add a new portrait slot (max 5)")
 
         ttk.Label(portrait_frame, text="Tags", font=("Arial", 12, "bold")).pack(pady=(20, 5))
         ttk.Label(
@@ -301,30 +309,38 @@ class CharacterGallery(tk.Tk):
 
         btns_frame = tk.Frame(dna_frame, bg="#1c1c1c")
         btns_frame.pack(fill="x", pady=5)
-        ttk.Button(
+        btn = ttk.Button(
             btns_frame,
             text="Clear DNA",
             command=self._clear_dna,
             width=12,
-        ).pack(side="left", padx=(0, 5))
-        ttk.Button(
+        )
+        btn.pack(side="left", padx=(0, 5))
+        ToolTip(btn, "Clear all DNA text")
+        btn = ttk.Button(
             btns_frame,
             text="Homogenize DNA",
             command=self.on_homogenize_dna,
             width=16,
-        ).pack(side="left", padx=(0, 5))
-        ttk.Button(
+        )
+        btn.pack(side="left", padx=(0, 5))
+        ToolTip(btn, "Duplicate first gene value into second position")
+        btn = ttk.Button(
             btns_frame,
             text="Save Changes",
             command=self.save_current,
             width=12,
-        ).pack(side="left", expand=True)
-        ttk.Button(
+        )
+        btn.pack(side="left", expand=True)
+        ToolTip(btn, "Save all changes to disk (Ctrl+S)")
+        btn = ttk.Button(
             btns_frame,
             text="Copy DNA",
             command=self.copy_dna,
             width=12,
-        ).pack(side="right", padx=(5, 0))
+        )
+        btn.pack(side="right", padx=(5, 0))
+        ToolTip(btn, "Copy DNA text to clipboard")
 
     # ------------------------------------------------------------------
     # Gallery combobox utilities

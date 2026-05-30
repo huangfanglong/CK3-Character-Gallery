@@ -13,6 +13,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 - **Character Management**: Add, delete, and batch-delete character entries within each gallery. Give each character entry specific tags and ability to search & narrow them in the search box.
 - **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
 - **Multi-Portrait Support**: Each character can have up to 5 portraits. Add slots with the `+` button, remove with `-`, and cycle through them with on-canvas arrow overlays.
+- **Hover Tooltips**: Hover over any button to see a brief description of what it does.
 - **DNA Displayer**:
   - Store, view and edit raw character DNA strings.
   - Clear, homogenize (gene-value duplication), save, and copy DNA with one click.

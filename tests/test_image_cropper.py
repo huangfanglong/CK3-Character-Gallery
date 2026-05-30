@@ -36,15 +36,6 @@ def _cleanup_temp(path):
         pass
 
 
-@pytest.fixture(scope="session")
-def tk_root():
-    """Session-scoped Tk root shared by all ImageCropper tests."""
-    root = tk.Tk()
-    root.withdraw()
-    yield root
-    root.destroy()
-
-
 def _make_cropper(tk_root, img_size=(600, 600), color="red"):
     """Create an ImageCropper with a temp image. Returns (cropper, path)."""
     path = _make_temp_image(img_size, color)
