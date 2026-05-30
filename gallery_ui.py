@@ -16,15 +16,8 @@ from typing import Any
 import sv_ttk
 from PIL import Image, ImageGrab, ImageTk
 
+import dialogs
 from data_manager import DataManager
-from dialogs import (
-    ask_string,
-    ask_yesno,
-    ask_yesnocancel,
-    show_error,
-    show_info,
-    show_warning,
-)
 from image_cropper import ImageCropper
 from utils import homogenize_dna
 
@@ -49,6 +42,7 @@ class CharacterGallery(tk.Tk):
 
         self.current_gallery: dict[str, Any] | None = None
         self.current_index: int | None = None
+        self.current_portrait_index: int = 0
         self.dirty: bool = False
         self._drag_idx: int | None = None
         self._char_indices: list[int] = []
@@ -246,8 +240,19 @@ class CharacterGallery(tk.Tk):
 
         self.portrait_image_id: int | None = None
         self.portrait_photo: ImageTk.PhotoImage | None = None
+        self.portrait_arrow_left: int | None = None
+        self.portrait_arrow_right: int | None = None
+        self.portrait_counter_id: int | None = None
 
-        ttk.Button(portrait_frame, text="Change Portrait", command=self.change_portrait).pack(pady=5)
+        self.portrait_canvas.bind("<Button-1>", self._on_portrait_click)
+
+        portrait_btn_frame = ttk.Frame(portrait_frame)
+        portrait_btn_frame.pack(pady=5)
+        ttk.Button(portrait_btn_frame, text="-", width=3,
+                   command=self._remove_portrait_slot).pack(side="left", padx=2)
+        ttk.Button(portrait_btn_frame, text="Change", command=self.change_portrait).pack(side="left", padx=2)
+        ttk.Button(portrait_btn_frame, text="+", width=3,
+                   command=self._add_portrait_slot).pack(side="left", padx=2)
 
         ttk.Label(portrait_frame, text="Tags", font=("Arial", 12, "bold")).pack(pady=(20, 5))
         ttk.Label(
@@ -354,7 +359,7 @@ class CharacterGallery(tk.Tk):
 
     def _show_shortcuts(self) -> None:
         """Show a dialog listing all keyboard shortcuts."""
-        show_info(
+        dialogs.show_info(
             self, "Keyboard Shortcuts",
             "Ctrl+S     Save current character\n"
             "Ctrl+Z     Undo DNA edit\n"
@@ -402,7 +407,7 @@ class CharacterGallery(tk.Tk):
         if self.current_index is not None:
             self.save_galleries()
             self.set_status("Character data saved successfully \u2714\ufe0f")
-            show_info(self, "Saved", "Character data saved successfully!")
+            dialogs.show_info(self, "Saved", "Character data saved successfully!")
 
     # ------------------------------------------------------------------
     # Gallery management
@@ -413,14 +418,14 @@ class CharacterGallery(tk.Tk):
         assert self.current_gallery is not None
         name = self.gallery_var.get()
         if name == "Create a new gallery...":
-            new_name = ask_string(
+            new_name = dialogs.ask_string(
                 self, "New Gallery", "Enter gallery name:"
             )
             if not new_name:
                 self.gallery_var.set(self.current_gallery["name"])
                 return
             if self.data_manager.find_gallery(new_name):
-                show_warning(
+                dialogs.show_warning(
                     self, "Duplicate", f"A gallery named '{new_name}' already exists."
                 )
                 self.gallery_var.set(self.current_gallery["name"])
@@ -444,19 +449,31 @@ class CharacterGallery(tk.Tk):
         """
         self.current_gallery = self.data_manager.find_gallery(name)
         self.current_index = None
+        self.current_portrait_index = 0
+        self._clear_portrait()
+        self.dna_text.delete("1.0", tk.END)
+        self.tags_text.delete("1.0", tk.END)
         self.refresh_list()
+
+    def _clear_portrait(self) -> None:
+        """Clear the portrait canvas and overlay items."""
+        if self.portrait_image_id is not None:
+            self.portrait_canvas.delete(self.portrait_image_id)
+            self.portrait_image_id = None
+        self.portrait_photo = None
+        self._clear_overlay()
 
     def rename_gallery(self) -> None:
         """Prompt the user to rename the current gallery."""
         assert self.current_gallery is not None
         old_name = self.current_gallery["name"]
-        new_name = ask_string(
+        new_name = dialogs.ask_string(
             self, "Rename Gallery", f"Enter new name for '{old_name}':"
         )
         if not new_name or new_name == old_name:
             return
         if self.data_manager.find_gallery(new_name):
-            show_warning(
+            dialogs.show_warning(
                 self, "Duplicate", f"A gallery named '{new_name}' already exists."
             )
             return
@@ -473,10 +490,10 @@ class CharacterGallery(tk.Tk):
         """Prompt for confirmation, then delete the current gallery."""
         assert self.current_gallery is not None
         if len(self.data_manager.galleries) == 1:
-            show_warning(self, "Warning", "Cannot delete the last gallery.")
+            dialogs.show_warning(self, "Warning", "Cannot delete the last gallery.")
             return
         name = self.current_gallery["name"]
-        if not ask_yesno(
+        if not dialogs.ask_yesno(
             self, "Delete Gallery", f"Delete gallery '{name}' and all its characters?"
         ):
             return
@@ -502,12 +519,12 @@ class CharacterGallery(tk.Tk):
             return
         out_dir = os.path.join(dest, name)
         if os.path.exists(out_dir):
-            if not ask_yesno(
+            if not dialogs.ask_yesno(
                 self, "Overwrite?", f"Folder '{out_dir}' exists. Overwrite?"
             ):
                 return
         self.data_manager.export_gallery(self.current_gallery, dest)
-        show_info(self, "Exported", f"Gallery '{name}' exported to {out_dir}")
+        dialogs.show_info(self, "Exported", f"Gallery '{name}' exported to {out_dir}")
 
     def import_gallery(self) -> None:
         """Import a gallery from a folder on disk."""
@@ -516,9 +533,9 @@ class CharacterGallery(tk.Tk):
             return
         json_file = os.path.join(folder, "characters.json")
         if not os.path.exists(json_file):
-            show_error(self, "Error", "No characters.json found in selected folder.")
+            dialogs.show_error(self, "Error", "No characters.json found in selected folder.")
             return
-        gallery_name = ask_string(
+        gallery_name = dialogs.ask_string(
             self, "Import Gallery", "Enter name for imported gallery:"
         )
         if not gallery_name:
@@ -530,7 +547,7 @@ class CharacterGallery(tk.Tk):
         self.gallery_var.set(gallery_name)
         self.after(1, self.gallery_box.selection_clear)
         self.load_gallery(gallery_name)
-        show_info(self, "Imported", f"Gallery '{gallery_name}' imported successfully")
+        dialogs.show_info(self, "Imported", f"Gallery '{gallery_name}' imported successfully")
 
     # ------------------------------------------------------------------
     # Character list display
@@ -619,26 +636,134 @@ class CharacterGallery(tk.Tk):
             self.current_index = index
             char = self.current_gallery["characters"][index]
 
-            image_file = char.get("image")
-            if image_file and os.path.exists(image_file):
-                img: Image.Image = Image.open(image_file)
-                img = img.resize((450, 450), Image.Resampling.LANCZOS)
-                self.portrait_photo = ImageTk.PhotoImage(img)
-                if self.portrait_image_id:
-                    self.portrait_canvas.delete(self.portrait_image_id)
-                self.portrait_image_id = self.portrait_canvas.create_image(
-                    225, 225, image=self.portrait_photo
-                )
-            else:
-                if self.portrait_image_id:
-                    self.portrait_canvas.delete(self.portrait_image_id)
-                self.portrait_image_id = None
+            self.current_portrait_index = 0
+            self._load_portrait()
 
             self.dna_text.delete("1.0", tk.END)
             self.dna_text.insert("1.0", char.get("dna", ""))
             self.tags_text.delete("1.0", tk.END)
             tags = char.get("tags", [])
             self.tags_text.insert("1.0", ", ".join(tags))
+
+    def _load_portrait(self) -> None:
+        """Load the current portrait image and draw overlay controls."""
+        assert self.current_gallery is not None
+        assert self.current_index is not None
+        char = self.current_gallery["characters"][self.current_index]
+        images = char.get("images", [])
+        count = len(images)
+
+        # Clear existing canvas items (except crop rect/arrows handled below)
+        if self.portrait_image_id:
+            self.portrait_canvas.delete(self.portrait_image_id)
+            self.portrait_image_id = None
+        self._clear_overlay()
+
+        idx = self.current_portrait_index
+        if 0 <= idx < count and os.path.exists(images[idx]):
+            img: Image.Image = Image.open(images[idx])
+            img = img.resize((450, 450), Image.Resampling.LANCZOS)
+            self.portrait_photo = ImageTk.PhotoImage(img)
+            self.portrait_image_id = self.portrait_canvas.create_image(
+                225, 225, image=self.portrait_photo
+            )
+
+        if count > 1:
+            self._draw_overlay(count)
+
+    def _clear_overlay(self) -> None:
+        """Remove arrow and counter overlay items from the portrait canvas."""
+        for item_id in (self.portrait_arrow_left, self.portrait_arrow_right,
+                        self.portrait_counter_id):
+            if item_id is not None:
+                self.portrait_canvas.delete(item_id)
+        self.portrait_arrow_left = None
+        self.portrait_arrow_right = None
+        self.portrait_counter_id = None
+
+    def _draw_overlay(self, count: int) -> None:
+        """Draw translucent arrow buttons and portrait counter on the canvas."""
+        self.portrait_arrow_left = self.portrait_canvas.create_text(
+            24, 430, text="\u27f5", font=("Segoe UI", 16),
+            fill="#cccccc", anchor="sw", tags="overlay",
+        )
+        self.portrait_arrow_right = self.portrait_canvas.create_text(
+            426, 430, text="\u27f6", font=("Segoe UI", 16),
+            fill="#cccccc", anchor="se", tags="overlay",
+        )
+        self.portrait_counter_id = self.portrait_canvas.create_text(
+            225, 440, text=f"{self.current_portrait_index + 1} / {count}",
+            font=("Segoe UI", 9), fill="#aaaaaa", anchor="s", tags="overlay",
+        )
+
+    def _on_portrait_click(self, event: tk.Event) -> None:
+        """Handle clicks on the portrait canvas (arrows or change-portrait)."""
+        assert self.current_gallery is not None
+        if self.current_index is None:
+            return
+        count = self.data_manager.portrait_count(
+            self.current_gallery["characters"][self.current_index]
+        )
+        if count <= 1:
+            self.change_portrait()
+            return
+        if event.x < 60:
+            self._cycle_portrait(-1)
+        elif event.x > 390:
+            self._cycle_portrait(1)
+        else:
+            self.change_portrait()
+
+    def _cycle_portrait(self, delta: int) -> None:
+        """Cycle to the previous or next portrait."""
+        assert self.current_gallery is not None
+        assert self.current_index is not None
+        count = self.data_manager.portrait_count(
+            self.current_gallery["characters"][self.current_index]
+        )
+        if count <= 1:
+            return
+        self.current_portrait_index = (self.current_portrait_index + delta) % count
+        self._load_portrait()
+
+    def _add_portrait_slot(self) -> None:
+        """Add an empty portrait slot (max 5)."""
+        assert self.current_gallery is not None
+        if self.current_index is None:
+            return
+        char = self.current_gallery["characters"][self.current_index]
+        images: list[str] = char.setdefault("images", [])
+        if len(images) >= 5:
+            dialogs.show_warning(self, "Limit", "Maximum 5 portraits per character.")
+            return
+        images.append("")
+        self.current_portrait_index = len(images) - 1
+        char["modified"] = time.time()
+        self.dirty = True
+        self.save_galleries()
+        self._load_portrait()
+
+    def _remove_portrait_slot(self) -> None:
+        """Delete the current portrait slot and its image file."""
+        assert self.current_gallery is not None
+        if self.current_index is None:
+            return
+        char = self.current_gallery["characters"][self.current_index]
+        images: list[str] = char.get("images", [])
+        if not images:
+            return
+        idx = self.current_portrait_index
+        if 0 <= idx < len(images):
+            old = images[idx]
+            if old and os.path.isfile(old):
+                os.remove(old)
+            del images[idx]
+            if self.current_portrait_index >= len(images):
+                self.current_portrait_index = max(0, len(images) - 1)
+            char["modified"] = time.time()
+            self.dirty = True
+            self.save_galleries()
+            self._load_portrait()
 
     # ------------------------------------------------------------------
     # Character CRUD
@@ -647,7 +772,7 @@ class CharacterGallery(tk.Tk):
     def new_character(self) -> None:
         """Create a new character entry in the current gallery."""
         assert self.current_gallery is not None
-        name = ask_string(self, "New Character", "Enter character name:")
+        name = dialogs.ask_string(self, "New Character", "Enter character name:")
         if not name:
             return
         new_char = self.data_manager.create_character(name)
@@ -667,12 +792,13 @@ class CharacterGallery(tk.Tk):
         sel = list(self.char_listbox.curselection())
         if not sel:
             return
-        if not ask_yesno(self, "Confirm", f"Delete {len(sel)} character(s)?"):
+        if not dialogs.ask_yesno(self, "Confirm", f"Delete {len(sel)} character(s)?"):
             return
         char_indices = [self._char_idx(idx) for idx in sel]
         for idx in char_indices:
-            char = self.current_gallery["characters"][idx]
-            self.data_manager.delete_image(char.get("image"))
+            self.data_manager.delete_character_images(
+                self.current_gallery["characters"][idx]["id"]
+            )
         for idx in sorted(char_indices, reverse=True):
             del self.current_gallery["characters"][idx]
         self.dirty = True
@@ -700,16 +826,16 @@ class CharacterGallery(tk.Tk):
         dup_char = {
             "id": new_id,
             "name": char["name"] + " (Copy)",
-            "image": None,
+            "images": [],
             "dna": char.get("dna", ""),
             "tags": char.get("tags", []).copy(),
             "created": time.time(),
             "modified": time.time(),
         }
-        if char.get("image") and os.path.exists(char["image"]):
-            dup_char["image"] = self.data_manager.copy_image_to_storage(
-                char["image"], new_id
-            )
+        for img in char.get("images", []):
+            if img and os.path.exists(img):
+                dest = self.data_manager.add_portrait(new_id, img)
+                dup_char["images"].append(dest)
         self.current_gallery["characters"].append(dup_char)
         self.dirty = True
         self.save_galleries()
@@ -727,7 +853,7 @@ class CharacterGallery(tk.Tk):
             return
         idx = self.current_index
         old_name = self.current_gallery["characters"][idx]["name"]
-        new_name = ask_string(
+        new_name = dialogs.ask_string(
             self, "Rename Character", f"Enter new name for '{old_name}':"
         )
         if new_name and new_name != old_name:
@@ -793,7 +919,7 @@ class CharacterGallery(tk.Tk):
         """Open a file dialog to select and crop a new portrait image."""
         assert self.current_gallery is not None
         if self.current_index is None:
-            show_warning(self, "Warning", "Please select a character first.")
+            dialogs.show_warning(self, "Warning", "Please select a character first.")
             return
         file_path = filedialog.askopenfilename(
             title="Select Portrait Image",
@@ -809,20 +935,31 @@ class CharacterGallery(tk.Tk):
     def _save_cropped_image(
         self, img: Image.Image, crop_box: tuple[int, int, int, int], status_msg: str
     ) -> None:
-        """Crop, resize, and save an image as the current character's portrait."""
+        """Crop, resize, and save an image, appending it to the character's portraits."""
         assert self.current_gallery is not None
         assert self.current_index is not None
         cropped = img.crop(crop_box)
         cropped = cropped.resize((450, 450), Image.Resampling.LANCZOS)
-        char_id = self.current_gallery["characters"][self.current_index]["id"]
-        save_path = self.data_manager.get_image_path(char_id)
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        char = self.current_gallery["characters"][self.current_index]
+        dest_dir = self.data_manager._portrait_dir(char["id"])
+        os.makedirs(dest_dir, exist_ok=True)
+        idx = self.current_portrait_index
+        save_path = os.path.join(dest_dir, f"{idx}.png")
         cropped.save(save_path)
-        self.current_gallery["characters"][self.current_index]["image"] = save_path
-        self.current_gallery["characters"][self.current_index]["modified"] = time.time()
+
+        images: list[str] = char.setdefault("images", [])
+        # Pad with empty strings if adding beyond current length
+        while len(images) <= idx:
+            images.append("")
+        # Remove old file if replacing an existing image
+        old = images[idx]
+        if old and old != save_path and os.path.isfile(old):
+            os.remove(old)
+        images[idx] = save_path
+        char["modified"] = time.time()
         self.dirty = True
         self.save_galleries()
-        self.select_character(self.current_index)
+        self._load_portrait()
         self.set_status(status_msg)
 
     def paste_from_clipboard(self) -> None:
@@ -898,7 +1035,7 @@ class CharacterGallery(tk.Tk):
             self.clipboard_append(data)
             self.set_status("DNA copied to clipboard \u2714\ufe0f")
         else:
-            show_info(self, "Info", "No DNA to copy.")
+            dialogs.show_info(self, "Info", "No DNA to copy.")
 
     # ------------------------------------------------------------------
     # Misc
@@ -921,7 +1058,7 @@ class CharacterGallery(tk.Tk):
     def on_close(self) -> None:
         """Handle the window close event, prompting to save unsaved changes."""
         if self.dirty:
-            resp = ask_yesnocancel(
+            resp = dialogs.ask_yesnocancel(
                 self, "Unsaved Changes",
                 "You have unsaved changes. Save before exit?",
             )

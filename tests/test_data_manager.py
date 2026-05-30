@@ -81,79 +81,71 @@ class TestDataManager:
         assert "Create a new gallery..." in choices
         assert len(choices) == len(dm.galleries) + 1
 
-    def test_get_image_path(self, dm):
-        """get_image_path returns a path inside the data dir."""
-        path = dm.get_image_path("abc-123")
-        assert path.endswith("abc-123.png")
-        assert "test_data" in path
-        assert "images" in path
+    def test_portrait_count_zero(self, dm):
+        """portrait_count returns 0 for a character with no portraits."""
+        c = dm.create_character("Test")
+        assert dm.portrait_count(c) == 0
 
-    def test_copy_image_to_storage(self, dm):
-        """copy_image_to_storage copies a file to the images directory."""
+    def test_add_portrait(self, dm):
+        """add_portrait copies a file into the character's portrait directory."""
         src_dir = os.path.join(dm.data_dir, "temp_src")
         os.makedirs(src_dir, exist_ok=True)
         src = os.path.join(src_dir, "test.png")
         with open(src, "wb") as f:
             f.write(b"fake-png-data")
 
-        dest = dm.copy_image_to_storage(src, "char-1")
+        dest = dm.add_portrait("char-1", src)
         assert os.path.exists(dest)
-        assert os.path.basename(dest) == "char-1.png"
+        assert "char-1" in dest
+        assert dest.endswith("0.png")
         assert dest.startswith(os.path.join(dm.data_dir, "images"))
 
-    def test_delete_image_existing(self, dm):
-        """delete_image removes an existing file."""
-        img_dir = os.path.join(dm.data_dir, "images")
+    def test_delete_character_images(self, dm):
+        """delete_character_images removes the entire portrait directory."""
+        img_dir = dm._portrait_dir("char-1")
         os.makedirs(img_dir, exist_ok=True)
-        path = os.path.join(img_dir, "test.png")
+        path = os.path.join(img_dir, "0.png")
         with open(path, "wb") as f:
             f.write(b"data")
         assert os.path.exists(path)
-        dm.delete_image(path)
-        assert not os.path.exists(path)
+        dm.delete_character_images("char-1")
+        assert not os.path.exists(img_dir)
 
-    def test_delete_image_none(self, dm):
-        """delete_image handles None without error."""
-        dm.delete_image(None)
-
-    def test_delete_image_missing(self, dm):
-        """delete_image handles a non-existent path without error."""
-        dm.delete_image("nonexistent.png")
+    def test_delete_character_images_no_dir(self, dm):
+        """delete_character_images handles missing directory gracefully."""
+        dm.delete_character_images("nonexistent")
 
     def test_delete_gallery_images(self, dm):
-        """delete_gallery_images removes all character images in a gallery."""
-        img_dir = os.path.join(dm.data_dir, "images")
-        os.makedirs(img_dir, exist_ok=True)
-        path1 = os.path.join(img_dir, "c1.png")
-        path2 = os.path.join(img_dir, "c2.png")
-        with open(path1, "wb") as f:
-            f.write(b"x")
-        with open(path2, "wb") as f:
-            f.write(b"x")
+        """delete_gallery_images removes all character portrait dirs."""
+        for cid in ("c1", "c2"):
+            d = dm._portrait_dir(cid)
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "0.png"), "wb") as f:
+                f.write(b"x")
 
         gallery = {
             "name": "Test",
             "characters": [
-                {"id": "c1", "image": path1},
-                {"id": "c2", "image": path2},
+                {"id": "c1", "images": [os.path.join(dm._portrait_dir("c1"), "0.png")]},
+                {"id": "c2", "images": [os.path.join(dm._portrait_dir("c2"), "0.png")]},
             ],
         }
         dm.delete_gallery_images(gallery)
-        assert not os.path.exists(path1)
-        assert not os.path.exists(path2)
+        assert not os.path.isdir(dm._portrait_dir("c1"))
+        assert not os.path.isdir(dm._portrait_dir("c2"))
 
     def test_export_gallery(self, dm):
         """export_gallery creates a folder with JSON and images."""
-        img_dir = os.path.join(dm.data_dir, "images")
-        os.makedirs(img_dir, exist_ok=True)
-        img_path = os.path.join(img_dir, "char1.png")
+        char_dir = dm._portrait_dir("char1")
+        os.makedirs(char_dir, exist_ok=True)
+        img_path = os.path.join(char_dir, "0.png")
         with open(img_path, "wb") as f:
             f.write(b"png-data")
 
         gallery = {
             "name": "ExportTest",
             "characters": [
-                {"id": "char1", "name": "Foo", "image": img_path, "dna": "", "tags": []}
+                {"id": "char1", "name": "Foo", "images": [img_path], "dna": "", "tags": []}
             ],
         }
         export_parent = os.path.join(dm.data_dir, "exports")
@@ -163,18 +155,19 @@ class TestDataManager:
         expected = os.path.join(export_parent, "ExportTest")
         assert out == expected
         assert os.path.exists(os.path.join(expected, "characters.json"))
-        assert os.path.exists(os.path.join(expected, "images", "char1.png"))
+        assert os.path.exists(os.path.join(expected, "images", "char1", "0.png"))
 
     def test_import_gallery(self, dm):
         """import_gallery reads a folder and appends a new gallery."""
         src_dir = os.path.join(dm.data_dir, "import_src")
-        os.makedirs(os.path.join(src_dir, "images"), exist_ok=True)
+        os.makedirs(os.path.join(src_dir, "images", "xyz"), exist_ok=True)
         char_data = [
-            {"id": "xyz", "name": "Alice", "dna": "gene=1", "tags": ["elf"]}
+            {"id": "xyz", "name": "Alice", "dna": "gene=1", "tags": ["elf"],
+             "images": ["images/xyz/0.png"]}
         ]
         with open(os.path.join(src_dir, "characters.json"), "w") as f:
             json.dump(char_data, f)
-        img_path = os.path.join(src_dir, "images", "xyz.png")
+        img_path = os.path.join(src_dir, "images", "xyz", "0.png")
         with open(img_path, "wb") as f:
             f.write(b"png-data")
 
@@ -184,15 +177,36 @@ class TestDataManager:
         assert imported["name"] == "Imported"
         assert len(imported["characters"]) == 1
         assert imported["characters"][0]["name"] == "Alice"
-        assert imported["characters"][0]["image"] is not None
+        assert len(imported["characters"][0]["images"]) == 1
+
+    def test_import_gallery_old_format(self, dm):
+        """import_gallery handles legacy flat image format."""
+        src_dir = os.path.join(dm.data_dir, "import_old")
+        os.makedirs(os.path.join(src_dir, "images"), exist_ok=True)
+        char_data = [
+            {"id": "old1", "name": "Legacy", "dna": "x", "tags": [], "image": "dummy"}
+        ]
+        with open(os.path.join(src_dir, "characters.json"), "w") as f:
+            json.dump(char_data, f)
+        img_path = os.path.join(src_dir, "images", "old1.png")
+        with open(img_path, "wb") as f:
+            f.write(b"png-data")
+
+        dm.import_gallery(src_dir, "Legacy Gallery")
+        g = dm.find_gallery("Legacy Gallery")
+        assert g is not None
+        assert len(g["characters"][0]["images"]) == 1
+        # Clean up
+        dm.galleries.remove(g)
 
     def test_create_character_has_required_fields(self, dm):
         """create_character returns a dict with all expected keys."""
         c = dm.create_character("Hero")
-        for key in ("id", "name", "image", "dna", "tags", "created", "modified"):
+        for key in ("id", "name", "images", "dna", "tags", "created", "modified"):
+            assert key in c
             assert key in c
         assert c["name"] == "Hero"
-        assert c["image"] is None
+        assert c["images"] == []
         assert c["dna"] == ""
         assert c["tags"] == []
         assert isinstance(c["created"], float)

@@ -29,7 +29,7 @@ def create_test_dm():
                 {
                     "id": "c1",
                     "name": "Alice",
-                    "image": None,
+                    "images": [],
                     "dna": "gene1 = { 1 10 1 10 }",
                     "tags": ["elf", "ruler"],
                     "created": 1000.0,
@@ -38,7 +38,7 @@ def create_test_dm():
                 {
                     "id": "c2",
                     "name": "Bob",
-                    "image": None,
+                    "images": [],
                     "dna": "gene2 = { 2 20 2 20 }",
                     "tags": [],
                     "created": 1500.0,
@@ -47,7 +47,7 @@ def create_test_dm():
                 {
                     "id": "c3",
                     "name": "Charlie",
-                    "image": None,
+                    "images": [],
                     "dna": "gene3 = { 3 30 3 30 }",
                     "tags": ["dwarf"],
                     "created": 500.0,
@@ -210,7 +210,7 @@ class TestCharacterGalleryDataMethods:
         assert "Bob" in char_names
         # Select Bob and delete
         with mock.patch(
-            "gallery_ui.ask_yesno", return_value=True
+            "dialogs.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         char_names = [c["name"] for c in self.app.current_gallery["characters"]]
@@ -266,7 +266,7 @@ class TestCharacterGalleryDataMethods:
         self.app.on_select(None)
         assert self.app.current_index == 2
         with mock.patch(
-            "gallery_ui.ask_string", return_value="Chuck"
+            "dialogs.ask_string", return_value="Chuck"
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][2]["name"] == "Chuck"
@@ -282,7 +282,7 @@ class TestCharacterGalleryDataMethods:
         assert len(list(self.app.char_listbox.get(0, "end"))) == 1
         self.app.char_listbox.selection_set(0)
         with mock.patch(
-            "gallery_ui.ask_yesno", return_value=True
+            "dialogs.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         items = list(self.app.char_listbox.get(0, "end"))
@@ -333,7 +333,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "gallery_ui.ask_string", return_value=None
+            "dialogs.ask_string", return_value=None
         ):
             self.app.new_character()
         assert len(self.app.current_gallery["characters"]) == before
@@ -343,7 +343,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "gallery_ui.ask_string", return_value="Diana"
+            "dialogs.ask_string", return_value="Diana"
         ):
             self.app.new_character()
         after = len(self.app.current_gallery["characters"])
@@ -362,7 +362,7 @@ class TestCharacterGalleryDataMethods:
         self.app.char_listbox.selection_set(0)
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "gallery_ui.ask_yesno", return_value=False
+            "dialogs.ask_yesno", return_value=False
         ):
             self.app.delete_character()
         assert len(self.app.current_gallery["characters"]) == before
@@ -387,7 +387,7 @@ class TestCharacterGalleryDataMethods:
         self.app.char_listbox.selection_set(idx)
         before = len(self.app.current_gallery["characters"])
         with mock.patch(
-            "gallery_ui.ask_yesno", return_value=True
+            "dialogs.ask_yesno", return_value=True
         ):
             self.app.delete_character()
         assert len(self.app.current_gallery["characters"]) == before - 1
@@ -423,7 +423,7 @@ class TestCharacterGalleryDataMethods:
         self.app.current_index = 0
         old_name = self.app.current_gallery["characters"][0]["name"]
         with mock.patch(
-            "gallery_ui.ask_string", return_value=None
+            "dialogs.ask_string", return_value=None
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][0]["name"] == old_name
@@ -433,7 +433,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         self.app.current_index = 0
         with mock.patch(
-            "gallery_ui.ask_string", return_value="Alicia"
+            "dialogs.ask_string", return_value="Alicia"
         ):
             self.app.rename_character()
         assert self.app.current_gallery["characters"][0]["name"] == "Alicia"
@@ -498,7 +498,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery changes the gallery name."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "gallery_ui.ask_string", return_value="Renamed"
+            "dialogs.ask_string", return_value="Renamed"
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -511,7 +511,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery does nothing if user cancels."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "gallery_ui.ask_string", return_value=None
+            "dialogs.ask_string", return_value=None
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -521,7 +521,7 @@ class TestCharacterGalleryDataMethods:
         """rename_gallery does nothing if new name equals old name."""
         old_name = self.dm.galleries[0]["name"]
         with mock.patch(
-            "gallery_ui.ask_string", return_value=old_name
+            "dialogs.ask_string", return_value=old_name
         ):
             self.app.load_gallery(old_name)
             self.app.rename_gallery()
@@ -532,7 +532,7 @@ class TestCharacterGalleryDataMethods:
         self.dm.galleries = [{"name": "Only", "characters": []}]
         self.dm.save()
         self.app.load_gallery("Only")
-        with mock.patch("gallery_ui.show_warning") as mock_warn:
+        with mock.patch("dialogs.show_warning") as mock_warn:
             self.app.delete_gallery_confirm()
             mock_warn.assert_called_once()
         assert len(self.dm.galleries) == 1
@@ -545,11 +545,26 @@ class TestCharacterGalleryDataMethods:
         self.dm.save()
         self.app.load_gallery("TempDel")
         with mock.patch(
-            "gallery_ui.ask_yesno", return_value=True
+            "dialogs.ask_yesno", return_value=True
         ):
             self.app.delete_gallery_confirm()
         assert len(self.dm.galleries) == old_count
         assert self.dm.find_gallery("TempDel") is None
+
+    def test_delete_gallery_clears_display(self):
+        """Deleting the current gallery clears portrait, DNA, and tags."""
+        self.app.load_gallery("Test Gallery")
+        self.app.select_character(0)
+        assert self.app.dna_text.get("1.0", "end").strip() != ""
+
+        self.dm.galleries.append({"name": "ToDelete", "characters": []})
+        self.dm.save()
+        self.app.load_gallery("ToDelete")
+        with mock.patch("dialogs.ask_yesno", return_value=True):
+            self.app.delete_gallery_confirm()
+        assert self.app.dna_text.get("1.0", "end").strip() == ""
+        assert self.app.tags_text.get("1.0", "end").strip() == ""
+        assert self.app.portrait_image_id is None
 
     # ── Gallery change ────────────────────────────────────────────────
 
@@ -564,7 +579,7 @@ class TestCharacterGalleryDataMethods:
         """Selecting 'Create new gallery' adds a new gallery."""
         self.app.gallery_var.set("Create a new gallery...")
         with mock.patch(
-            "gallery_ui.ask_string", return_value="Fresh"
+            "dialogs.ask_string", return_value="Fresh"
         ):
             self.app.on_gallery_change()
         assert self.dm.find_gallery("Fresh") is not None
@@ -580,7 +595,7 @@ class TestCharacterGalleryDataMethods:
         old_name = self.app.current_gallery["name"]
         self.app.gallery_var.set("Create a new gallery...")
         with mock.patch(
-            "gallery_ui.ask_string", return_value=None
+            "dialogs.ask_string", return_value=None
         ):
             self.app.on_gallery_change()
         assert self.app.current_gallery["name"] == old_name
@@ -594,7 +609,7 @@ class TestCharacterGalleryDataMethods:
         try:
             with mock.patch(
                 "tkinter.filedialog.askdirectory", return_value=export_dir
-            ), mock.patch("gallery_ui.show_info"):
+            ), mock.patch("dialogs.show_info"):
                 self.app.export_gallery()
             out = os.path.join(export_dir, "Test Gallery")
             assert os.path.isdir(out)
@@ -624,7 +639,7 @@ class TestCharacterGalleryDataMethods:
             "tkinter.filedialog.askdirectory",
             return_value=tempfile.gettempdir(),
         ):
-            with mock.patch("gallery_ui.show_error") as mock_err:
+            with mock.patch("dialogs.show_error") as mock_err:
                 self.app.import_gallery()
                 mock_err.assert_called_once()
 
@@ -645,9 +660,9 @@ class TestCharacterGalleryDataMethods:
                 "tkinter.filedialog.askdirectory", return_value=src
             ):
                 with mock.patch(
-                    "gallery_ui.ask_string",
+                    "dialogs.ask_string",
                     return_value="Imported Gallery",
-                ), mock.patch("gallery_ui.show_info"):
+                ), mock.patch("dialogs.show_info"):
                     self.app.import_gallery()
 
             g = self.dm.find_gallery("Imported Gallery")
@@ -677,7 +692,7 @@ class TestCharacterGalleryDataMethods:
         self.app.load_gallery("Test Gallery")
         self.app.current_index = 0
         with mock.patch(
-            "gallery_ui.show_info"
+            "dialogs.show_info"
         ) as mock_info:
             self.app.save_current()
             mock_info.assert_called_once()
@@ -762,7 +777,7 @@ class TestCharacterGalleryDataMethods:
         """copy_dna shows info when DNA is empty."""
         self.app.dna_text.delete("1.0", "end")
         with mock.patch(
-            "gallery_ui.show_info"
+            "dialogs.show_info"
         ) as mock_info:
             self.app.copy_dna()
             mock_info.assert_called_once()
@@ -820,8 +835,8 @@ class TestCharacterGalleryDataMethods:
         """on_close saves when dirty and user confirms."""
         self.app.dirty = True
         with mock.patch(
-            "gallery_ui.ask_yesnocancel", return_value=True
-        ), mock.patch("gallery_ui.show_info"), mock.patch.object(
+            "dialogs.ask_yesnocancel", return_value=True
+        ), mock.patch("dialogs.show_info"), mock.patch.object(
             self.app, "destroy"
         ) as mock_destroy:
             self.app.on_close()
@@ -831,7 +846,7 @@ class TestCharacterGalleryDataMethods:
         """on_close destroys without saving when user chooses no."""
         self.app.dirty = True
         with mock.patch(
-            "gallery_ui.ask_yesnocancel", return_value=False
+            "dialogs.ask_yesnocancel", return_value=False
         ), mock.patch.object(self.app, "destroy") as mock_destroy:
             self.app.on_close()
             mock_destroy.assert_called_once()
@@ -840,7 +855,7 @@ class TestCharacterGalleryDataMethods:
         """on_close returns without destroying when user cancels."""
         self.app.dirty = True
         with mock.patch(
-            "gallery_ui.ask_yesnocancel", return_value=None
+            "dialogs.ask_yesnocancel", return_value=None
         ), mock.patch.object(self.app, "destroy") as mock_destroy:
             self.app.on_close()
             mock_destroy.assert_not_called()
@@ -888,6 +903,67 @@ class TestCharacterGalleryDataMethods:
             os.remove(self.app._geometry_file)
         self.app._restore_geometry()  # should not raise
 
+    # ── Multi-portrait ─────────────────────────────────────────────────
+
+    def test_add_portrait_slot(self):
+        """_add_portrait_slot appends an empty slot and shows the counter."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        self.app._add_portrait_slot()
+        images = self.app.current_gallery["characters"][0].get("images", [])
+        assert len(images) == 1
+        assert images[0] == ""
+
+    def test_add_portrait_slot_max_five(self):
+        """_add_portrait_slot rejects beyond 5 slots."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        for _ in range(5):
+            self.app._add_portrait_slot()
+        assert len(self.app.current_gallery["characters"][0].get("images", [])) == 5
+        with mock.patch("dialogs.show_warning") as mock_warn:
+            self.app._add_portrait_slot()
+            mock_warn.assert_called_once()
+
+    def test_remove_portrait_slot(self):
+        """_remove_portrait_slot deletes the current slot."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        self.app._add_portrait_slot()
+        self.app.current_gallery["characters"][0]["images"] = ["a.png", "b.png", "c.png"]
+        self.app.current_portrait_index = 1
+        self.app._remove_portrait_slot()
+        images = self.app.current_gallery["characters"][0].get("images", [])
+        assert images == ["a.png", "c.png"]
+        assert self.app.current_portrait_index == 1
+
+    def test_remove_last_slot_clamps_index(self):
+        """Removing the last slot decrements the index."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        self.app.current_gallery["characters"][0]["images"] = ["a.png", "b.png"]
+        self.app.current_portrait_index = 1
+        self.app._remove_portrait_slot()
+        assert self.app.current_portrait_index == 0
+
+    def test_portrait_count_updates(self):
+        """portrait_count reflects the number of slots."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        char = self.app.current_gallery["characters"][0]
+        assert self.app.data_manager.portrait_count(char) == 0
+        char["images"] = ["x.png"]
+        assert self.app.data_manager.portrait_count(char) == 1
+
+    def test_cycle_portrait_wraps(self):
+        """_cycle_portrait wraps around the portrait list."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_index = 0
+        self.app.current_gallery["characters"][0]["images"] = ["a.png", "b.png"]
+        self.app.current_portrait_index = 1
+        self.app._cycle_portrait(1)
+        assert self.app.current_portrait_index == 0
+
     # ── Clipboard ─────────────────────────────────────────────────────
 
     def test_clipboard_no_selection(self):
@@ -921,7 +997,7 @@ class TestCharacterGalleryDataMethods:
         """change_portrait warns if no character is selected."""
         self.app.current_index = None
         with mock.patch(
-            "gallery_ui.show_warning"
+            "dialogs.show_warning"
         ) as mock_warn:
             self.app.change_portrait()
             mock_warn.assert_called_once()
