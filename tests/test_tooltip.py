@@ -1,9 +1,5 @@
 """Tests for the ToolTip class."""
 
-import time
-
-import pytest
-
 from tooltip import ToolTip
 
 
