@@ -5,7 +5,7 @@
 
 A desktop application for managing and organizing Crusader Kings 3 character DNAs.
 
-![alt text](https://i.imgur.com/PuKypMQ.png)
+![alt text](https://i.imgur.com/20jv1i4.png)
 
 ## Features
 
@@ -14,7 +14,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 - **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
 - **Multi-Portrait Support**: Each character can have up to 5 portraits. Add slots with the `+` button, remove with `-`, and cycle through them with on-canvas arrow overlays.
 - **DNA Displayer**:
-  - View and edit raw character DNA strings.
+  - Store, view and edit raw character DNA strings.
   - Clear, homogenize (gene-value duplication), save, and copy DNA with one click.
 - **Hotkeys**:
   - Ctrl+S: Save current character data.
@@ -73,7 +73,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 4. And then just Copy the DNA and paste it inside the Character DNA box.
 5. Save (Ctrl + S).
 6. **To use Tags** & narrow character entry list to specific tags, start with "tags:" or "tag:" in the search box followed by the tag, separate by comma if multiple.
-![alt text](https://i.imgur.com/7FjG0IL.png)
+![alt text](https://i.imgur.com/PZoWoxh.png)
 
 ## Data Storage
 
