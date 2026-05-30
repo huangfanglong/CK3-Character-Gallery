@@ -304,7 +304,7 @@ class CharacterGallery(tk.Tk):
         ttk.Button(
             btns_frame,
             text="Clear DNA",
-            command=lambda: self.dna_text.delete("1.0", tk.END),
+            command=self._clear_dna,
             width=12,
         ).pack(side="left", padx=(0, 5))
         ttk.Button(
@@ -1026,6 +1026,16 @@ class CharacterGallery(tk.Tk):
             self.current_gallery["characters"][self.current_index]["modified"] = time.time()
             self.dirty = True
         self.set_status("DNA homogenized \u2714\ufe0f")
+
+    def _clear_dna(self) -> None:
+        """Clear the DNA text and update the character data."""
+        assert self.current_gallery is not None
+        self.dna_text.delete("1.0", tk.END)
+        if self.current_index is not None:
+            self.current_gallery["characters"][self.current_index]["dna"] = ""
+            self.current_gallery["characters"][self.current_index]["modified"] = time.time()
+            self.dirty = True
+        self.set_status("DNA cleared \u2714\ufe0f")
 
     def copy_dna(self) -> None:
         """Copy the current DNA text to the system clipboard."""

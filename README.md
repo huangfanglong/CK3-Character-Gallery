@@ -12,6 +12,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 - **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them. Import & Export them to save online or share them with others.
 - **Character Management**: Add, delete, and batch-delete character entries within each gallery. Give each character entry specific tags and ability to search & narrow them in the search box.
 - **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
+- **Multi-Portrait Support**: Each character can have up to 5 portraits. Add slots with the `+` button, remove with `-`, and cycle through them with on-canvas arrow overlays.
 - **DNA Displayer**:
   - View and edit raw character DNA strings.
   - Clear, homogenize (gene-value duplication), save, and copy DNA with one click.
@@ -22,7 +23,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
   - Ctrl+D: Duplicate character entry.
   - Ctrl+E: Exports current gallery.
   - Ctrl+F: Search.
-  - Ctrl+V: Support pasting an image from clipboard to be used as Portrait img on the selected entry.
+  - Ctrl+V: Paste portrait image from clipboard into current slot.
   - Delete: Remove selected characters.
   - F2: Renames selected character.
 
@@ -67,7 +68,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 ## Usage
 
 1. Ctrl+N to create new character entry (or click the +New button).
-2. Click 'Change Portrait', or click directly in the Portrait box, or Copy (Ctrl+C) a picture of the character (I usually Ctrl+C directly from Snipping Tool after taking a snip in-game) and then Ctrl+V with that character entry selected.
+2. Click 'Change Portrait', or click directly in the Portrait box, or Copy (Ctrl+C) a picture of the character (I usually Ctrl+C directly from Snipping Tool after taking a snip in-game) and then Ctrl+V with that character entry selected. This replaces the image in the currently-selected portrait slot. Use the **+** and **-** buttons to add or remove portrait slots (up to 5 per character), and the on-canvas arrows or left/right edges of the portrait to cycle between them.
 3. Then it prompts a window to reposition the image to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
 4. And then just Copy the DNA and paste it inside the Character DNA box.
 5. Save (Ctrl + S).
@@ -77,7 +78,7 @@ A desktop application for managing and organizing Crusader Kings 3 character DNA
 ## Data Storage
 
 - Galleries and character metadata are stored in `character_gallery_data/galleries.json`.
-- Portrait images are saved under `character_gallery_data/images/<character_id>.png`.
+- Portrait images are saved under `character_gallery_data/images/<character_id>/0.png`, `1.png`, etc.
 
 ## Contributing
 
