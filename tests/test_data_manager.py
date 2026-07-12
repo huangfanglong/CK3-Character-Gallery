@@ -42,6 +42,28 @@ class TestDataManager:
         assert dm.galleries[0]["name"] == "Default"
         assert os.path.exists(str(corrupt_file) + ".backup")
 
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {},
+            [],
+            [{"name": "Broken"}],
+            [{"name": "Broken", "characters": [{"id": "c1"}]}],
+            [{"name": "Broken", "characters": [{"id": "..", "name": "Bad"}]}],
+        ],
+    )
+    def test_malformed_json_schema_falls_back_to_default(self, tmp_path, data):
+        """Valid JSON with an unsafe schema is backed up instead of crashing startup."""
+        data_dir = tmp_path / "test_malformed"
+        data_dir.mkdir()
+        data_file = data_dir / "galleries.json"
+        data_file.write_text(json.dumps(data), encoding="utf-8")
+
+        dm = DataManager(data_dir=str(data_dir))
+
+        assert dm.galleries == [{"name": "Default", "characters": []}]
+        assert os.path.exists(str(data_file) + ".backup")
+
     def test_missing_json_file_creates_default(self, tmp_path):
         """When no JSON file exists, a default gallery is created."""
         data_dir = tmp_path / "test_empty"
@@ -157,6 +179,23 @@ class TestDataManager:
         assert os.path.exists(os.path.join(expected, "characters.json"))
         assert os.path.exists(os.path.join(expected, "images", "char1", "0.png"))
 
+    @pytest.mark.parametrize(
+        "name", ["..", "../outside", "..\\outside", "/absolute/outside"]
+    )
+    def test_export_gallery_rejects_unsafe_name(self, dm, tmp_path, name):
+        """A gallery name cannot escape or overwrite outside the export directory."""
+        export_parent = tmp_path / "exports"
+        export_parent.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        marker = outside / "keep.txt"
+        marker.write_text("keep", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="unsafe|path component"):
+            dm.export_gallery({"name": name, "characters": []}, str(export_parent))
+
+        assert marker.read_text(encoding="utf-8") == "keep"
+
     def test_import_gallery(self, dm):
         """import_gallery reads a folder and appends a new gallery."""
         src_dir = os.path.join(dm.data_dir, "import_src")
@@ -198,6 +237,32 @@ class TestDataManager:
         assert len(g["characters"][0]["images"]) == 1
         # Clean up
         dm.galleries.remove(g)
+
+    @pytest.mark.parametrize(
+        "characters",
+        [
+            {},
+            [{"id": "c1"}],
+            [{"id": "..", "name": "Escape", "images": ["0.png"]}],
+            [{"id": "/outside", "name": "Absolute", "images": ["0.png"]}],
+            [{"id": "c1", "name": "Bad images", "images": "0.png"}],
+        ],
+    )
+    def test_import_gallery_rejects_malformed_or_unsafe_data(
+        self, dm, tmp_path, characters
+    ):
+        """Malformed imports are rejected before a gallery is appended."""
+        src_dir = tmp_path / "unsafe_import"
+        src_dir.mkdir()
+        (src_dir / "characters.json").write_text(
+            json.dumps(characters), encoding="utf-8"
+        )
+        before = len(dm.galleries)
+
+        with pytest.raises(ValueError):
+            dm.import_gallery(str(src_dir), "Unsafe")
+
+        assert len(dm.galleries) == before
 
     def test_create_character_has_required_fields(self, dm):
         """create_character returns a dict with all expected keys."""

@@ -19,6 +19,8 @@ GalleriesList = list[GalleryDict]
 class DataManager:
     """Manages gallery data persistence and image file storage."""
 
+    _DEFAULT_GALLERIES: GalleriesList = [{"name": "Default", "characters": []}]
+
     def __init__(self, data_dir: str = "character_gallery_data") -> None:
         """Initialise the data manager, loading existing data or creating defaults.
 
@@ -38,19 +40,21 @@ class DataManager:
         and a fresh default gallery is created so the application can still start.
         """
         if not os.path.exists(self.data_file):
-            self.galleries = [{"name": "Default", "characters": []}]
+            self.galleries = self._default_galleries()
             return
 
         try:
             with open(self.data_file, encoding="utf-8") as f:
-                self.galleries = json.load(f)
-        except (json.JSONDecodeError, OSError) as exc:
+                galleries = json.load(f)
+            self._validate_galleries(galleries)
+            self.galleries = galleries
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
             backup = self.data_file + ".backup"
             try:
                 os.replace(self.data_file, backup)
             except OSError:
                 pass
-            self.galleries = [{"name": "Default", "characters": []}]
+            self.galleries = self._default_galleries()
             print(
                 f"Warning: Could not load {self.data_file}: {exc}. "
                 f"Original backed up to {backup}. Starting with a fresh gallery.",
@@ -58,6 +62,85 @@ class DataManager:
             )
 
         self._migrate()
+
+    @classmethod
+    def _default_galleries(cls) -> GalleriesList:
+        """Return a new default gallery structure."""
+        return [
+            {"name": gallery["name"], "characters": []}
+            for gallery in cls._DEFAULT_GALLERIES
+        ]
+
+    @staticmethod
+    def _validate_path_component(value: Any, field: str) -> str:
+        """Validate a value that will be used as one filesystem path component."""
+        if not isinstance(value, str) or not value or value in {".", ".."}:
+            raise ValueError(f"{field} must be a non-empty path component")
+        if os.path.isabs(value) or "/" in value or "\\" in value:
+            raise ValueError(f"{field} contains an unsafe path")
+        return value
+
+    @classmethod
+    def _validate_character(cls, char: Any, context: str) -> None:
+        """Validate the persisted fields used by character operations."""
+        if not isinstance(char, dict):
+            raise ValueError(f"{context} must be an object")
+        cls._validate_path_component(char.get("id"), f"{context}.id")
+        if not isinstance(char.get("name"), str):
+            raise ValueError(f"{context}.name must be a string")
+        if "dna" in char and not isinstance(char["dna"], str):
+            raise ValueError(f"{context}.dna must be a string")
+        if "tags" in char and (
+            not isinstance(char["tags"], list)
+            or not all(isinstance(tag, str) for tag in char["tags"])
+        ):
+            raise ValueError(f"{context}.tags must be a list of strings")
+        if "images" in char and (
+            not isinstance(char["images"], list)
+            or not all(isinstance(path, str) for path in char["images"])
+        ):
+            raise ValueError(f"{context}.images must be a list of strings")
+        if (
+            "image" in char
+            and char["image"] is not None
+            and not isinstance(char["image"], str)
+        ):
+            raise ValueError(f"{context}.image must be a string")
+        for field in ("created", "modified"):
+            if field in char and (
+                isinstance(char[field], bool)
+                or not isinstance(char[field], (int, float))
+            ):
+                raise ValueError(f"{context}.{field} must be a number")
+
+    @classmethod
+    def _validate_galleries(cls, galleries: Any) -> None:
+        """Validate the top-level persisted gallery schema."""
+        if not isinstance(galleries, list) or not galleries:
+            raise ValueError("gallery data must be a non-empty list")
+        for gallery_index, gallery in enumerate(galleries):
+            context = f"gallery[{gallery_index}]"
+            if not isinstance(gallery, dict):
+                raise ValueError(f"{context} must be an object")
+            if not isinstance(gallery.get("name"), str) or not gallery["name"]:
+                raise ValueError(f"{context}.name must be a non-empty string")
+            characters = gallery.get("characters")
+            if not isinstance(characters, list):
+                raise ValueError(f"{context}.characters must be a list")
+            for char_index, char in enumerate(characters):
+                cls._validate_character(char, f"{context}.characters[{char_index}]")
+
+    @staticmethod
+    def _safe_child(root: str, *parts: str) -> str:
+        """Return a resolved child path, rejecting paths outside *root*."""
+        resolved_root = os.path.realpath(root)
+        resolved_child = os.path.realpath(os.path.join(resolved_root, *parts))
+        try:
+            if os.path.commonpath((resolved_root, resolved_child)) != resolved_root:
+                raise ValueError("path escapes the selected directory")
+        except ValueError as exc:
+            raise ValueError("path escapes the selected directory") from exc
+        return resolved_child
 
     def _migrate(self) -> None:
         """Convert legacy single-image characters to the multi-portrait format."""
@@ -168,8 +251,7 @@ class DataManager:
         Returns:
             The path to the created export directory.
         """
-        name = gallery["name"]
-        out_dir = os.path.join(dest_dir, name)
+        out_dir = self.get_export_path(gallery, dest_dir)
         if os.path.exists(out_dir):
             shutil.rmtree(out_dir)
         os.makedirs(out_dir, exist_ok=True)
@@ -188,6 +270,11 @@ class DataManager:
 
         return out_dir
 
+    def get_export_path(self, gallery: GalleryDict, dest_dir: str) -> str:
+        """Return a safe export path for a gallery under *dest_dir*."""
+        name = self._validate_path_component(gallery.get("name"), "gallery name")
+        return self._safe_child(dest_dir, name)
+
     def import_gallery(self, folder: str, gallery_name: str) -> GalleryDict:
         """Import a gallery from a folder on disk.
 
@@ -205,21 +292,28 @@ class DataManager:
         images_folder = os.path.join(folder, "images")
 
         with open(json_file, encoding="utf-8") as f:
-            chars: list[dict[str, Any]] = json.load(f)
+            chars: Any = json.load(f)
+        if not isinstance(chars, list):
+            raise ValueError("characters.json must contain a list")
+        for index, char in enumerate(chars):
+            self._validate_character(char, f"character[{index}]")
 
         new_gallery: GalleryDict = {"name": gallery_name, "characters": []}
         for char in chars:
             cid = str(uuid.uuid4())
-            old_id = char.get("id", cid)
+            old_id = self._validate_path_component(char["id"], "character id")
 
             # Gather source images (support both old "image" and new "images")
             old_image = char.get("image")
             old_images = char.get("images")
             if old_images:
-                src_paths = [os.path.join(images_folder, old_id, os.path.basename(p))
-                             for p in old_images]
+                src_paths = [
+                    self._safe_child(images_folder, old_id, os.path.basename(path))
+                    for path in old_images
+                    if path
+                ]
             elif old_image:
-                src_paths = [os.path.join(images_folder, f"{old_id}.png")]
+                src_paths = [self._safe_child(images_folder, f"{old_id}.png")]
             else:
                 src_paths = []
 

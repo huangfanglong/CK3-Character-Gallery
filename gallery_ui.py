@@ -394,6 +394,29 @@ class CharacterGallery(tk.Tk):
             return self._char_indices[listbox_idx]
         return listbox_idx
 
+    def _current_character_id(self) -> str | None:
+        """Return the selected character ID without relying on list order."""
+        if self.current_gallery is None or self.current_index is None:
+            return None
+        characters = self.current_gallery["characters"]
+        if 0 <= self.current_index < len(characters):
+            char_id = characters[self.current_index].get("id")
+            return char_id if isinstance(char_id, str) else None
+        return None
+
+    def _restore_character_selection(self, char_id: str | None) -> None:
+        """Restore selection by stable character ID after a list reorder."""
+        if self.current_gallery is None or char_id is None:
+            return
+        for model_index, char in enumerate(self.current_gallery["characters"]):
+            if char["id"] != char_id:
+                continue
+            self.current_index = model_index
+            self.char_listbox.selection_clear(0, tk.END)
+            if model_index in self._char_indices:
+                self.char_listbox.selection_set(self._char_indices.index(model_index))
+            return
+
     # ------------------------------------------------------------------
     # Status bar
     # ------------------------------------------------------------------
@@ -420,10 +443,9 @@ class CharacterGallery(tk.Tk):
 
     def save_current(self) -> None:
         """Save galleries and notify the user via status bar and dialog."""
-        if self.current_index is not None:
-            self.save_galleries()
-            self.set_status("Character data saved successfully \u2714\ufe0f")
-            dialogs.show_info(self, "Saved", "Character data saved successfully!")
+        self.save_galleries()
+        self.set_status("Character data saved successfully \u2714\ufe0f")
+        dialogs.show_info(self, "Saved", "Character data saved successfully!")
 
     # ------------------------------------------------------------------
     # Gallery management
@@ -533,13 +555,21 @@ class CharacterGallery(tk.Tk):
         dest = filedialog.askdirectory(title=f"Export gallery '{name}' to folder")
         if not dest:
             return
-        out_dir = os.path.join(dest, name)
+        try:
+            out_dir = self.data_manager.get_export_path(self.current_gallery, dest)
+        except ValueError as exc:
+            dialogs.show_error(self, "Export failed", str(exc))
+            return
         if os.path.exists(out_dir):
             if not dialogs.ask_yesno(
                 self, "Overwrite?", f"Folder '{out_dir}' exists. Overwrite?"
             ):
                 return
-        self.data_manager.export_gallery(self.current_gallery, dest)
+        try:
+            self.data_manager.export_gallery(self.current_gallery, dest)
+        except (OSError, ValueError) as exc:
+            dialogs.show_error(self, "Export failed", str(exc))
+            return
         dialogs.show_info(self, "Exported", f"Gallery '{name}' exported to {out_dir}")
 
     def import_gallery(self) -> None:
@@ -556,7 +586,11 @@ class CharacterGallery(tk.Tk):
         )
         if not gallery_name:
             return
-        self.data_manager.import_gallery(folder, gallery_name)
+        try:
+            self.data_manager.import_gallery(folder, gallery_name)
+        except (OSError, ValueError) as exc:
+            dialogs.show_error(self, "Import failed", str(exc))
+            return
         self.dirty = True
         self.save_galleries()
         self._update_gallery_combobox()
@@ -893,6 +927,7 @@ class CharacterGallery(tk.Tk):
                   'created_desc', 'modified_desc'.
         """
         assert self.current_gallery is not None
+        selected_id = self._current_character_id()
         lst = self.current_gallery["characters"]
         if mode == "name_asc":
             lst.sort(key=lambda c: c["name"].lower())
@@ -907,6 +942,7 @@ class CharacterGallery(tk.Tk):
         self.dirty = True
         self.save_galleries()
         self.refresh_list()
+        self._restore_character_selection(selected_id)
         self.set_status("Character entries sorted \u2714\ufe0f")
 
     def start_drag(self, event: tk.Event) -> None:
@@ -916,16 +952,26 @@ class CharacterGallery(tk.Tk):
     def on_drop(self, event: tk.Event) -> None:
         """Complete a drag-drop reorder, moving the character to the drop position."""
         assert self.current_gallery is not None
+        if self._drag_idx is None:
+            return
+        lst = self.current_gallery["characters"]
+        if not 0 <= self._drag_idx < len(lst):
+            self._drag_idx = None
+            return
         dst = self._char_idx(self.char_listbox.nearest(event.y))
+        if not 0 <= dst < len(lst):
+            self._drag_idx = None
+            return
+        selected_id = self._current_character_id()
         if dst != self._drag_idx:
-            lst = self.current_gallery["characters"]
             item = lst.pop(self._drag_idx)
             lst.insert(dst, item)
             self.current_gallery["characters"][dst]["modified"] = time.time()
             self.dirty = True
             self.save_galleries()
             self.refresh_list()
-            self.char_listbox.selection_set(dst)
+            self._restore_character_selection(selected_id or item["id"])
+        self._drag_idx = None
 
     # ------------------------------------------------------------------
     # Portrait
