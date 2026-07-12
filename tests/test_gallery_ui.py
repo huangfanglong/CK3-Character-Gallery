@@ -492,6 +492,43 @@ class TestCharacterGalleryDataMethods:
         names = [c["name"] for c in dm2.galleries[0]["characters"]]
         assert names == ["Alice", "Bob", "Charlie"]
 
+    def test_sort_preserves_selected_character_identity(self):
+        """Editing after a sort still updates the character selected before sorting."""
+        self.app.load_gallery("Test Gallery")
+        self.app.select_character(0)
+
+        self.app.sort_characters("name_desc")
+
+        selected = self.app.current_gallery["characters"][self.app.current_index]
+        assert selected["id"] == "c1"
+        self.app.dna_text.delete("1.0", "end")
+        self.app.dna_text.insert("1.0", "alice after sort")
+        self.app.on_dna_change()
+        by_id = {char["id"]: char for char in self.app.current_gallery["characters"]}
+        assert by_id["c1"]["dna"] == "alice after sort"
+        assert by_id["c3"]["dna"] == "gene3 = { 3 30 3 30 }"
+
+    def test_drag_drop_preserves_selected_character_identity(self):
+        """Editing after drag reorder still targets the originally selected character."""
+        import tkinter as tk
+
+        self.app.load_gallery("Test Gallery")
+        self.app.select_character(0)
+        self.app._drag_idx = 0
+        event = tk.Event()
+        event.y = 100
+        with mock.patch.object(self.app.char_listbox, "nearest", return_value=2):
+            self.app.on_drop(event)
+
+        selected = self.app.current_gallery["characters"][self.app.current_index]
+        assert selected["id"] == "c1"
+        self.app.tags_text.delete("1.0", "end")
+        self.app.tags_text.insert("1.0", "moved")
+        self.app.on_tags_change()
+        by_id = {char["id"]: char for char in self.app.current_gallery["characters"]}
+        assert by_id["c1"]["tags"] == ["moved"]
+        assert by_id["c3"]["tags"] == ["dwarf"]
+
     # ── Gallery rename / delete ───────────────────────────────────────
 
     def test_rename_gallery(self):
@@ -699,9 +736,17 @@ class TestCharacterGalleryDataMethods:
         assert self.app.dirty is False
 
     def test_save_current_no_selection(self):
-        """save_current is a no-op when nothing is selected."""
+        """save_current persists dirty gallery data even when nothing is selected."""
+        self.app.load_gallery("Test Gallery")
+        self.app.current_gallery["characters"][0]["dna"] = "save without selection"
+        self.app.dirty = True
         self.app.current_index = None
-        self.app.save_current()  # should not raise
+        with mock.patch("dialogs.show_info"):
+            self.app.save_current()
+
+        reloaded = DataManager(data_dir=self.dm.data_dir)
+        assert reloaded.galleries[0]["characters"][0]["dna"] == "save without selection"
+        assert self.app.dirty is False
 
     # ── Tags & DNA editing ────────────────────────────────────────────
 
@@ -813,9 +858,16 @@ class TestCharacterGalleryDataMethods:
 
     def test_drag_drop_requires_init(self):
         """on_drop with uninitialized _drag_idx should be safe."""
+        import tkinter as tk
+
         self.app.load_gallery("Test Gallery")
         self.app._drag_idx = None
-        assert hasattr(self.app, "_drag_idx")
+        event = tk.Event()
+        event.y = 0
+        self.app.on_drop(event)
+        assert [char["id"] for char in self.app.current_gallery["characters"]] == [
+            "c1", "c2", "c3"
+        ]
 
     def test_default_state_after_init(self):
         """After init the app should have a gallery selected."""
@@ -841,6 +893,24 @@ class TestCharacterGalleryDataMethods:
         ) as mock_destroy:
             self.app.on_close()
             mock_destroy.assert_called_once()
+
+    def test_on_close_saves_after_switching_gallery(self):
+        """Confirming save persists edits even after switching clears selection."""
+        self.app.load_gallery("Test Gallery")
+        self.app.select_character(0)
+        self.app.dna_text.delete("1.0", "end")
+        self.app.dna_text.insert("1.0", "edited before switch")
+        self.app.on_dna_change()
+        self.app.load_gallery("Second Gallery")
+        assert self.app.current_index is None
+
+        with mock.patch(
+            "dialogs.ask_yesnocancel", return_value=True
+        ), mock.patch("dialogs.show_info"), mock.patch.object(self.app, "destroy"):
+            self.app.on_close()
+
+        reloaded = DataManager(data_dir=self.dm.data_dir)
+        assert reloaded.galleries[0]["characters"][0]["dna"] == "edited before switch"
 
     def test_on_close_dirty_discard(self):
         """on_close destroys without saving when user chooses no."""
