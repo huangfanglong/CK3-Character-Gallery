@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { duplicateGalleryInArchive, exportGalleryToFolder, importGalleryFromFolder, readGalleryInfo } = require('../electron/gallery-transfer.cjs');
+const { duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('../electron/gallery-transfer.cjs');
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ck3-gallery-transfer-'));
@@ -43,7 +43,8 @@ async function main() {
     assert.equal(duplicated.characters[0].images.length, 2);
     await Promise.all(duplicated.characters[0].images.map((image) => fs.access(image)));
 
-    const exportDirectory = await exportGalleryToFolder(gallery, exportParent);
+    const exportDirectory = exportPathFor(gallery, exportParent);
+    assert.equal(await exportGalleryToFolder(gallery, exportDirectory), exportDirectory);
     assert.equal(path.basename(exportDirectory), 'Court_ Test');
     const manifest = JSON.parse(await fs.readFile(path.join(exportDirectory, 'characters.json'), 'utf8'));
     assert.deepEqual(manifest[0].images, ['0.png', '1.jpg']);
@@ -52,14 +53,18 @@ async function main() {
     const metadata = JSON.parse(await fs.readFile(path.join(exportDirectory, 'gallery.json'), 'utf8'));
     assert.equal(metadata.name, gallery.name);
     assert.equal(metadata.sortMode, 'custom');
-    await assert.rejects(() => exportGalleryToFolder(gallery, exportParent), /already exists/);
-    await exportGalleryToFolder(gallery, exportParent, { replace: true });
+    await assert.rejects(() => exportGalleryToFolder(gallery, exportDirectory), /already exists/);
+    await exportGalleryToFolder(gallery, exportDirectory, { replace: true });
+
+    const currentFolderExport = path.join(root, 'current-folder', 'Chosen Collection Folder');
+    assert.equal(await exportGalleryToFolder(gallery, currentFolderExport), currentFolderExport);
+    await fs.access(path.join(currentFolderExport, 'characters.json'));
 
     const unrelatedDirectory = path.join(exportParent, 'Unrelated');
     await fs.mkdir(unrelatedDirectory);
     await fs.writeFile(path.join(unrelatedDirectory, 'keep.txt'), 'do not remove');
     await assert.rejects(
-      () => exportGalleryToFolder({ ...gallery, name: 'Unrelated' }, exportParent, { replace: true }),
+      () => exportGalleryToFolder({ ...gallery, name: 'Unrelated' }, unrelatedDirectory, { replace: true }),
       /not a collection export/,
     );
     await fs.access(path.join(unrelatedDirectory, 'keep.txt'));
@@ -83,7 +88,7 @@ async function main() {
     assert.equal(character.modified, 200);
     assert.equal(character.images.length, 2);
     await Promise.all(character.images.map((image) => fs.access(image)));
-    console.log('Gallery transfer test passed: parent-folder resolution, safe duplication, metadata, portraits, overwrite protection, and v3 fields round-trip.');
+    console.log('Gallery transfer test passed: exact export destinations, parent-folder resolution, safe duplication, metadata, portraits, overwrite protection, and v3 fields round-trip.');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

@@ -37,11 +37,11 @@ async function resolveGalleryFolder(selectedFolder) {
   throw new Error('No characters.json was found in this folder or its immediate subfolders.');
 }
 
-async function exportGalleryToFolder(gallery, parentDirectory, options = {}) {
+async function exportGalleryToFolder(gallery, destinationDirectory, options = {}) {
   if (!gallery || typeof gallery.name !== 'string' || !Array.isArray(gallery.characters)) {
     throw new Error('The selected collection is not valid.');
   }
-  const exportDirectory = exportPathFor(gallery, parentDirectory);
+  const exportDirectory = path.resolve(destinationDirectory);
   let exportExists = false;
   try { await fs.access(exportDirectory); exportExists = true; } catch {}
   if (exportExists && !options.replace) throw new Error('The export folder already exists.');

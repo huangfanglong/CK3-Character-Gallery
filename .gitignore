@@ -13,8 +13,5 @@ out/
 Thumbs.db
 *.log
 
-# Local character archive and recovery files
-character_gallery_data/galleries.json
-character_gallery_data/galleries.json.tmp
-character_gallery_data/galleries.json.backup
-character_gallery_data/images/
+# Local character archive, portraits, and recovery files
+character_gallery_data/

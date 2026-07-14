@@ -21,6 +21,8 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 ## Browsing the Archive
 
 - Added search across character names, titles, and tags.
+- Replaced the native Sort by select with a dark themed, animated option menu whose trigger responds to hover, press, and open states.
+- Made the large archive heading display the active collection name and update immediately after collection changes.
 - Kept `tag:` and `tags:` searches. Comma-separated `tags:` queries now require every listed tag.
 - Replaced the single mutually exclusive archive filter with a toolbar panel that combines one DNA status, Favorites only, and multiple tags using AND logic.
 - Added live filter result totals, Clear all and Done controls, and a badge that counts the active filter controls without treating free-text search as a filter.
@@ -89,10 +91,12 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Configured packaged builds to use Electron's application data directory.
 - Added a command to open the local archive folder.
 - Added portable folder export with `characters.json`, `gallery.json`, and copied per-character portraits.
+- Replaced the export folder picker with a Save-style dialog that prefills the collection directory name, allowing export into the currently viewed destination without navigating back to its parent or manually creating a folder first.
 - Made exported folders directly importable. Round trips preserve portraits, DNA, notes, titles, colors, tags, timestamps, cover selection, and collection sort mode.
 - Allowed import to resolve a single collection export inside the selected parent folder, matching the destination level chosen during export.
 - Kept import compatibility with v2 folders that contain `characters.json` and images but no `gallery.json`.
 - Kept the renderer behind a small preload API instead of enabling Node.js in the page.
+- Isolated renderer smoke tests in an OS temporary archive and ignored the entire development data directory so tests and normal Git commits do not read, write, or include personal gallery records.
 
 ## Keyboard Shortcuts
 

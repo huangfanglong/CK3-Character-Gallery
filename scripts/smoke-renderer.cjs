@@ -1,14 +1,28 @@
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const electron = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'electron.exe');
-const child = spawn(electron, ['.', '--remote-debugging-port=9334'], { cwd: path.join(__dirname, '..'), stdio: 'ignore' });
+const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
+const smokeDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-renderer-smoke-'));
+const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`], {
+  cwd: path.join(__dirname, '..'),
+  env: { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory },
+  stdio: 'ignore',
+});
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function cleanup() {
+  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  else child.kill();
+  try { fs.rmSync(smokeDataDirectory, { recursive: true, force: true }); } catch {}
+}
 
 async function getPage() {
   for (let index = 0; index < 40; index += 1) {
     try {
-      const pages = await fetch('http://127.0.0.1:9334/json').then((response) => response.json());
+      const pages = await fetch(`http://127.0.0.1:${debuggingPort}/json`).then((response) => response.json());
       if (pages[0]) return pages[0];
     } catch {}
     await delay(250);
@@ -35,8 +49,10 @@ async function main() {
     socket.addEventListener('message', onMessage);
     socket.send(JSON.stringify({ id, method, params }));
   });
-  const evaluate = async (expression) => (await command('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+  const evaluate = async (expression) => (await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
   await delay(1000);
+  const rendererDataDirectory = path.resolve(await evaluate('window.galleryDesktop.load().then((loaded) => loaded.dataDirectory)'));
+  if (rendererDataDirectory.toLowerCase() !== path.resolve(smokeDataDirectory).toLowerCase()) throw new Error(`Renderer smoke test did not use its isolated temporary archive (expected ${smokeDataDirectory}, received ${rendererDataDirectory}).`);
   const cardCount = await evaluate("document.querySelectorAll('.character-card').length");
   if (cardCount < 1) throw new Error('Expected at least one archive card.');
   if (await evaluate("Boolean(document.querySelector('.top-actions .avatar'))")) throw new Error('Redundant account avatar remained in the archive toolbar.');
@@ -45,6 +61,7 @@ async function main() {
   if (!emptyInspector.action.includes('New character')) throw new Error('Empty inspector did not use the New character action label.');
   if (!emptyInspector.sidebarImport.includes('Import collection')) throw new Error('Sidebar retained the inconsistent Import gallery label.');
   await evaluate("(()=>{state.preview=false;state.galleries=[{name:'Smoke Archive',characters:[{id:'smoke-base-a',name:'Smoke Base A',title:'',images:[],dna:'base dna',tags:['base'],created:1,modified:1},{id:'smoke-base-b',name:'Smoke Base B',title:'',images:[],dna:'',tags:['base'],created:2,modified:2}]}];state.activeGallery='Smoke Archive';state.activeId=null;state.focusContext='character';state.selectedVariantIndex=null;state.query='';clearFilters(false);state.filterPanelOpen=false;state.sort='recent';state.view='cards';saveLibrary=async()=>{window.__smokeSaveCount=(window.__smokeSaveCount||0)+1;state.saved=true;};render();})()");
+  if ((await evaluate("document.querySelector('.archive-heading h1')?.textContent")) !== 'Smoke Archive') throw new Error('Archive heading did not show the active collection name.');
   const firstName = await evaluate("document.querySelector('.character-card h3').textContent");
   await evaluate("document.querySelector('.character-card').click()");
   if ((await evaluate("document.querySelector('.inspector-title h2')?.textContent")) !== firstName) throw new Error('Inspector did not open the selected character.');
@@ -55,11 +72,26 @@ async function main() {
   await evaluate(`(()=>{const cards=[...document.querySelectorAll('.character-card')];const source=cards[0];const target=cards[1];const rect=target.getBoundingClientRect();const transfer=new DataTransfer();source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:rect.right-2,clientY:rect.top+rect.height/2}));target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:rect.right-2,clientY:rect.top+rect.height/2}));source.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));return true;})()`);
   await delay(100);
   const expectedDragOrder = [initialDragOrder[1], initialDragOrder[0], ...initialDragOrder.slice(2)];
-  const savedDragState = JSON.parse(await evaluate("JSON.stringify({visible:[...document.querySelectorAll('.character-card')].map(card=>card.dataset.characterId),stored:getGallery().characters.map(character=>character.id),sort:state.sort,gallerySort:getGallery().sortMode,select:document.querySelector('#sort-select').value,saves:window.__smokeSaveCount||0})"));
+  const savedDragState = JSON.parse(await evaluate("JSON.stringify({visible:[...document.querySelectorAll('.character-card')].map(card=>card.dataset.characterId),stored:getGallery().characters.map(character=>character.id),sort:state.sort,gallerySort:getGallery().sortMode,select:document.querySelector('[data-action=sort-menu]').dataset.sortValue,saves:window.__smokeSaveCount||0})"));
   if (JSON.stringify(savedDragState.visible) !== JSON.stringify(expectedDragOrder)) throw new Error('Drag-and-drop did not reposition the character card.');
   if (JSON.stringify(savedDragState.stored) !== JSON.stringify(expectedDragOrder)) throw new Error('Custom card order was not stored in the gallery.');
   if (savedDragState.sort !== 'custom' || savedDragState.gallerySort !== 'custom' || savedDragState.select !== 'custom') throw new Error('Dragging did not switch the collection to Custom sorting.');
   if (savedDragState.saves < 1) throw new Error('Custom card order did not trigger a save.');
+  if (await evaluate("Boolean(document.querySelector('.sort-control select'))")) throw new Error('Sort control retained the unthemeable native select.');
+  await evaluate("document.querySelector('[data-action=sort-menu]').click()");
+  await delay(30);
+  const sortMenuState = JSON.parse(await evaluate("(()=>{const trigger=document.querySelector('[data-action=sort-menu]');const menu=document.querySelector('.sort-menu');const selected=menu?.querySelector('[aria-selected=true]');const menuStyle=getComputedStyle(menu);const triggerStyle=getComputedStyle(trigger);return JSON.stringify({open:trigger.classList.contains('active'),expanded:trigger.getAttribute('aria-expanded'),options:menu?.querySelectorAll('[data-sort]').length||0,selected:selected?.dataset.sort,focused:document.activeElement?.dataset.sort,background:menuStyle.backgroundColor,color:menuStyle.color,animation:menuStyle.animationName,transition:triggerStyle.transitionDuration,caret:getComputedStyle(trigger.querySelector('.icon')).transform});})()"));
+  if (!sortMenuState.open || sortMenuState.expanded !== 'true' || sortMenuState.options !== 4 || sortMenuState.selected !== 'custom' || sortMenuState.focused !== 'custom') throw new Error('Themed sort menu did not open and focus the current sort.');
+  if (sortMenuState.background === 'rgb(255, 255, 255)' || sortMenuState.animation === 'none' || sortMenuState.transition === '0s' || sortMenuState.caret === 'none') throw new Error('Sort menu lacked themed colors or animated trigger and popup states.');
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
+  if ((await evaluate("document.activeElement?.dataset.sort")) !== 'name') throw new Error('Sort menu arrow navigation did not move to the next option.');
+  await evaluate("document.activeElement.click()");
+  await delay(30);
+  const nameSortState = JSON.parse(await evaluate("JSON.stringify({sort:state.sort,open:Boolean(document.querySelector('.sort-menu')),label:document.querySelector('[data-action=sort-menu] strong')?.textContent,names:[...document.querySelectorAll('.character-card h3')].map(item=>item.textContent)})"));
+  if (nameSortState.sort !== 'name' || nameSortState.open || nameSortState.label !== 'Name A-Z' || nameSortState.names.join('|') !== [...nameSortState.names].sort((a,b)=>a.localeCompare(b)).join('|')) throw new Error('Selecting a themed sort option did not apply and close the menu.');
+  await evaluate("document.querySelector('[data-action=sort-menu]').click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  if (await evaluate("Boolean(document.querySelector('.sort-menu'))")) throw new Error('Escape did not close the sort menu.');
+  await evaluate("setSortMode('recent')");
   await evaluate("state.view='table';state.activeId=null;render()");
   await evaluate(`document.querySelector('[data-character-id="${fixtureId}"] .table-avatar').dispatchEvent(new MouseEvent('mouseenter'))`);
   const portraitPreview = JSON.parse(await evaluate(`(()=>{const row=document.querySelector('[data-character-id="${fixtureId}"]');const thumbnail=row.querySelector('.table-avatar > img');const preview=row.querySelector('.table-portrait-preview');const image=preview?.querySelector('img');const rect=preview?.getBoundingClientRect();return JSON.stringify({visible:preview?.classList.contains('visible'),width:rect?.width||0,height:rect?.height||0,left:rect?.left||0,right:rect?.right||0,viewport:innerWidth,sameImage:thumbnail?.src===image?.src,selected:state.activeId});})()`));
@@ -269,6 +301,7 @@ async function main() {
   await evaluate("document.querySelector('#rename-gallery-name').value='Renamed Smoke Gallery';document.querySelector('[data-action=confirm-rename-gallery]').click()");
   await delay(30);
   if ((await evaluate("state.activeGallery")) !== 'Renamed Smoke Gallery') throw new Error('Collection rename did not update the active collection.');
+  if ((await evaluate("document.querySelector('.archive-heading h1')?.textContent")) !== 'Renamed Smoke Gallery') throw new Error('Collection rename did not update the archive heading.');
   await evaluate("document.querySelector('[data-gallery=\"Renamed Smoke Gallery\"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:180,clientY:300}));document.querySelector('[data-context-action=duplicate]').click()");
   await delay(100);
   if (!(await evaluate("state.galleries.some(gallery=>gallery.name==='Renamed Smoke Gallery Copy')"))) throw new Error('Collection context menu did not duplicate the selected collection.');
@@ -329,9 +362,9 @@ async function main() {
   if (narrowFilterBounds.left < 0 || narrowFilterBounds.right > narrowFilterBounds.width) throw new Error(`Filter panel escaped the narrow viewport (${narrowFilterBounds.left}-${narrowFilterBounds.right} of ${narrowFilterBounds.width}).`);
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   if (await evaluate("Boolean(document.querySelector('#filter-panel'))")) throw new Error('Escape did not close the filter panel.');
-  console.log('Renderer smoke test passed: archive, combinable filters, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, clipboard DNA and DNA-only creation, DNA undo/redo, crop wheel zoom, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, and resizing.');
+  console.log('Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, clipboard DNA and DNA-only creation, DNA undo/redo, crop wheel zoom, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, and resizing.');
   socket.close();
-  child.kill();
+  cleanup();
 }
 
-main().catch((error) => { console.error(error); child.kill(); process.exitCode = 1; });
+main().catch((error) => { console.error(error); cleanup(); process.exitCode = 1; });

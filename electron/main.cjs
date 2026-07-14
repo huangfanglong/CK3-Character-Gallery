@@ -6,8 +6,10 @@ const { duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importG
 
 const isDev = !app.isPackaged;
 const projectRoot = path.join(__dirname, '..');
+const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
+let lastExportParent = null;
 const dataDirectory = () => isDev
-  ? path.join(projectRoot, 'character_gallery_data')
+  ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
 
 function readClipboardImage() {
@@ -189,13 +191,15 @@ ipcMain.handle('library:import-gallery', async (_event, folder, galleryName) => 
 });
 
 ipcMain.handle('library:export-gallery', async (_event, gallery) => {
-  const result = await dialog.showOpenDialog({
-    title: 'Choose where to export the collection',
-    properties: ['openDirectory', 'createDirectory'],
+  const suggestedDirectory = exportPathFor(gallery, lastExportParent || app.getPath('documents'));
+  const result = await dialog.showSaveDialog({
+    title: 'Export collection',
+    defaultPath: suggestedDirectory,
+    buttonLabel: 'Export',
+    nameFieldLabel: 'Collection folder:',
   });
-  if (result.canceled) return null;
-  const parentDirectory = result.filePaths[0];
-  const exportDirectory = exportPathFor(gallery, parentDirectory);
+  if (result.canceled || !result.filePath) return null;
+  const exportDirectory = path.resolve(result.filePath);
   let replace = false;
   try {
     await fs.access(exportDirectory);
@@ -215,7 +219,8 @@ ipcMain.handle('library:export-gallery', async (_event, gallery) => {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const folder = await exportGalleryToFolder(gallery, parentDirectory, { replace, sourceRoot: projectRoot });
+  const folder = await exportGalleryToFolder(gallery, exportDirectory, { replace, sourceRoot: projectRoot });
+  lastExportParent = path.dirname(folder);
   return { folder };
 });
 

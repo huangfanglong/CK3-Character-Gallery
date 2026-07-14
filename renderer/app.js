@@ -11,6 +11,7 @@ const state = {
   query: '',
   filters: { dna: 'all', favorites: false, tags: new Set() },
   filterPanelOpen: false,
+  sortMenuOpen: false,
   sort: 'recent',
   view: 'cards',
   preview: false,
@@ -188,6 +189,7 @@ function icon(name) {
     check: '<path d="m5 12 4 4L19 6"></path>',
     edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"></path>',
     trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>',
+    chevron: '<path d="m7 10 5 5 5-5"></path>',
   };
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.more}</svg>`;
 }
@@ -349,12 +351,23 @@ function mainMarkup(characters) {
   const filterCount = activeFilterCount();
   return `<main class="main-content"><header class="topbar"><div class="breadcrumbs"><span>THE ARCHIVE</span><i>/</i><strong>${escapeHtml(state.activeGallery)}</strong></div><div class="top-actions"><button class="top-action" data-action="import">${icon('download')} Import</button><button class="top-action" data-action="export">${icon('arrow')} Export</button></div></header>
     ${state.preview ? `<div class="preview-banner"><span><b>PREVIEW COLLECTION</b> This is a visual sample of the new archive experience.</span><button data-action="start-blank">Start with an empty gallery ${icon('arrow')}</button></div>` : ''}
-    <section class="archive-heading"><div><p class="eyebrow">${state.preview ? 'DESIGN PREVIEW' : 'CHARACTER ARCHIVE'}</p><h1>Placeholder Text<br/><em>not sure what to do here yet</em></h1><p class="heading-subtitle">${queryLabel}</p></div><div class="archive-stats"><div><strong>${getCharacters().length}</strong><span>in collection</span></div><div class="stat-line"></div><div class="view-toggle"><button class="${state.view === 'cards' ? 'active' : ''}" data-view="cards" title="Card view">${icon('grid')}</button><button class="${state.view === 'table' ? 'active' : ''}" data-view="table" title="List view">${icon('list')}</button></div></div></section>
-    <div class="toolbar"><div class="search-box">${icon('search')}<input id="search-input" value="${escapeHtml(state.query)}" placeholder="Search a name, title, or tag…" /><kbd>⌘ F</kbd></div><div class="filter-control"><button class="filter-button ${state.filterPanelOpen ? 'active' : ''}" data-action="filters" aria-expanded="${state.filterPanelOpen}" aria-controls="filter-panel">${icon('sliders')} Filters${filterCount ? `<span class="filter-count">${filterCount}</span>` : ''}</button>${state.filterPanelOpen ? filterPanelMarkup(characters.length) : ''}</div><label class="sort-select">Sort by <select id="sort-select"><option value="recent" ${state.sort === 'recent' ? 'selected' : ''}>Recently modified</option><option value="custom" ${state.sort === 'custom' ? 'selected' : ''}>Custom</option><option value="name" ${state.sort === 'name' ? 'selected' : ''}>Name A–Z</option><option value="oldest" ${state.sort === 'oldest' ? 'selected' : ''}>Oldest first</option></select></label></div>
+    <section class="archive-heading"><div><p class="eyebrow">${state.preview ? 'DESIGN PREVIEW' : 'CHARACTER ARCHIVE'}</p><h1>${escapeHtml(state.activeGallery)}</h1><p class="heading-subtitle">${queryLabel}</p></div><div class="archive-stats"><div><strong>${getCharacters().length}</strong><span>in collection</span></div><div class="stat-line"></div><div class="view-toggle"><button class="${state.view === 'cards' ? 'active' : ''}" data-view="cards" title="Card view">${icon('grid')}</button><button class="${state.view === 'table' ? 'active' : ''}" data-view="table" title="List view">${icon('list')}</button></div></div></section>
+    <div class="toolbar"><div class="search-box">${icon('search')}<input id="search-input" value="${escapeHtml(state.query)}" placeholder="Search a name, title, or tag…" /><kbd>⌘ F</kbd></div><div class="filter-control"><button class="filter-button ${state.filterPanelOpen ? 'active' : ''}" data-action="filters" aria-expanded="${state.filterPanelOpen}" aria-controls="filter-panel">${icon('sliders')} Filters${filterCount ? `<span class="filter-count">${filterCount}</span>` : ''}</button>${state.filterPanelOpen ? filterPanelMarkup(characters.length) : ''}</div>${sortControlMarkup()}</div>
     <div class="filter-row"><button class="filter-chip ${filterCount === 0 ? 'active' : ''}" data-filter="all">All faces</button><button class="filter-chip ${state.filters.dna === 'ready' ? 'active' : ''}" data-filter="ready">DNA ready</button><button class="filter-chip ${state.filters.dna === 'drafts' ? 'active' : ''}" data-filter="drafts">Needs DNA</button><span class="filter-rule"></span><span class="results-note">${characters.length ? `Showing ${characters.length} of ${getCharacters().length}` : 'No matching records'}</span>${state.batchMode ? `<div class="batch-toolbar"><button data-action="select-all-visible">Select shown</button><span>${state.selectedCharacterIds.size} selected</span><button class="batch-delete" data-action="delete-batch"${state.selectedCharacterIds.size ? '' : ' disabled'}>Delete selected</button><button data-action="cancel-batch">Cancel</button></div>` : `<button class="batch-start" data-action="batch-select"${characters.length && !state.preview ? '' : ' disabled'}>${icon('check')} Select multiple</button>`}</div>
     ${state.view === 'cards' ? `<section class="card-grid">${characters.length ? characters.map((character, index) => cardMarkup(character, index, characters.length > 1 && !state.preview && !state.batchMode)).join('') : emptyResultsMarkup()}</section>` : `<section class="table-view"><div class="table-header"><span>PORTRAIT</span><span>CHARACTER</span><span>TAGS</span><span>STATUS</span><span></span></div>${characters.length ? characters.map(tableMarkup).join('') : emptyResultsMarkup()}</section>`}
     <footer class="archive-footer"><span><span class="keyboard-dot"></span> Tip: paste an in-game screenshot anywhere to add a portrait</span><span>LOCAL ARCHIVE <b>·</b> v3.0 preview</span></footer>
   </main>`;
+}
+
+function sortControlMarkup() {
+  const options = [
+    ['recent', 'Recently modified'],
+    ['custom', 'Custom'],
+    ['name', 'Name A-Z'],
+    ['oldest', 'Oldest first'],
+  ];
+  const selectedLabel = options.find(([value]) => value === state.sort)?.[1] || options[0][1];
+  return `<div class="sort-control"><button class="sort-select ${state.sortMenuOpen ? 'active' : ''}" data-action="sort-menu" data-sort-value="${state.sort}" aria-haspopup="listbox" aria-expanded="${state.sortMenuOpen}" aria-controls="sort-menu"><span>Sort by</span><strong>${selectedLabel}</strong>${icon('chevron')}</button>${state.sortMenuOpen ? `<div class="sort-menu" id="sort-menu" role="listbox" aria-label="Sort characters">${options.map(([value, label]) => `<button class="${state.sort === value ? 'selected' : ''}" data-sort="${value}" role="option" aria-selected="${state.sort === value}"><span>${label}</span>${state.sort === value ? icon('check') : ''}</button>`).join('')}</div>` : ''}</div>`;
 }
 
 function filterPanelMarkup(matchCount) {
@@ -515,6 +528,17 @@ function bindEvents() {
     if (input.checked) state.filters.tags.add(tag); else state.filters.tags.delete(tag);
     render();
   }));
+  app.querySelectorAll('[data-sort]').forEach((button) => button.addEventListener('click', () => setSortMode(button.dataset.sort)));
+  app.querySelectorAll('[data-sort]').forEach((button) => button.addEventListener('keydown', (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const options = [...document.querySelectorAll('[data-sort]')];
+    const index = options.indexOf(button);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? options.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[next]?.focus();
+  }));
   document.querySelector('#dna-input')?.addEventListener('input', (event) => {
     updateDnaCount();
     recordDnaHistory(event.target.value);
@@ -531,11 +555,11 @@ function bindEvents() {
     if (event.key === 'Enter') { event.preventDefault(); titleInput.blur(); }
     if (event.key === 'Escape') { event.preventDefault(); titleInput.value = getActiveCharacter()?.title || ''; titleInput.blur(); }
   });
-  document.querySelector('#sort-select')?.addEventListener('change', (event) => setSortMode(event.target.value));
 }
 
 function openContextMenu(event, target) {
   state.activeMenu = null;
+  state.sortMenuOpen = false;
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
@@ -710,6 +734,7 @@ async function saveCollectionOrder(orderedNames) {
 async function setSortMode(mode) {
   const gallery = getGallery();
   state.sort = ['recent', 'custom', 'name', 'oldest'].includes(mode) ? mode : 'recent';
+  state.sortMenuOpen = false;
   if (gallery && !state.preview) gallery.sortMode = state.sort;
   render();
   if (!state.preview) await saveLibrary();
@@ -843,7 +868,14 @@ function action(name) {
   if (name === 'add-variant') return chooseImage();
   if (name === 'import') return importCollection();
   if (name === 'export') return exportCollection();
-  if (name === 'filters') { state.filterPanelOpen = !state.filterPanelOpen; return render(); }
+  if (name === 'filters') { state.sortMenuOpen = false; state.filterPanelOpen = !state.filterPanelOpen; return render(); }
+  if (name === 'sort-menu') {
+    state.filterPanelOpen = false;
+    state.sortMenuOpen = !state.sortMenuOpen;
+    render();
+    if (state.sortMenuOpen) requestAnimationFrame(() => document.querySelector('[data-sort][aria-selected="true"]')?.focus());
+    return;
+  }
   if (name === 'close-filters') { state.filterPanelOpen = false; return render(); }
   if (name === 'clear-filters') return clearFilters();
   if (name === 'clear-search') { state.query = ''; clearFilters(false); state.filterPanelOpen = false; render(); }
@@ -1471,6 +1503,7 @@ function bindModalDelegation() {
     if (state.activeMenu && !event.target.closest('.window-chrome')) { state.activeMenu = null; render(); }
     if (state.contextMenu && !event.target.closest('.context-menu')) { state.contextMenu = null; render(); }
     if (state.filterPanelOpen && !event.target.closest('.filter-control')) { state.filterPanelOpen = false; render(); }
+    if (state.sortMenuOpen && !event.target.closest('.sort-control')) { state.sortMenuOpen = false; render(); }
   });
 }
 
@@ -1584,6 +1617,7 @@ function installKeyboardShortcuts() {
       else if (state.activeMenu) { state.activeMenu = null; render(); }
       else if (state.contextMenu) { state.contextMenu = null; render(); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }
+      else if (state.sortMenuOpen) { state.sortMenuOpen = false; render(); focusWithoutScroll(document.querySelector('[data-action="sort-menu"]')); }
       else if (state.batchMode) cancelBatchSelection();
     }
   });

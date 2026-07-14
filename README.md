@@ -32,6 +32,8 @@ A character can hold up to five portraits. Selecting a thumbnail in the inspecto
 
 Favorites are stored in the Electron profile on the current computer. They are not part of `galleries.json` or exported collection manifests.
 
+Export collection opens a Save dialog with the collection folder name prefilled. Navigate into the destination you want and choose Export; the app creates the collection folder there.
+
 ## Shortcuts
 
 | Shortcut | Action |
