@@ -1,0 +1,39 @@
+{
+  "name": "ck3-character-gallery",
+  "version": "3.0.0-alpha.1",
+  "private": true,
+  "description": "A visual desktop archive for Crusader Kings III character DNA and portraits.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "postinstall": "node node_modules/electron/install.js",
+    "test:smoke": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/gallery-transfer.cjs && node --check renderer/app.js",
+    "test:transfer": "node scripts/test-gallery-transfer.cjs",
+    "test:renderer": "node scripts/smoke-renderer.cjs",
+    "test": "npm run test:smoke && npm run test:transfer && npm run test:renderer",
+    "package:win": "electron-builder --win --x64",
+    "package:win:dir": "electron-builder --win --x64 --dir"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.ck3charactergallery.bloodlineindex",
+    "productName": "CK3 Character Gallery",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}
