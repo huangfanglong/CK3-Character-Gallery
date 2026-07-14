@@ -15,6 +15,8 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Added a large, viewport-aware portrait preview when hovering over a thumbnail in compact-list view. Previewing does not select the character or shift the table layout.
 - Made the main shell fill the window and adjusted the layout for narrower desktop sizes.
 - Added an empty inspector state and a non-persistent sample collection for an empty archive.
+- Split renderer state, templates, modal workflows, DNA workbench, crop editor, and persistence into focused browser modules while keeping the renderer smoke surface stable.
+- Consolidated repeated selection resets, portrait-limit checks, drag-and-drop wiring, and Enter-to-confirm keyboard routing.
 - Removed the unused ME account badge, removed the empty inspector's Study a character heading, and renamed its creation action to New character.
 - Standardized Import collection wording in the File menu and sidebar.
 
