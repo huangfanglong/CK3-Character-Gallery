@@ -2,12 +2,14 @@ const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fileURLToPath, pathToFileURL } = require('node:url');
-const { duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
+const { ensureArchive, saveArchive } = require('./archive-store.cjs');
+const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
 
 const isDev = !app.isPackaged;
 const projectRoot = path.join(__dirname, '..');
 const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
 let lastExportParent = null;
+let archiveRecoveryWarning = null;
 const dataDirectory = () => isDev
   ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
@@ -37,16 +39,9 @@ function readClipboardImage() {
 }
 
 async function ensureData() {
-  const directory = dataDirectory();
-  await fs.mkdir(path.join(directory, 'images'), { recursive: true });
-  const file = path.join(directory, 'galleries.json');
-  try {
-    return { directory, file, galleries: JSON.parse(await fs.readFile(file, 'utf8')) };
-  } catch {
-    const galleries = [{ name: 'Default', characters: [] }];
-    await fs.writeFile(file, JSON.stringify(galleries, null, 2));
-    return { directory, file, galleries };
-  }
+  const data = await ensureArchive(dataDirectory());
+  if (data.warning) archiveRecoveryWarning = { warning: data.warning, recoveryFile: data.recoveryFile };
+  return archiveRecoveryWarning && !data.warning ? { ...data, ...archiveRecoveryWarning } : data;
 }
 
 async function createWindow() {
@@ -88,15 +83,13 @@ ipcMain.handle('library:load', async () => {
     galleries: data.galleries,
     dataDirectory: data.directory,
     imageDirectory: path.join(data.directory, 'images'),
+    warning: data.warning,
+    recoveryFile: data.recoveryFile,
   };
 });
 
 ipcMain.handle('library:save', async (_event, galleries) => {
-  const data = await ensureData();
-  const temporary = `${data.file}.tmp`;
-  await fs.writeFile(temporary, JSON.stringify(galleries, null, 2));
-  await fs.rename(temporary, data.file);
-  return true;
+  return saveArchive(dataDirectory(), galleries);
 });
 
 ipcMain.handle('library:choose-image', async (_event, characterId) => {
@@ -226,6 +219,10 @@ ipcMain.handle('library:export-gallery', async (_event, gallery) => {
 
 ipcMain.handle('library:duplicate-gallery', async (_event, gallery, duplicateName) => (
   duplicateGalleryInArchive(gallery, duplicateName, dataDirectory(), projectRoot)
+));
+
+ipcMain.handle('library:duplicate-character', async (_event, character, duplicateName) => (
+  duplicateCharacterInArchive(character, duplicateName, dataDirectory(), projectRoot)
 ));
 
 ipcMain.handle('library:open-folder', async (_event, directory) => {

@@ -6,6 +6,7 @@ const path = require('node:path');
 const electron = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'electron.exe');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
 const smokeDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-renderer-smoke-'));
+fs.writeFileSync(path.join(smokeDataDirectory, 'galleries.json'), '{ "broken": ');
 const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`], {
   cwd: path.join(__dirname, '..'),
   env: { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory },
@@ -51,8 +52,20 @@ async function main() {
   });
   const evaluate = async (expression) => (await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
   await delay(1000);
-  const rendererDataDirectory = path.resolve(await evaluate('window.galleryDesktop.load().then((loaded) => loaded.dataDirectory)'));
+  const loadedArchive = await evaluate('window.galleryDesktop.load()');
+  const rendererDataDirectory = path.resolve(loadedArchive.dataDirectory);
   if (rendererDataDirectory.toLowerCase() !== path.resolve(smokeDataDirectory).toLowerCase()) throw new Error(`Renderer smoke test did not use its isolated temporary archive (expected ${smokeDataDirectory}, received ${rendererDataDirectory}).`);
+  if (!fs.readdirSync(smokeDataDirectory).some((entry) => /^galleries\.json\.corrupt-\d+$/.test(entry))) throw new Error('Corrupted archive was not backed up before recovery.');
+  if (!loadedArchive.warning?.includes('recovery copy')) throw new Error('Corrupted archive recovery warning was not returned to the renderer.');
+  const recoveryWarning = await evaluate("state.startupWarning || document.querySelector('.archive-warning')?.textContent || ''");
+  if (!recoveryWarning.includes('recovery copy')) throw new Error(`Corrupted archive recovery warning was not surfaced (warning: ${recoveryWarning || 'none'}).`);
+  await evaluate('state.preview=false');
+  fs.rmSync(smokeDataDirectory, { recursive: true, force: true });
+  fs.writeFileSync(smokeDataDirectory, 'blocked archive directory');
+  if ((await evaluate('saveLibrary()')) !== false) throw new Error('Archive save failure was not reported to the renderer.');
+  if (!(await evaluate("Boolean(document.querySelector('.toast.info')?.textContent.trim())"))) throw new Error('Archive save failure did not surface a user warning.');
+  fs.rmSync(smokeDataDirectory, { force: true });
+  fs.mkdirSync(smokeDataDirectory, { recursive: true });
   const cardCount = await evaluate("document.querySelectorAll('.character-card').length");
   if (cardCount < 1) throw new Error('Expected at least one archive card.');
   if (await evaluate("Boolean(document.querySelector('.top-actions .avatar'))")) throw new Error('Redundant account avatar remained in the archive toolbar.');
@@ -60,7 +73,7 @@ async function main() {
   if (emptyInspector.heading || emptyInspector.text.includes('Study a character')) throw new Error('Empty inspector retained the Study a character heading.');
   if (!emptyInspector.action.includes('New character')) throw new Error('Empty inspector did not use the New character action label.');
   if (!emptyInspector.sidebarImport.includes('Import collection')) throw new Error('Sidebar retained the inconsistent Import gallery label.');
-  await evaluate("(()=>{state.preview=false;state.galleries=[{name:'Smoke Archive',characters:[{id:'smoke-base-a',name:'Smoke Base A',title:'',images:[],dna:'base dna',tags:['base'],created:1,modified:1},{id:'smoke-base-b',name:'Smoke Base B',title:'',images:[],dna:'',tags:['base'],created:2,modified:2}]}];state.activeGallery='Smoke Archive';state.activeId=null;state.focusContext='character';state.selectedVariantIndex=null;state.query='';clearFilters(false);state.filterPanelOpen=false;state.sort='recent';state.view='cards';saveLibrary=async()=>{window.__smokeSaveCount=(window.__smokeSaveCount||0)+1;state.saved=true;};render();})()");
+  await evaluate("(()=>{state.preview=false;state.galleries=[{name:'Smoke Archive',characters:[{id:'smoke-base-a',name:'Smoke Base A',title:'',images:[],dna:'base dna',tags:['base'],created:1,modified:1},{id:'smoke-base-b',name:'Smoke Base B',title:'',images:[],dna:'',tags:['base'],created:2,modified:2}]}];state.activeGallery='Smoke Archive';state.activeId=null;state.focusContext='character';state.selectedVariantIndex=null;state.query='';clearFilters(false);state.filterPanelOpen=false;state.sort='recent';state.view='cards';saveLibrary=async()=>{window.__smokeSaveCount=(window.__smokeSaveCount||0)+1;state.saved=true;return true;};render();})()");
   if ((await evaluate("document.querySelector('.archive-heading h1')?.textContent")) !== 'Smoke Archive') throw new Error('Archive heading did not show the active collection name.');
   const firstName = await evaluate("document.querySelector('.character-card h3').textContent");
   await evaluate("document.querySelector('.character-card').click()");
@@ -225,6 +238,22 @@ async function main() {
   await evaluate("(()=>{state.query='tag:norse';render();})()");
   if (!(await evaluate(`Boolean(document.querySelector('[data-character-id="${fixtureId}"]'))`))) throw new Error('A note-derived tag was not available to tag search.');
   await evaluate("(()=>{state.query='';render();})()");
+  const deletionSourceId = 'smoke-delete-source';
+  const legacySharedId = 'smoke-delete-legacy-shared';
+  const sourcePortrait = path.join(smokeDataDirectory, 'images', deletionSourceId, 'source.png');
+  fs.mkdirSync(path.dirname(sourcePortrait), { recursive: true });
+  fs.writeFileSync(sourcePortrait, 'source portrait');
+  await evaluate(`(()=>{getGallery().characters.push({id:${JSON.stringify(deletionSourceId)},name:'Deletion Source',title:'',images:[${JSON.stringify(sourcePortrait)}],dna:'',tags:[],created:6,modified:6});state.activeId=${JSON.stringify(deletionSourceId)};render();})()`);
+  await evaluate('duplicateSelectedCharacter()');
+  const duplicatedPortraitState = JSON.parse(await evaluate(`(()=>{const duplicate=getActiveCharacter();return JSON.stringify({id:duplicate.id,path:duplicate.images[0],source:getGallery().characters.find(character=>character.id===${JSON.stringify(deletionSourceId)}).images[0]});})()`));
+  if (!duplicatedPortraitState.path || duplicatedPortraitState.path === duplicatedPortraitState.source || !fs.existsSync(duplicatedPortraitState.path)) throw new Error('Character duplication did not copy portrait files to an independent path.');
+  await evaluate("state.focusContext='variant';state.selectedVariantIndex=0;deleteSelectedVariant()");
+  if (fs.existsSync(duplicatedPortraitState.path) || !fs.existsSync(sourcePortrait)) throw new Error('Deleting the duplicate portrait removed the original or leaked the copied file.');
+  await evaluate(`(()=>{getGallery().characters.push({id:${JSON.stringify(legacySharedId)},name:'Legacy Shared Portrait',title:'',images:[${JSON.stringify(sourcePortrait)}],dna:'',tags:[],created:7,modified:7});state.activeId=${JSON.stringify(deletionSourceId)};render();})()`);
+  await evaluate("handleModalAction('confirm-delete')");
+  if (!fs.existsSync(sourcePortrait)) throw new Error('Deleting one legacy record removed a portrait still referenced by another record.');
+  await evaluate(`state.activeId=${JSON.stringify(legacySharedId)};handleModalAction('confirm-delete')`);
+  if (fs.existsSync(sourcePortrait)) throw new Error('Deleting the final portrait reference leaked its image file.');
   const filterFixtureIds = ['smoke-filter-match', 'smoke-filter-partial'];
   await evaluate(`(()=>{getGallery().characters.push({id:${JSON.stringify(filterFixtureIds[0])},name:'Filter Draft Match',title:'',images:[],dna:'',note:'#norse #warrior',tags:['norse','warrior'],created:4,modified:4},{id:${JSON.stringify(filterFixtureIds[1])},name:'Filter Draft Partial',title:'',images:[],dna:'',note:'#norse',tags:['norse'],created:5,modified:5});state.favorites.add(${JSON.stringify(filterFixtureIds[0])});state.favorites.add(${JSON.stringify(filterFixtureIds[1])});render();})()`);
   await evaluate("document.querySelector('[data-action=filters]').click()");
@@ -325,7 +354,7 @@ async function main() {
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true}))");
   await delay(30);
   if ((await evaluate("document.activeElement?.id")) !== 'search-input') throw new Error('Ctrl+F did not focus archive search.');
-  if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.hasClipboardImage === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
+   if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.hasClipboardImage === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function' && typeof window.galleryDesktop.duplicateCharacter === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
   if (!(await evaluate("portraitMarkup({name:'Blank character'},'card').includes('portrait-placeholder')"))) throw new Error('Missing portraits did not use the generic silhouette.');
   await evaluate("showCropModal({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',width:1,height:1})");
   await delay(50);

@@ -8,10 +8,11 @@
     "dev": "electron .",
     "start": "electron .",
     "postinstall": "node node_modules/electron/install.js",
-    "test:smoke": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/gallery-transfer.cjs && node --check renderer/app.js",
+    "test:smoke": "node --check electron/archive-store.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/gallery-transfer.cjs && node --check renderer/app.js",
+    "test:archive": "node scripts/test-archive-store.cjs",
     "test:transfer": "node scripts/test-gallery-transfer.cjs",
     "test:renderer": "node scripts/smoke-renderer.cjs",
-    "test": "npm run test:smoke && npm run test:transfer && npm run test:renderer",
+    "test": "npm run test:smoke && npm run test:archive && npm run test:transfer && npm run test:renderer",
     "package:win": "electron-builder --win --x64",
     "package:win:dir": "electron-builder --win --x64 --dir"
   },

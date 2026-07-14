@@ -17,5 +17,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:smoke
+      - run: npm run test:archive
       - run: npm run test:transfer
       - run: npm run test:renderer

@@ -17,6 +17,7 @@ const state = {
   preview: false,
   imageDirectory: '',
   dataDirectory: '',
+  startupWarning: '',
   modal: null,
   importFolder: null,
   activeMenu: null,
@@ -189,6 +190,7 @@ function icon(name) {
     check: '<path d="m5 12 4 4L19 6"></path>',
     edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"></path>',
     trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>',
+    warning: '<path d="M12 4 21 20H3z"></path><path d="M12 9v5M12 17h.01"></path>',
     chevron: '<path d="m7 10 5 5 5-5"></path>',
   };
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.more}</svg>`;
@@ -350,6 +352,7 @@ function mainMarkup(characters) {
   const queryLabel = state.query ? `Results for “${escapeHtml(state.query)}”` : state.preview ? 'A visual sample library' : 'Your personal character archive';
   const filterCount = activeFilterCount();
   return `<main class="main-content"><header class="topbar"><div class="breadcrumbs"><span>THE ARCHIVE</span><i>/</i><strong>${escapeHtml(state.activeGallery)}</strong></div><div class="top-actions"><button class="top-action" data-action="import">${icon('download')} Import</button><button class="top-action" data-action="export">${icon('arrow')} Export</button></div></header>
+    ${state.startupWarning ? `<div class="archive-warning" role="status">${icon('warning')}<span>${escapeHtml(state.startupWarning)}</span></div>` : ''}
     ${state.preview ? `<div class="preview-banner"><span><b>PREVIEW COLLECTION</b> This is a visual sample of the new archive experience.</span><button data-action="start-blank">Start with an empty gallery ${icon('arrow')}</button></div>` : ''}
     <section class="archive-heading"><div><p class="eyebrow">${state.preview ? 'DESIGN PREVIEW' : 'CHARACTER ARCHIVE'}</p><h1>${escapeHtml(state.activeGallery)}</h1><p class="heading-subtitle">${queryLabel}</p></div><div class="archive-stats"><div><strong>${getCharacters().length}</strong><span>in collection</span></div><div class="stat-line"></div><div class="view-toggle"><button class="${state.view === 'cards' ? 'active' : ''}" data-view="cards" title="Card view">${icon('grid')}</button><button class="${state.view === 'table' ? 'active' : ''}" data-view="table" title="List view">${icon('list')}</button></div></div></section>
     <div class="toolbar"><div class="search-box">${icon('search')}<input id="search-input" value="${escapeHtml(state.query)}" placeholder="Search a name, title, or tag…" /><kbd>⌘ F</kbd></div><div class="filter-control"><button class="filter-button ${state.filterPanelOpen ? 'active' : ''}" data-action="filters" aria-expanded="${state.filterPanelOpen}" aria-controls="filter-panel">${icon('sliders')} Filters${filterCount ? `<span class="filter-count">${filterCount}</span>` : ''}</button>${state.filterPanelOpen ? filterPanelMarkup(characters.length) : ''}</div>${sortControlMarkup()}</div>
@@ -726,9 +729,10 @@ async function saveCollectionOrder(orderedNames) {
   if (orderedNames.length !== state.galleries.length || orderedNames.some((name) => !galleriesByName.has(name))) return;
   state.galleries = orderedNames.map((name) => galleriesByName.get(name));
   render();
-  await saveLibrary();
-  focusWithoutScroll(document.querySelector(`[data-gallery="${CSS.escape(state.activeGallery)}"]`));
-  showToast('Collection order saved.', 'success');
+  if (await saveLibrary()) {
+    focusWithoutScroll(document.querySelector(`[data-gallery="${CSS.escape(state.activeGallery)}"]`));
+    showToast('Collection order saved.', 'success');
+  }
 }
 
 async function setSortMode(mode) {
@@ -752,9 +756,10 @@ async function saveCustomCardOrder(orderedIds) {
   gallery.sortMode = 'custom';
   state.sort = 'custom';
   render();
-  await saveLibrary();
-  restoreSelectionFocus();
-  showToast('Custom order saved.', 'success');
+  if (await saveLibrary()) {
+    restoreSelectionFocus();
+    showToast('Custom order saved.', 'success');
+  }
 }
 
 async function cycleCardPortrait(characterId, delta) {
@@ -783,8 +788,7 @@ async function saveCharacterTitle(value) {
   if (character.title === title) return;
   character.title = title;
   character.modified = Date.now();
-  await saveLibrary();
-  showToast(title ? 'Character title saved.' : 'Character title removed.', 'success');
+  if (await saveLibrary()) showToast(title ? 'Character title saved.' : 'Character title removed.', 'success');
 }
 
 function startBatchSelection() {
@@ -862,7 +866,7 @@ function action(name) {
   if (name === 'view-cards') { state.view = 'cards'; return render(); }
   if (name === 'view-table') { state.view = 'table'; return render(); }
   if (name === 'open-folder') return desktop?.openFolder(state.dataDirectory);
-  if (name === 'save-library') return saveLibrary().then(() => showToast('Archive saved.', 'success'));
+  if (name === 'save-library') return saveLibrary().then((saved) => { if (saved) showToast('Archive saved.', 'success'); });
   if (name === 'exit') return desktop?.quit();
   if (name === 'duplicate-shortcut') return duplicateSelectedCharacter();
   if (name === 'add-variant') return chooseImage();
@@ -1126,7 +1130,8 @@ async function handleModalAction(name) {
     state.pendingDnaSource = null;
     if (state.preview) { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; state.sort = 'recent'; }
     const character = { id: crypto.randomUUID(), name: nameValue, images: [], dna: dnaSource || '', tags: [], created: Date.now(), modified: Date.now() };
-    getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; state.saved = false; cancelBatchSelection(false); render(); await saveLibrary();
+    getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; state.saved = false; cancelBatchSelection(false); render();
+    if (!(await saveLibrary())) return;
     if (portraitSource) { showCropModal(portraitSource); showToast('Record created. Position the clipboard portrait.', 'success'); }
     else if (dnaSource) showToast('Record created with clipboard DNA.', 'success');
     else showToast('Record created. Add a portrait when ready.', 'success');
@@ -1140,35 +1145,44 @@ async function handleModalAction(name) {
   if (name === 'create-gallery') {
     const input = document.querySelector('#modal-gallery-name'); const nameValue = input?.value.trim();
     if (!nameValue || state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) return input?.focus();
-    state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); saveLibrary(); showToast('Collection created.', 'success');
+    state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection created.', 'success');
   }
   if (name === 'confirm-rename-gallery') {
     const gallery = getGallery(); const input = document.querySelector('#rename-gallery-name'); const value = input?.value.trim();
     if (!gallery || !value) return input?.focus();
     if (state.galleries.some((item) => item !== gallery && item.name.toLowerCase() === value.toLowerCase())) { showToast('A collection with that name already exists.', 'info'); return input.focus(); }
-    gallery.name = value; gallery.modified = Date.now(); state.activeGallery = value; state.modal = null; render(); await saveLibrary(); showToast('Collection renamed.', 'success');
+    gallery.name = value; gallery.modified = Date.now(); state.activeGallery = value; state.modal = null; render(); if (await saveLibrary()) showToast('Collection renamed.', 'success');
   }
   if (name === 'confirm-delete-gallery') {
     const gallery = getGallery();
     if (!gallery || state.galleries.length === 1) return;
+    const galleryIndex = state.galleries.indexOf(gallery);
     const deletedIds = new Set(gallery.characters.map((character) => character.id));
     const imagePaths = [...new Set(gallery.characters.flatMap((character) => character.images || []).filter(Boolean))];
-    if (desktop) await Promise.allSettled(imagePaths.map((imagePath) => desktop.deleteImage(imagePath)));
     state.galleries = state.galleries.filter((item) => item !== gallery);
+    state.activeGallery = state.galleries[0].name; clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render();
+    if (!(await saveLibrary())) {
+      state.galleries.splice(galleryIndex, 0, gallery);
+      state.activeGallery = gallery.name;
+      state.sort = gallerySortMode(gallery);
+      render();
+      return;
+    }
     deletedIds.forEach((id) => { state.favorites.delete(id); state.imageUrls.delete(id); });
     localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
-    state.activeGallery = state.galleries[0].name; clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render(); await saveLibrary(); showToast(`Collection "${gallery.name}" deleted.`, 'success');
+    const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
+    showToast(cleanupFailures ? `Collection deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `Collection "${gallery.name}" deleted.`, cleanupFailures ? 'info' : 'success');
   }
   if (name === 'create-import') {
     const input = document.querySelector('#modal-import-name'); const nameValue = input?.value.trim();
     if (!nameValue || !state.importFolder || state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) return input?.focus();
     try {
       const imported = await desktop.importGallery(state.importFolder, nameValue);
-      state.galleries.push(imported); state.activeGallery = imported.name; state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(imported); state.modal = null; state.importFolder = null; state.preview = false; cancelBatchSelection(false); render(); await saveLibrary(); showToast('Collection imported into the archive.', 'success');
+      state.galleries.push(imported); state.activeGallery = imported.name; state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(imported); state.modal = null; state.importFolder = null; state.preview = false; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection imported into the archive.', 'success');
     } catch (error) { showToast(readableError(error, 'The collection could not be imported.'), 'info'); }
   }
   if (name === 'save-dna') {
-    const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; state.saved = false; render(); saveLibrary(); showToast('DNA saved to the archive.', 'success'); }
+    const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; state.saved = false; render(); if (await saveLibrary()) showToast('DNA saved to the archive.', 'success'); }
   }
   if (name === 'clear-dna') {
     if (document.querySelector('#dna-input')) { setDnaEditorValue(''); showToast('DNA editor cleared. Save to keep the change.', 'success'); }
@@ -1179,12 +1193,12 @@ async function handleModalAction(name) {
   }
   if (name === 'save-note') {
     const character = getActiveCharacter(); const input = document.querySelector('#note-input');
-    if (character && input) { character.note = input.value.trim(); character.tags = noteTags(character.note); character.modified = Date.now(); state.modal = null; render(); await saveLibrary(); showToast('Notes and tags saved.', 'success'); }
+    if (character && input) { character.note = input.value.trim(); character.tags = noteTags(character.note); character.modified = Date.now(); state.modal = null; render(); if (await saveLibrary()) showToast('Notes and tags saved.', 'success'); }
   }
   if (name === 'rename-character') {
     const character = getActiveCharacter(); const value = document.querySelector('#manage-name')?.value.trim();
     if (!character || !value) return;
-    character.name = value; character.modified = Date.now(); state.modal = null; render(); saveLibrary(); showToast('Character record renamed.', 'success');
+    character.name = value; character.modified = Date.now(); state.modal = null; render(); if (await saveLibrary()) showToast('Character record renamed.', 'success');
   }
   if (name === 'duplicate-character') {
     await duplicateSelectedCharacter();
@@ -1194,16 +1208,36 @@ async function handleModalAction(name) {
   }
   if (name === 'confirm-delete') {
     const character = getActiveCharacter(); if (!character) return;
-    getGallery().characters = getGallery().characters.filter((item) => item.id !== character.id); state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; render(); saveLibrary(); showToast('Character record deleted.', 'success');
+    const gallery = getGallery();
+    const characterIndex = gallery.characters.indexOf(character);
+    const imagePaths = [...(character.images || [])];
+    gallery.characters = gallery.characters.filter((item) => item.id !== character.id); state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; render();
+    if (!(await saveLibrary())) {
+      gallery.characters.splice(characterIndex, 0, character);
+      state.activeId = character.id;
+      render();
+      return;
+    }
+    state.favorites.delete(character.id); state.imageUrls.delete(character.id);
+    localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
+    const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
+    showToast(cleanupFailures ? `Character deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : 'Character record deleted.', cleanupFailures ? 'info' : 'success');
   }
   if (name === 'confirm-delete-batch') {
     const gallery = getGallery(); const ids = new Set(state.selectedCharacterIds);
     if (!gallery || !ids.size) return;
-    const count = gallery.characters.filter((character) => ids.has(character.id)).length;
+    const previousCharacters = gallery.characters;
+    const deletedCharacters = gallery.characters.filter((character) => ids.has(character.id));
+    const count = deletedCharacters.length;
+    const imagePaths = deletedCharacters.flatMap((character) => character.images || []);
     gallery.characters = gallery.characters.filter((character) => !ids.has(character.id));
+    state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; render();
+    if (!(await saveLibrary())) { gallery.characters = previousCharacters; render(); return; }
     ids.forEach((id) => { state.favorites.delete(id); state.imageUrls.delete(id); });
     localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
-    state.activeId = null; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render(); await saveLibrary(); showToast(`${count} character${count === 1 ? '' : 's'} deleted.`, 'success');
+    cancelBatchSelection(false); render();
+    const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
+    showToast(cleanupFailures ? `${count} characters deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `${count} character${count === 1 ? '' : 's'} deleted.`, cleanupFailures ? 'info' : 'success');
   }
   if (name === 'confirm-delete-variant') await deleteSelectedVariant();
   if (name === 'crop-reset') resetCropPosition();
@@ -1216,7 +1250,9 @@ async function deleteSelectedVariant() {
   if (!character || index === null || !character.images?.[index]) return;
   const previousCover = coverVariantIndex(character);
   const imagePath = character.images[index];
-  await desktop?.deleteImage(imagePath);
+  const previousImages = [...character.images];
+  const previousUrls = [...(state.imageUrls.get(character.id) || [])];
+  const previousImageUrl = character._imageUrl;
   character.images.splice(index, 1);
   const urls = state.imageUrls.get(character.id) || [];
   urls.splice(index, 1);
@@ -1237,8 +1273,19 @@ async function deleteSelectedVariant() {
     state.selectedVariantIndex = null;
   }
   render();
-  await saveLibrary();
-  showToast('Portrait variant deleted.', 'success');
+  if (!(await saveLibrary())) {
+    character.images = previousImages;
+    character.variants = previousImages.length;
+    character.coverIndex = previousCover;
+    character._imageUrl = previousImageUrl;
+    state.imageUrls.set(character.id, previousUrls);
+    state.focusContext = 'variant';
+    state.selectedVariantIndex = index;
+    render();
+    return;
+  }
+  const cleanupFailures = await cleanupUnusedPortraits([imagePath]);
+  showToast(cleanupFailures ? 'The portrait was removed from the record, but its file could not be deleted.' : 'Portrait variant deleted.', cleanupFailures ? 'info' : 'success');
   if (state.focusContext === 'variant') {
     focusWithoutScroll(document.querySelector(`[data-variant="${state.selectedVariantIndex}"]`));
   }
@@ -1259,8 +1306,10 @@ async function chooseImage() {
   if (state.preview) return showToast('Start an empty gallery before adding your own portraits.', 'info');
   const character = getActiveCharacter();
   if ((character.images?.length || 0) >= 5) return showToast('This character already has five portrait variants.', 'info');
-  const selected = await desktop.chooseImage(character.id); if (!selected) return;
-  await appendPortrait(character, selected, 'Portrait variant added.');
+  try {
+    const selected = await desktop.chooseImage(character.id); if (!selected) return;
+    await appendPortrait(character, selected, 'Portrait variant added.');
+  } catch (error) { showToast(readableError(error, 'The portrait could not be added.'), 'info'); }
 }
 
 async function pasteClipboardPortrait() {
@@ -1379,20 +1428,26 @@ async function saveCroppedPortrait() {
   const session = state.cropSession;
   if (!character || !session) return;
   const scale = session.baseScale * session.zoom;
-  const selected = await desktop.saveCroppedImage(character.id, {
-    dataUrl: session.dataUrl,
-    x: -session.offsetX / scale,
-    y: -session.offsetY / scale,
-    size: session.viewport / scale,
-  });
-  state.modal = null;
-  state.cropSession = null;
-  await appendPortrait(character, selected, 'Clipboard portrait added.', true);
+  try {
+    const selected = await desktop.saveCroppedImage(character.id, {
+      dataUrl: session.dataUrl,
+      x: -session.offsetX / scale,
+      y: -session.offsetY / scale,
+      size: session.viewport / scale,
+    });
+    state.modal = null;
+    state.cropSession = null;
+    await appendPortrait(character, selected, 'Clipboard portrait added.', true);
+  } catch (error) { showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info'); }
 }
 
 async function appendPortrait(character, selected, message, makeCover = false) {
   character.images = character.images || [];
   const urls = state.imageUrls.get(character.id) || [];
+  const previousImages = [...character.images];
+  const previousUrls = [...urls];
+  const previousCover = character.coverIndex;
+  const previousImageUrl = character._imageUrl;
   if (makeCover) character.images.unshift(selected.path);
   else character.images.push(selected.path);
   if (makeCover) urls.unshift(selected.url);
@@ -1403,27 +1458,39 @@ async function appendPortrait(character, selected, message, makeCover = false) {
   character.modified = Date.now();
   character.variants = character.images.length;
   render();
-  await saveLibrary();
-  showToast(message, 'success');
+  if (await saveLibrary()) showToast(message, 'success');
+  else {
+    character.images = previousImages;
+    character.variants = previousImages.length;
+    character.coverIndex = previousCover;
+    character._imageUrl = previousImageUrl;
+    state.imageUrls.set(character.id, previousUrls);
+    render();
+    await cleanupUnusedPortraits([selected.path]);
+  }
 }
 
 async function duplicateSelectedCharacter() {
   const character = getActiveCharacter();
   if (!character) return showToast('Select a character before duplicating it.', 'info');
-  const duplicate = JSON.parse(JSON.stringify(character));
-  duplicate.id = crypto.randomUUID();
-  duplicate.name = `${character.name} (Copy)`;
-  duplicate.created = Date.now();
-  duplicate.modified = Date.now();
-  delete duplicate._imageUrl;
-  getGallery().characters.push(duplicate);
-  state.activeId = duplicate.id;
-  state.focusContext = 'character';
-  state.selectedVariantIndex = null;
-  state.modal = null;
-  render();
-  await saveLibrary();
-  showToast('Character record duplicated.', 'success');
+  if (!desktop?.duplicateCharacter) return showToast('Character duplication is unavailable.', 'info');
+  try {
+    const duplicate = await desktop.duplicateCharacter(character, `${character.name} (Copy)`);
+    getGallery().characters.push(duplicate);
+    state.activeId = duplicate.id;
+    state.focusContext = 'character';
+    state.selectedVariantIndex = null;
+    state.modal = null;
+    render();
+    if (await saveLibrary()) showToast('Character record duplicated.', 'success');
+    else {
+      getGallery().characters = getGallery().characters.filter((item) => item.id !== duplicate.id);
+      state.activeId = character.id;
+      state.imageUrls.delete(duplicate.id);
+      render();
+      await cleanupUnusedPortraits(duplicate.images);
+    }
+  } catch (error) { showToast(readableError(error, 'The character could not be duplicated.'), 'info'); }
 }
 
 function uniqueCollectionName(baseName) {
@@ -1450,8 +1517,14 @@ async function duplicateActiveGallery() {
     state.sort = gallerySortMode(duplicate);
     cancelBatchSelection(false);
     render();
-    await saveLibrary();
-    showToast(`Collection "${duplicate.name}" created.`, 'success');
+    if (await saveLibrary()) showToast(`Collection "${duplicate.name}" created.`, 'success');
+    else {
+      state.galleries = state.galleries.filter((item) => item !== duplicate);
+      state.activeGallery = gallery.name;
+      state.activeId = null;
+      render();
+      await cleanupUnusedPortraits(duplicate.characters.flatMap((character) => character.images || []));
+    }
   } catch (error) { showToast(readableError(error, 'The collection could not be duplicated.'), 'info'); }
 }
 
@@ -1462,14 +1535,37 @@ async function copyDna() {
 }
 
 async function saveLibrary() {
-  if (state.preview || !desktop) return;
+  if (state.preview || !desktop) return true;
   const galleries = state.galleries.map((gallery) => ({
     ...gallery,
     characters: gallery.characters.map((character) => Object.fromEntries(
       Object.entries(character).filter(([key]) => !key.startsWith('_')),
     )),
   }));
-  state.saved = await desktop.save(galleries); render();
+  try {
+    state.saved = Boolean(await desktop.save(galleries));
+    if (!state.saved) throw new Error('The archive save did not complete.');
+    render();
+    return true;
+  } catch (error) {
+    state.saved = false;
+    render();
+    const detail = readableError(error, 'Unknown storage error.');
+    showToast(`The archive could not be saved. Your latest changes may not persist. ${detail}`, 'info');
+    return false;
+  }
+}
+
+function referencedImagePaths() {
+  return new Set(state.galleries.flatMap((gallery) => gallery.characters.flatMap((character) => character.images || [])));
+}
+
+async function cleanupUnusedPortraits(imagePaths) {
+  if (!desktop) return 0;
+  const referenced = referencedImagePaths();
+  const removable = [...new Set(imagePaths.filter((imagePath) => typeof imagePath === 'string' && imagePath && !referenced.has(imagePath)))];
+  const results = await Promise.allSettled(removable.map((imagePath) => desktop.deleteImage(imagePath)));
+  return results.filter((result) => result.status === 'rejected').length;
 }
 
 async function exportCollection() {
@@ -1557,7 +1653,7 @@ function installKeyboardShortcuts() {
     }
     if (command && key === 's') {
       event.preventDefault();
-      saveLibrary().then(() => showToast('Archive saved.', 'success'));
+      saveLibrary().then((saved) => { if (saved) showToast('Archive saved.', 'success'); });
       return;
     }
     if (command && key === 'd') {
@@ -1678,7 +1774,8 @@ async function boot() {
   installClipboardPasteHandler();
   desktop?.onPasteImage(() => pasteClipboardPortrait());
   let loaded = null;
-  try { loaded = desktop ? await desktop.load() : null; } catch { loaded = null; }
+  let loadError = null;
+  try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }
   if (loaded?.galleries) {
     state.galleries = loaded.galleries.map((gallery) => ({ ...gallery, characters: gallery.characters.map(normalizedCharacter) }));
     state.imageDirectory = loaded.imageDirectory;
@@ -1696,7 +1793,10 @@ async function boot() {
     state.galleries = [{ name: window.demoLibrary.name, characters: window.demoLibrary.characters.map((character) => ({ ...character, images: [] })) }];
     state.activeGallery = window.demoLibrary.name;
   }
+  const startupWarning = loaded?.warning || (loadError ? readableError(loadError, 'The archive could not be loaded. Start with a new archive or restore the data file.') : null);
+  state.startupWarning = startupWarning || '';
   render();
+  if (startupWarning) requestAnimationFrame(() => showToast(startupWarning, 'info'));
 }
 
 boot();

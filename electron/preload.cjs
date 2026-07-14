@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   importGallery: (folder, name) => ipcRenderer.invoke('library:import-gallery', folder, name),
   exportGallery: (gallery) => ipcRenderer.invoke('library:export-gallery', gallery),
   duplicateGallery: (gallery, name) => ipcRenderer.invoke('library:duplicate-gallery', gallery, name),
+  duplicateCharacter: (character, name) => ipcRenderer.invoke('library:duplicate-character', character, name),
   openFolder: (directory) => ipcRenderer.invoke('library:open-folder', directory),
   imageUrl: (imagePath) => ipcRenderer.invoke('library:image-url', imagePath),
   quit: () => ipcRenderer.invoke('window:quit'),

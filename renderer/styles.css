@@ -94,6 +94,8 @@ kbd { margin-left: auto; color: #9b7360; font: 9px var(--mono); border: 1px soli
 .breadcrumbs i { color: #536057; font-style: normal; }
 .breadcrumbs strong { color: #c4c8bb; font-weight: 500; }
 .top-actions { display: flex; align-items: center; gap: 15px; }
+.archive-warning { display: flex; align-items: center; gap: 9px; margin-top: 16px; border: 1px solid #72563e; background: rgba(133,110,66,.14); color: #dfc58f; padding: 10px 12px; font-size: 11px; }
+.archive-warning .icon { width: 15px; height: 15px; color: #e0a85f; }
 .top-action { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #9ba49c; padding: 7px; font-size: 11px; }
 .top-action:hover { color: var(--paper); }
 .top-action .icon { width: 14px; height: 14px; }

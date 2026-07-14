@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('../electron/gallery-transfer.cjs');
+const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('../electron/gallery-transfer.cjs');
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ck3-gallery-transfer-'));
@@ -43,6 +43,15 @@ async function main() {
     assert.equal(duplicated.characters[0].images.length, 2);
     await Promise.all(duplicated.characters[0].images.map((image) => fs.access(image)));
 
+    const duplicatedCharacter = await duplicateCharacterInArchive(gallery.characters[0], 'Aldith Copy', path.join(root, 'duplicate-character-data'));
+    assert.notDeepEqual(duplicatedCharacter.images, gallery.characters[0].images);
+    await fs.rm(duplicatedCharacter.images[0]);
+    await fs.access(gallery.characters[0].images[0]);
+    await assert.rejects(
+      () => duplicateCharacterInArchive({ ...gallery.characters[0], images: [path.join(root, 'missing.png')] }, 'Broken Copy', path.join(root, 'broken-character-data')),
+      /Could not duplicate portrait/,
+    );
+
     const exportDirectory = exportPathFor(gallery, exportParent);
     assert.equal(await exportGalleryToFolder(gallery, exportDirectory), exportDirectory);
     assert.equal(path.basename(exportDirectory), 'Court_ Test');
@@ -59,6 +68,11 @@ async function main() {
     const currentFolderExport = path.join(root, 'current-folder', 'Chosen Collection Folder');
     assert.equal(await exportGalleryToFolder(gallery, currentFolderExport), currentFolderExport);
     await fs.access(path.join(currentFolderExport, 'characters.json'));
+    await assert.rejects(
+      () => exportGalleryToFolder({ ...gallery, characters: [{ ...gallery.characters[0], images: [path.join(root, 'missing-export.png')] }] }, path.join(root, 'missing-export')),
+      /Could not export portrait/,
+    );
+    await assert.rejects(() => fs.access(path.join(root, 'missing-export', 'characters.json')));
 
     const unrelatedDirectory = path.join(exportParent, 'Unrelated');
     await fs.mkdir(unrelatedDirectory);
@@ -88,6 +102,11 @@ async function main() {
     assert.equal(character.modified, 200);
     assert.equal(character.images.length, 2);
     await Promise.all(character.images.map((image) => fs.access(image)));
+
+    const brokenImport = path.join(root, 'broken-import');
+    await fs.mkdir(brokenImport, { recursive: true });
+    await fs.writeFile(path.join(brokenImport, 'characters.json'), JSON.stringify([{ id: 'missing-character', name: 'Missing Portrait', images: ['0.png'] }]));
+    await assert.rejects(() => importGalleryFromFolder(brokenImport, 'Broken Import', path.join(root, 'broken-import-data')), /Could not import portrait/);
     console.log('Gallery transfer test passed: exact export destinations, parent-folder resolution, safe duplication, metadata, portraits, overwrite protection, and v3 fields round-trip.');
   } finally {
     await fs.rm(root, { recursive: true, force: true });

@@ -42,6 +42,7 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Added collection duplication with new character IDs and copied portrait files.
 - Added drag-and-drop collection ordering in the sidebar and persisted the resulting gallery-array order.
 - Added record management for rename, duplicate, and delete.
+- Made character duplication copy portrait files into the new character directory instead of sharing paths with the original.
 - Added explicit multi-select mode with Select shown, Delete selected, and Cancel controls for batch character deletion.
 - Added Windows-style `Ctrl+Click` multi-selection, with `Command+Click` support on macOS. Starting from a selected character retains it when a second character is added.
 - Added a confirmation step before character deletion, including `Enter` to confirm and `Escape` to cancel.
@@ -70,6 +71,7 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Made portrait thumbnails keyboard-focusable.
 - Made `Delete` act on the focused variant when a variant is selected, with a separate confirmation dialog. Selecting the character card again restores character-level deletion.
 - Added safe portrait-file deletion that refuses paths outside the archive image directory.
+- Made character, batch, collection, and variant deletion persist record removal before deleting only portrait files that are no longer referenced anywhere in the archive.
 - Added previous and next controls to character cards with a visible position such as `2/4`.
 - Removed the redundant portrait-count label from cards; multi-portrait cards keep the smaller cycle position and arrows.
 - Added `coverIndex` to remember the portrait used on a card. Adding or deleting variants keeps the index in range.
@@ -88,6 +90,8 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 
 - Continued to use `character_gallery_data/galleries.json` and per-character image directories during development.
 - Changed JSON saves to write a temporary file before replacing `galleries.json`.
+- Added timestamped recovery copies and a persistent warning when `galleries.json` is corrupt, while keeping missing-file setup separate from read failures.
+- Added visible save-failure reporting and strict portrait copy errors for crop, export, import, and duplication operations instead of silently dropping files.
 - Configured packaged builds to use Electron's application data directory.
 - Added a command to open the local archive folder.
 - Added portable folder export with `characters.json`, `gallery.json`, and copied per-character portraits.
