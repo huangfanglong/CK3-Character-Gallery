@@ -20,10 +20,10 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Replaced synchronous clipboard IPC with asynchronous reads so paste shortcuts no longer block the renderer.
 - Made Electron smoke and preview launchers use the installed platform-specific executable path.
 - Added ESLint checks, explicit asynchronous failure handling, and an isolated 500-record renderer regression benchmark.
-- Replaced the full-innerHTML re-render with in-place DOM morphing keyed by record, collection, and variant identity, so re-renders patch the live tree instead of rebuilding it. Scroll positions, focus, and text selection now survive renders natively, removing the manual scroll save/restore and search refocus workarounds.
 - Replaced per-render event rebinding with one-time event delegation from the application root, including drag-and-drop reordering and list portrait hover previews. The crop, notes, and DNA workbench modals mark their roots as morph-preserved so their live editor state is never clobbered by an unrelated re-render.
 - Consolidated image and sort validation, added WebP to the portrait picker, and removed unused renderer state and preview tooling.
-- Removed the unused ME account badge, removed the empty inspector's Study a character heading, and renamed its creation action to New character.
+- Replaced the full-innerHTML re-render with in-place DOM morphing keyed by record, collection, and variant identity, so re-renders patch the live tree instead of rebuilding it. Scroll positions, focus, and text selection now survive renders natively, removing the manual scroll save/restore and search refocus workarounds.
+- Added scoped selection, modal, chrome, and context-menu updates on top of morphing, retained 750-record DOM-identity coverage, and avoided empty-image hydration re-renders.
 - Standardized Import collection wording in the File menu and sidebar.
 
 ## Browsing the Archive

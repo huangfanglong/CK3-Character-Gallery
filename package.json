@@ -2,6 +2,7 @@
   "name": "ck3-character-gallery",
   "version": "3.0.0-alpha.1",
   "private": true,
+  "author": "Huang Fang Long",
   "description": "A visual desktop archive for Crusader Kings III character DNA and portraits.",
   "main": "electron/main.cjs",
   "scripts": {

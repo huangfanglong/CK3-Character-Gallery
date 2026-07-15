@@ -4,7 +4,7 @@ const promise = require('eslint-plugin-promise');
 
 const rendererGlobals = Object.fromEntries([
   'MAX_PORTRAIT_VARIANTS', 'state', 'resetSelection', 'hasMaximumPortraits', 'modalPreserveAttribute',
-  'morphAppContent',
+  'morphAppContent', 'morphAppRegion',
   'chromeMarkup', 'contextMenuMarkup', 'cardMarkup', 'tableMarkup', 'sidebarMarkup', 'inspectorMarkup', 'mainMarkup', 'sortControlMarkup', 'filterPanelMarkup', 'emptyResultsMarkup',
   'showCropModal', 'initializeCropInteraction', 'resetCropPosition', 'clampCropOffset', 'applyCropTransform', 'saveCroppedPortrait', 'appendPortrait',
   'showCharacterModal', 'showGalleryModal', 'showRenameGalleryModal', 'showDeleteGalleryConfirmation', 'showImportModal', 'showNoteModal', 'syncNoteHighlightScroll', 'updateNoteHighlights', 'showManageModal', 'showDeleteConfirmation', 'showDeleteVariantConfirmation', 'showBatchDeleteConfirmation', 'showDnaOverwriteConfirmation', 'handleModalAction', 'deleteSelectedVariant',

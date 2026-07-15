@@ -174,9 +174,16 @@ function icon(name) {
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.more}</svg>`;
 }
 
-function render() {
+let lastRenderedActiveId = null;
+
+function render(scope = 'all') {
+  if (scope === 'selection') return renderSelection();
+  if (scope === 'context') return renderContextMenu();
+  if (scope === 'modal') return renderModal();
+  if (scope === 'chrome') return renderChrome();
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
+  lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
   void updateImageUrls().catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
@@ -194,10 +201,42 @@ async function updateImageUrls() {
     const paths = (character.images || []).filter(Boolean);
     const existing = state.imageUrls.get(character.id);
     if (existing?.length === paths.length) continue;
+    if (!paths.length) { state.imageUrls.set(character.id, []); continue; }
     state.imageUrls.set(character.id, await Promise.all(paths.map((imagePath) => desktop.imageUrl(imagePath))));
     changed = true;
   }
   if (changed) render();
+}
+
+function renderSelection() {
+  if (lastRenderedActiveId !== state.activeId) {
+    if (lastRenderedActiveId) app.querySelector(`[data-character-id="${CSS.escape(lastRenderedActiveId)}"]`)?.classList.remove('selected');
+    if (state.activeId && !state.batchMode) app.querySelector(`[data-character-id="${CSS.escape(state.activeId)}"]`)?.classList.add('selected');
+    lastRenderedActiveId = state.activeId;
+  }
+  const inspector = app.querySelector('.inspector');
+  if (inspector) morphAppRegion(inspector, inspectorMarkup(getActiveCharacter()));
+}
+
+function renderChrome() {
+  const current = app.querySelector('.window-chrome');
+  const next = morphAppRegion(current, chromeMarkup());
+  if (!current && next) app.prepend(next);
+}
+
+function renderContextMenu() {
+  const current = app.querySelector('.context-menu');
+  const next = morphAppRegion(current, contextMenuMarkup());
+  if (!current && next) app.appendChild(next);
+}
+
+function renderModal() {
+  renderChrome();
+  if (!state.contextMenu) app.querySelector('.context-menu')?.remove();
+  const current = app.querySelector('.modal-backdrop');
+  const next = morphAppRegion(current, state.modal || '');
+  if (!current && next) app.insertBefore(next, app.querySelector('.context-menu'));
+  if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
 }
 
 /* All UI events are delegated once from #app at boot; render() only morphs the DOM and never
@@ -241,6 +280,7 @@ function handleDelegatedClick(event) {
     event.stopPropagation();
     if (state.batchMode) return;
     resetSelection(moreButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
+    render('selection');
     return showManageModal();
   }
   const contextActionButton = event.target.closest('[data-context-action]');
@@ -251,15 +291,16 @@ function handleDelegatedClick(event) {
   const menuButton = event.target.closest('[data-menu]');
   if (menuButton) {
     event.stopPropagation();
+    if (state.contextMenu) { state.contextMenu = null; render('context'); }
     state.activeMenu = state.activeMenu === menuButton.dataset.menu ? null : menuButton.dataset.menu;
-    return render();
+    return render('chrome');
   }
   const variantButton = event.target.closest('[data-variant]');
   if (variantButton) {
     event.stopPropagation();
     state.focusContext = 'variant';
     state.selectedVariantIndex = Number(variantButton.dataset.variant);
-    render();
+    render('selection');
     return focusWithoutScroll(document.querySelector(`[data-variant="${state.selectedVariantIndex}"]`));
   }
   const sortButton = event.target.closest('[data-sort]');
@@ -297,14 +338,14 @@ function handleDelegatedClick(event) {
     || event.target.classList.contains('table-view');
   if (blankArchiveSpace && state.activeId) {
     resetSelection();
-    render();
+    render('selection');
   }
 }
 
 function selectCharacterElement(element, event) {
   if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
   resetSelection(element.dataset.characterId);
-  render();
+  render('selection');
   restoreSelectionFocus();
 }
 
@@ -387,6 +428,7 @@ function handleDelegatedChange(event) {
 }
 
 function openContextMenu(event, target) {
+  const hadSortMenu = state.sortMenuOpen;
   state.activeMenu = null;
   state.sortMenuOpen = false;
   state.contextMenu = {
@@ -394,7 +436,11 @@ function openContextMenu(event, target) {
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
     y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 174 : 306))),
   };
-  render();
+  if (target.type === 'character' && !hadSortMenu) {
+    render('selection');
+    render('chrome');
+    render('context');
+  } else render();
 }
 
 function showTablePortraitPreview(event) {
@@ -422,6 +468,7 @@ async function handleContextAction(actionName) {
   const menu = state.contextMenu;
   state.contextMenu = null;
   if (!menu) return;
+  render('context');
   if (menu.type === 'collection') {
     state.activeGallery = menu.name;
     if (actionName === 'rename') return showRenameGalleryModal();
@@ -641,13 +688,14 @@ function restoreSelectionFocus() {
     return;
   }
   if (state.activeId) {
-    focusWithoutScroll([...document.querySelectorAll('[data-character-id]')]
-      .find((element) => element.dataset.characterId === state.activeId));
+    focusWithoutScroll(document.querySelector(`[data-character-id="${CSS.escape(state.activeId)}"]`));
   }
 }
 
 function action(name) {
+  const hadActiveMenu = Boolean(state.activeMenu);
   state.activeMenu = null;
+  if (hadActiveMenu) render('chrome');
   if (name === 'new-character') return showCharacterModal();
   if (name === 'new-gallery') return showGalleryModal();
   if (name === 'rename-gallery') return showRenameGalleryModal();
@@ -656,7 +704,7 @@ function action(name) {
   if (name === 'cancel-batch') return cancelBatchSelection();
   if (name === 'select-all-visible') return selectAllVisibleCharacters();
   if (name === 'delete-batch') return showBatchDeleteConfirmation();
-  if (name === 'close-inspector') { resetSelection(); return render(); }
+  if (name === 'close-inspector') { resetSelection(); return render('selection'); }
   if (name === 'copy-dna') return copyDna();
   if (name === 'open-dna') return showDnaModal();
   if (name === 'undo-dna') return undoDnaChange();
@@ -740,8 +788,8 @@ function bindModalDelegation() {
   document.addEventListener('click', (event) => {
     const actionName = event.target.closest('[data-action]')?.dataset.action;
     if (state.modal && actionName) runModalAction(actionName);
-    if (state.activeMenu && !event.target.closest('.window-chrome')) { state.activeMenu = null; render(); }
-    if (state.contextMenu && !event.target.closest('.context-menu')) { state.contextMenu = null; render(); }
+    if (state.activeMenu && !event.target.closest('.window-chrome')) { state.activeMenu = null; render('chrome'); }
+    if (state.contextMenu && !event.target.closest('.context-menu')) { state.contextMenu = null; render('context'); }
     if (state.filterPanelOpen && !event.target.closest('.filter-control')) { state.filterPanelOpen = false; render(); }
     if (state.sortMenuOpen && !event.target.closest('.sort-control')) { state.sortMenuOpen = false; render(); }
   });
@@ -839,9 +887,9 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; render(); restoreSelectionFocus(); }
-      else if (state.activeMenu) { state.activeMenu = null; render(); }
-      else if (state.contextMenu) { state.contextMenu = null; render(); }
+      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; render('modal'); restoreSelectionFocus(); }
+      else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
+      else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }
       else if (state.sortMenuOpen) { state.sortMenuOpen = false; render(); focusWithoutScroll(document.querySelector('[data-action="sort-menu"]')); }
       else if (state.batchMode) cancelBatchSelection();

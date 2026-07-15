@@ -10,19 +10,19 @@ function showCharacterModal(portraitSource = null, dnaSource = null) {
       ? 'Name this character to create a portrait-empty record with the copied DNA.'
       : 'Start with a name. Portrait, DNA, and tags can be added from the inspector.';
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">${eyebrow}</p><h2>Name the character</h2><p class="modal-copy">${copy}</p><label class="modal-label">Character name<input id="modal-name" autofocus placeholder="e.g. Ragnhild of Jorvik" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-character">Create record ${icon('arrow')}</button></div></div></div>`;
-  render(); document.querySelector('#modal-name')?.focus();
+  render('modal'); document.querySelector('#modal-name')?.focus();
 }
 
 function showGalleryModal() {
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">NEW COLLECTION</p><h2>Add a new collection</h2><label class="modal-label">Collection name<input id="modal-gallery-name" autofocus placeholder="e.g. The Baltic Court" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-gallery">Create collection ${icon('arrow')}</button></div></div></div>`;
-  render(); document.querySelector('#modal-gallery-name')?.focus();
+  render('modal'); document.querySelector('#modal-gallery-name')?.focus();
 }
 
 function showRenameGalleryModal() {
   const gallery = getGallery();
   if (!gallery || state.preview) return;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">RENAME COLLECTION</p><h2>Rename ${escapeHtml(gallery.name)}</h2><label class="modal-label">Collection name<input id="rename-gallery-name" value="${escapeHtml(gallery.name)}" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="confirm-rename-gallery">Save name ${icon('check')}</button></div></div></div>`;
-  render(); document.querySelector('#rename-gallery-name')?.focus(); document.querySelector('#rename-gallery-name')?.select();
+  render('modal'); document.querySelector('#rename-gallery-name')?.focus(); document.querySelector('#rename-gallery-name')?.select();
 }
 
 function showDeleteGalleryConfirmation() {
@@ -30,13 +30,13 @@ function showDeleteGalleryConfirmation() {
   if (!gallery || state.preview) return;
   if (state.galleries.length === 1) return showToast('The last collection cannot be deleted.', 'info');
   state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE COLLECTION</p><h2>Remove ${escapeHtml(gallery.name)}?</h2><p class="modal-copy">This removes the collection and its ${gallery.characters.length} character record${gallery.characters.length === 1 ? '' : 's'}. This cannot be undone.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete-gallery" autofocus>Delete collection</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
-  render(); document.querySelector('[data-action="confirm-delete-gallery"]')?.focus();
+  render('modal'); document.querySelector('[data-action="confirm-delete-gallery"]')?.focus();
 }
 
 function showImportModal(folder, suggestedName = '') {
   state.importFolder = folder;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">IMPORT COLLECTION</p><h2>Bring in a court</h2><p class="modal-copy">Portraits, DNA, notes, and collection metadata will be copied into this archive. The original folder stays untouched.</p><label class="modal-label">Collection name<input id="modal-import-name" value="${escapeHtml(suggestedName)}" autofocus placeholder="e.g. House of Wessex" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-import">Import collection ${icon('arrow')}</button></div></div></div>`;
-  render(); document.querySelector('#modal-import-name')?.focus();
+  render('modal'); document.querySelector('#modal-import-name')?.focus();
 }
 
 function showNoteModal() {
@@ -45,7 +45,7 @@ function showNoteModal() {
   const note = character.note || '';
   const count = noteTags(note).length;
   state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('note')}><div class="note-modal"><div class="modal-head"><div><p class="eyebrow">NOTES</p><h2>${escapeHtml(character.name)}</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Write down mods, notes, bio, or add tags.</p><div class="note-editor"><div class="note-highlight" id="note-highlight" aria-hidden="true">${highlightedNoteMarkup(note)}</div><textarea id="note-input" spellcheck="true" placeholder="Add notes or #tags…" aria-describedby="note-tag-count">${escapeHtml(note)}</textarea></div><div class="note-footer"><span id="note-tag-count">${count} tag${count === 1 ? '' : 's'} recognized</span><button class="primary-button" data-action="save-note">Save notes ${icon('check')}</button></div></div></div>`;
-  render();
+  render('modal');
   requestAnimationFrame(() => document.querySelector('#note-input')?.focus());
 }
 
@@ -69,14 +69,14 @@ function showManageModal() {
   const character = getActiveCharacter();
   if (!character) return;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
-  render();
+  render('modal');
 }
 
 function showDeleteConfirmation() {
   const character = getActiveCharacter();
   if (!character) return showToast('Select a character before deleting it.', 'info');
   state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE CHARACTER</p><h2>Remove ${escapeHtml(character.name)}?</h2><p class="modal-copy">This removes the character record from the collection. Portrait files associated with it will no longer appear in the archive.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete" autofocus>Delete character</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
-  render();
+  render('modal');
   document.querySelector('[data-action="confirm-delete"]')?.focus();
 }
 
@@ -85,7 +85,7 @@ function showDeleteVariantConfirmation() {
   const index = state.selectedVariantIndex;
   if (!character || index === null || !character.images?.[index]) return;
   state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE PORTRAIT VARIANT</p><h2>Remove portrait ${index + 1}?</h2><p class="modal-copy">This permanently removes the selected portrait from ${escapeHtml(character.name)}. The character record and its other variants will remain.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete-variant" autofocus>Delete portrait</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
-  render();
+  render('modal');
   document.querySelector('[data-action="confirm-delete-variant"]')?.focus();
 }
 
@@ -93,7 +93,7 @@ function showBatchDeleteConfirmation() {
   const count = state.selectedCharacterIds.size;
   if (!state.batchMode || !count) return;
   state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE CHARACTERS</p><h2>Remove ${count} character${count === 1 ? '' : 's'}?</h2><p class="modal-copy">This removes the selected records from ${escapeHtml(state.activeGallery)}. This cannot be undone.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete-batch" autofocus>Delete selected</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
-  render(); document.querySelector('[data-action="confirm-delete-batch"]')?.focus();
+  render('modal'); document.querySelector('[data-action="confirm-delete-batch"]')?.focus();
 }
 
 function showDnaOverwriteConfirmation(dna) {
@@ -101,7 +101,7 @@ function showDnaOverwriteConfirmation(dna) {
   if (!character) return;
   state.pendingDnaSource = dna;
   state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">REPLACE DNA</p><h2>Replace ${escapeHtml(character.name)}'s DNA?</h2><p class="modal-copy">This opens the clipboard DNA in the workbench. The current DNA is not replaced until you choose Save DNA.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-paste-dna" autofocus>Replace in workbench</button></div><p class="dialog-shortcuts"><span>Enter to continue</span><span>Esc to cancel</span></p></div></div>`;
-  render();
+  render('modal');
   document.querySelector('[data-action="confirm-paste-dna"]')?.focus();
 }
 
@@ -113,7 +113,7 @@ async function handleModalAction(name) {
     state.pendingDnaSource = null;
     state.dnaHistory = null;
     state.focusDnaSave = false;
-    render();
+    render('modal');
     restoreSelectionFocus();
     return;
   }

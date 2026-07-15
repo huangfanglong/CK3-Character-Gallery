@@ -8,6 +8,23 @@ function morphAppContent(container, markup) {
   morphChildren(container, template.content);
 }
 
+function morphAppRegion(current, markup) {
+  const template = document.createElement('template');
+  template.innerHTML = markup;
+  const next = template.content.firstElementChild;
+  if (!next) {
+    current?.remove();
+    return null;
+  }
+  if (!current) return next;
+  if (!sameMorphIdentity(current, next)) {
+    current.replaceWith(next);
+    return next;
+  }
+  morphNode(current, next);
+  return current;
+}
+
 /* Stable identity for list items so reordering reuses nodes instead of rebuilding them. */
 function morphKey(node) {
   if (node.nodeType !== Node.ELEMENT_NODE) return null;
