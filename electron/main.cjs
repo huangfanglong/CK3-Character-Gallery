@@ -166,12 +166,8 @@ ipcMain.handle('library:delete-image', async (_event, imagePath) => {
   return true;
 });
 
-ipcMain.on('clipboard:has-image', (event) => {
-  event.returnValue = Boolean(readClipboardImage());
-});
-
-ipcMain.on('clipboard:read-text', (event) => {
-  event.returnValue = clipboard.readText();
+ipcMain.handle('clipboard:read-text', () => {
+  return clipboard.readText();
 });
 
 ipcMain.handle('library:choose-gallery', async () => {
@@ -241,9 +237,14 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   await ensureData();
   await createWindow();
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) await createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => console.error('Failed to create a window:', error));
+    }
   });
+}).catch((error) => {
+  console.error('Failed to start the application:', error);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

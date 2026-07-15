@@ -8,17 +8,21 @@
     "dev": "electron .",
     "start": "electron .",
     "postinstall": "node node_modules/electron/install.js",
+    "lint": "eslint .",
     "test:smoke": "node --check electron/archive-store.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/gallery-transfer.cjs && node --check renderer/state.js && node --check renderer/dna-workbench.js && node --check renderer/crop-editor.js && node --check renderer/persistence.js && node --check renderer/templates.js && node --check renderer/modals.js && node --check renderer/app.js",
     "test:archive": "node scripts/test-archive-store.cjs",
     "test:transfer": "node scripts/test-gallery-transfer.cjs",
     "test:renderer": "node scripts/smoke-renderer.cjs",
-    "test": "npm run test:smoke && npm run test:archive && npm run test:transfer && npm run test:renderer",
+    "test": "npm run lint && npm run test:smoke && npm run test:archive && npm run test:transfer && npm run test:renderer",
     "package:win": "electron-builder --win --x64",
     "package:win:dir": "electron-builder --win --x64 --dir"
   },
   "devDependencies": {
     "electron": "^43.1.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-promise": "^7.3.0",
+    "globals": "^16.5.0"
   },
   "build": {
     "appId": "com.ck3charactergallery.bloodlineindex",

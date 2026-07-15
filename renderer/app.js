@@ -179,7 +179,7 @@ function render() {
   bindEvents();
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
-  updateImageUrls();
+  void updateImageUrls().catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
 }
 
 function focusWithoutScroll(element) {
@@ -609,7 +609,9 @@ function action(name) {
   if (name === 'view-cards') { state.view = 'cards'; return render(); }
   if (name === 'view-table') { state.view = 'table'; return render(); }
   if (name === 'open-folder') return desktop?.openFolder(state.dataDirectory);
-  if (name === 'save-library') return saveLibrary().then((saved) => { if (saved) showToast('Archive saved.', 'success'); });
+  if (name === 'save-library') return saveLibrary()
+    .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })
+    .catch((error) => showToast(readableError(error, 'The archive could not be saved.'), 'info'));
   if (name === 'exit') return desktop?.quit();
   if (name === 'duplicate-shortcut') return duplicateSelectedCharacter();
   if (name === 'add-variant') return chooseImage();
@@ -653,24 +655,41 @@ async function chooseImage() {
 async function pasteClipboardPortrait() {
   if (state.cropSession) return;
   if (!desktop) return showToast('Clipboard portraits are only available in the desktop app.', 'info');
-  const source = await desktop.readClipboardImage();
-  if (!source) return showToast('The clipboard does not contain an image.', 'info');
-  const character = getActiveCharacter();
-  if (!character) return showCharacterModal(source);
-  if (state.preview) return showToast('Start an empty gallery before adding your own portraits.', 'info');
-  if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  showCropModal(source);
+  try {
+    const source = await desktop.readClipboardImage();
+    if (!source) return showToast('The clipboard does not contain an image.', 'info');
+    openClipboardSource(source);
+  } catch (error) {
+    showToast(readableError(error, 'The clipboard image could not be read.'), 'info');
+  }
+}
+
+async function pasteClipboardContent() {
+  if (state.cropSession || !desktop) return;
+  try {
+    const source = await desktop.readClipboardImage();
+    if (source) return openClipboardSource(source);
+    const clipboardText = await desktop.readClipboardText();
+    if (isValidCk3Dna(clipboardText)) openClipboardDna(clipboardText);
+  } catch (error) {
+    showToast(readableError(error, 'The clipboard could not be read.'), 'info');
+  }
 }
 
 function bindModalDelegation() {
   document.addEventListener('click', (event) => {
     const actionName = event.target.closest('[data-action]')?.dataset.action;
-    if (state.modal && actionName) handleModalAction(actionName);
+    if (state.modal && actionName) runModalAction(actionName);
     if (state.activeMenu && !event.target.closest('.window-chrome')) { state.activeMenu = null; render(); }
     if (state.contextMenu && !event.target.closest('.context-menu')) { state.contextMenu = null; render(); }
     if (state.filterPanelOpen && !event.target.closest('.filter-control')) { state.filterPanelOpen = false; render(); }
     if (state.sortMenuOpen && !event.target.closest('.sort-control')) { state.sortMenuOpen = false; render(); }
   });
+}
+
+function runModalAction(actionName) {
+  void handleModalAction(actionName)
+    .catch((error) => showToast(readableError(error, 'The requested action could not be completed.'), 'info'));
 }
 
 function installKeyboardShortcuts() {
@@ -693,16 +712,8 @@ function installKeyboardShortcuts() {
 
     if (command && key === 'v') {
       if (editingText) return;
-      if (desktop?.hasClipboardImage()) {
-        event.preventDefault();
-        pasteClipboardPortrait();
-        return;
-      }
-      const clipboardText = desktop?.readClipboardText?.() || '';
-      if (isValidCk3Dna(clipboardText)) {
-        event.preventDefault();
-        openClipboardDna(clipboardText);
-      }
+      event.preventDefault();
+      void pasteClipboardContent();
       return;
     }
     if (command && key === 'c' && !editingText && !state.modal) {
@@ -723,7 +734,9 @@ function installKeyboardShortcuts() {
     }
     if (command && key === 's') {
       event.preventDefault();
-      saveLibrary().then((saved) => { if (saved) showToast('Archive saved.', 'success'); });
+      saveLibrary()
+        .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })
+        .catch((error) => showToast(readableError(error, 'The archive could not be saved.'), 'info'));
       return;
     }
     if (command && key === 'd') {
@@ -750,7 +763,7 @@ function installKeyboardShortcuts() {
     }
     if (event.key === 'Enter' && document.activeElement?.dataset.action === 'save-dna') {
       event.preventDefault();
-      handleModalAction('save-dna');
+      runModalAction('save-dna');
       return;
     }
     const confirmationAction = state.modal && [
@@ -762,7 +775,7 @@ function installKeyboardShortcuts() {
     ].find((actionName) => document.querySelector(`[data-action="${actionName}"]`));
     if (event.key === 'Enter' && confirmationAction) {
       event.preventDefault();
-      handleModalAction(confirmationAction);
+      runModalAction(confirmationAction);
       return;
     }
     if (event.key === 'Escape') {
@@ -792,10 +805,14 @@ function installClipboardPasteHandler() {
     const uriItem = items.find((item) => item.type === 'text/uri-list');
     if (uriItem) {
       event.preventDefault();
-      uriItem.getAsString(async (value) => {
-        const source = await desktop?.readImagePath(value);
-        if (source) openClipboardSource(source);
-        else showToast('The copied file is not a supported image.', 'info');
+      uriItem.getAsString((value) => {
+        if (!desktop) return showToast('Clipboard portraits are only available in the desktop app.', 'info');
+        void desktop.readImagePath(value)
+          .then((source) => {
+            if (source) openClipboardSource(source);
+            else showToast('The copied file is not a supported image.', 'info');
+          })
+          .catch((error) => showToast(readableError(error, 'The copied image path could not be read.'), 'info'));
       });
     }
   });
@@ -829,7 +846,7 @@ async function boot() {
   bindModalDelegation();
   installKeyboardShortcuts();
   installClipboardPasteHandler();
-  desktop?.onPasteImage(() => pasteClipboardPortrait());
+  desktop?.onPasteImage(() => { void pasteClipboardPortrait(); });
   let loaded = null;
   let loadError = null;
   try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }
@@ -856,4 +873,7 @@ async function boot() {
   if (startupWarning) requestAnimationFrame(() => showToast(startupWarning, 'info'));
 }
 
-boot();
+void boot().catch((error) => {
+  console.error('Failed to initialize the renderer:', error);
+  showToast(readableError(error, 'The application could not be initialized.'), 'info');
+});

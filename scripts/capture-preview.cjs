@@ -5,7 +5,7 @@ const path = require('node:path');
 const output = process.argv[2];
 if (!output) throw new Error('Pass an output PNG path.');
 
-const electron = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'electron.exe');
+const electron = require('electron');
 const child = spawn(electron, ['.', '--remote-debugging-port=9333'], {
   cwd: path.join(__dirname, '..'),
   stdio: 'ignore',

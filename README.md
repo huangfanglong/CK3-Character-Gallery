@@ -74,6 +74,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the v3 change history.
 
 ## Checks
 
+Run the JavaScript linter:
+
+```bash
+npm run lint
+```
+
 Run the JavaScript syntax checks:
 
 ```bash

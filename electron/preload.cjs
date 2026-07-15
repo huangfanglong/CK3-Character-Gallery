@@ -8,8 +8,7 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   readImagePath: (value) => ipcRenderer.invoke('library:read-image-path', value),
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
   deleteImage: (imagePath) => ipcRenderer.invoke('library:delete-image', imagePath),
-  hasClipboardImage: () => ipcRenderer.sendSync('clipboard:has-image'),
-  readClipboardText: () => ipcRenderer.sendSync('clipboard:read-text'),
+  readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
   onPasteImage: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('shortcut:paste-image', listener);

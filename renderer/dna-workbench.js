@@ -52,10 +52,14 @@ function openClipboardDna(value, confirmOverwrite = true) {
   return true;
 }
 
-function pasteDnaFromClipboard(clipboardValue = null) {
-  const dna = typeof clipboardValue === 'string' ? clipboardValue : desktop?.readClipboardText?.() || '';
-  if (!isValidCk3Dna(dna)) return showToast('The clipboard does not contain valid CK3 DNA.', 'info');
-  openClipboardDna(dna, true);
+async function pasteDnaFromClipboard(clipboardValue = null) {
+  try {
+    const dna = typeof clipboardValue === 'string' ? clipboardValue : (await desktop?.readClipboardText?.()) || '';
+    if (!isValidCk3Dna(dna)) return showToast('The clipboard does not contain valid CK3 DNA.', 'info');
+    openClipboardDna(dna, true);
+  } catch (error) {
+    showToast(readableError(error, 'The clipboard text could not be read.'), 'info');
+  }
 }
 
 function homogenizeDna(text) {

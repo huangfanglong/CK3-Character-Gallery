@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const electron = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'electron.exe');
+const electron = require('electron');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
 const smokeDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-renderer-smoke-'));
 fs.writeFileSync(path.join(smokeDataDirectory, 'galleries.json'), '{ "broken": ');
@@ -354,7 +354,8 @@ async function main() {
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true}))");
   await delay(30);
   if ((await evaluate("document.activeElement?.id")) !== 'search-input') throw new Error('Ctrl+F did not focus archive search.');
-   if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.hasClipboardImage === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function' && typeof window.galleryDesktop.duplicateCharacter === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
+   if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function' && typeof window.galleryDesktop.duplicateCharacter === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
+  if (!(await evaluate("(()=>{const result=window.galleryDesktop.readClipboardText();return typeof result?.then==='function';})()"))) throw new Error('Clipboard text bridge did not return asynchronously.');
   if (!(await evaluate("portraitMarkup({name:'Blank character'},'card').includes('portrait-placeholder')"))) throw new Error('Missing portraits did not use the generic silhouette.');
   await evaluate("showCropModal({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',width:1,height:1})");
   await delay(50);
@@ -391,7 +392,22 @@ async function main() {
   if (narrowFilterBounds.left < 0 || narrowFilterBounds.right > narrowFilterBounds.width) throw new Error(`Filter panel escaped the narrow viewport (${narrowFilterBounds.left}-${narrowFilterBounds.right} of ${narrowFilterBounds.width}).`);
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   if (await evaluate("Boolean(document.querySelector('#filter-panel'))")) throw new Error('Escape did not close the filter panel.');
-  console.log('Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, clipboard DNA and DNA-only creation, DNA undo/redo, crop wheel zoom, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, and resizing.');
+  await command('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1150, deviceScaleFactor: 1, mobile: false });
+  const renderBenchmark = JSON.parse(await evaluate(`(async()=>{
+    const gallery=getGallery();
+    const original={characters:gallery.characters,query:state.query,filters:state.filters,view:state.view,sort:state.sort,activeId:state.activeId,focusContext:state.focusContext,selectedVariantIndex:state.selectedVariantIndex};
+    const characters=Array.from({length:500},(_,index)=>({id:\`benchmark-\${index}\`,name:\`Benchmark Character \${index}\`,title:'',images:[],dna:'',note:'',tags:[],created:index,modified:index,coverIndex:0,variants:0}));
+    characters.forEach((character)=>state.imageUrls.set(character.id,[]));
+    gallery.characters=characters;state.query='';state.filters={dna:'all',favorites:false,tags:new Set()};state.view='cards';state.sort='custom';state.activeId=null;state.focusContext='character';state.selectedVariantIndex=null;
+    const start=performance.now();render();await new Promise(requestAnimationFrame);const duration=performance.now()-start;
+    const count=document.querySelectorAll('.character-card').length;
+    gallery.characters=original.characters;state.query=original.query;state.filters=original.filters;state.view=original.view;state.sort=original.sort;state.activeId=original.activeId;state.focusContext=original.focusContext;state.selectedVariantIndex=original.selectedVariantIndex;
+    characters.forEach((character)=>state.imageUrls.delete(character.id));render();await new Promise(requestAnimationFrame);
+    return JSON.stringify({count,duration:Math.round(duration)});
+  })()`));
+  if (renderBenchmark.count !== 500) throw new Error(`Large archive render omitted records (${renderBenchmark.count} of 500).`);
+  if (renderBenchmark.duration > 1000) throw new Error(`Large archive render exceeded the regression ceiling (${renderBenchmark.duration}ms).`);
+  console.log(`Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, clipboard DNA and DNA-only creation, DNA undo/redo, crop wheel zoom, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, resizing, and a 500-record render in ${renderBenchmark.duration}ms.`);
   socket.close();
   cleanup();
 }
