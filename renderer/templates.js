@@ -59,7 +59,7 @@ function mainMarkup(characters) {
 }
 
 function sortControlMarkup() {
-  const options = [['recent', 'Recently modified'], ['custom', 'Custom'], ['name', 'Name A-Z'], ['oldest', 'Oldest first']];
+  const options = SORT_OPTIONS;
   const selectedLabel = options.find(([value]) => value === state.sort)?.[1] || options[0][1];
   return `<div class="sort-control"><button class="sort-select ${state.sortMenuOpen ? 'active' : ''}" data-action="sort-menu" data-sort-value="${state.sort}" aria-haspopup="listbox" aria-expanded="${state.sortMenuOpen}" aria-controls="sort-menu"><span>Sort by</span><strong>${selectedLabel}</strong>${icon('chevron')}</button>${state.sortMenuOpen ? `<div class="sort-menu" id="sort-menu" role="listbox" aria-label="Sort characters">${options.map(([value, label]) => `<button class="${state.sort === value ? 'selected' : ''}" data-sort="${value}" role="option" aria-selected="${state.sort === value}"><span>${label}</span>${state.sort === value ? icon('check') : ''}</button>`).join('')}</div>` : ''}</div>`;
 }

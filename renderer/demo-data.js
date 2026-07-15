@@ -1,6 +1,5 @@
 window.demoLibrary = {
   name: 'The Court of Oddities',
-  subtitle: 'CURATED CHARACTER STUDIES',
   characters: [
     { id: 'demo-astrid', name: 'Astrid of the White Coast', title: 'Fjord Queen · 867', tags: ['norse', 'ruler', 'winter'], status: 'ready', color: 'violet', dna: 'gene_eye = { "eye_blue" 1 "eye_blue" 1 }\nbody = { "body_female" 1 }', note: 'A severe northern silhouette with a softer court expression.', variants: 3 },
     { id: 'demo-sigurd', name: 'Sigurd the Red', title: 'Jarl of Orkney · 912', tags: ['norse', 'warrior'], status: 'ready', color: 'rust', dna: 'gene_hair = { "hair_red" 1 "hair_red" 1 }\nbody = { "body_male" 1 }', note: 'Built for a dynasty founder portrait set.', variants: 2 },

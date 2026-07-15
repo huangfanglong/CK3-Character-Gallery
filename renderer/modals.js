@@ -126,7 +126,7 @@ async function handleModalAction(name) {
     state.pendingDnaSource = null;
     if (state.preview) { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; state.sort = 'recent'; }
     const character = { id: crypto.randomUUID(), name: nameValue, images: [], dna: dnaSource || '', tags: [], created: Date.now(), modified: Date.now() };
-    getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; state.saved = false; cancelBatchSelection(false); render();
+    getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render();
     if (!(await saveLibrary())) return;
     if (portraitSource) { showCropModal(portraitSource); showToast('Record created. Position the clipboard portrait.', 'success'); }
     else if (dnaSource) showToast('Record created with clipboard DNA.', 'success');
@@ -178,7 +178,7 @@ async function handleModalAction(name) {
     } catch (error) { showToast(readableError(error, 'The collection could not be imported.'), 'info'); }
   }
   if (name === 'save-dna') {
-    const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; state.saved = false; render(); if (await saveLibrary()) showToast('DNA saved to the archive.', 'success'); }
+    const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; render(); if (await saveLibrary()) showToast('DNA saved to the archive.', 'success'); }
   }
   if (name === 'clear-dna') {
     if (document.querySelector('#dna-input')) { setDnaEditorValue(''); showToast('DNA editor cleared. Save to keep the change.', 'success'); }

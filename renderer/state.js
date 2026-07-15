@@ -14,7 +14,6 @@ const state = {
   sort: 'recent',
   view: 'cards',
   preview: false,
-  imageDirectory: '',
   dataDirectory: '',
   startupWarning: '',
   modal: null,
@@ -28,7 +27,6 @@ const state = {
   batchMode: false,
   selectedCharacterIds: new Set(),
   contextMenu: null,
-  saved: false,
   favorites: new Set(JSON.parse(localStorage.getItem('ck3-favorites') || '[]')),
 };
 

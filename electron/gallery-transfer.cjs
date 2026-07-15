@@ -2,6 +2,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
+const SORT_MODES = new Set(['recent', 'custom', 'name', 'oldest']);
+
 function safeFolderName(value) {
   const cleaned = String(value || 'Collection')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -125,7 +127,7 @@ async function readGalleryInfo(folder) {
     suggestedName: typeof metadata.name === 'string' && metadata.name.trim()
       ? metadata.name.trim()
       : path.basename(resolvedFolder),
-    sortMode: ['recent', 'custom', 'name', 'oldest'].includes(metadata.sortMode)
+    sortMode: SORT_MODES.has(metadata.sortMode)
       ? metadata.sortMode
       : 'recent',
   };

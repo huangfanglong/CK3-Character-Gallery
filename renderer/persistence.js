@@ -67,12 +67,11 @@ async function saveLibrary() {
     )),
   }));
   try {
-    state.saved = Boolean(await desktop.save(galleries));
-    if (!state.saved) throw new Error('The archive save did not complete.');
+    const saved = Boolean(await desktop.save(galleries));
+    if (!saved) throw new Error('The archive save did not complete.');
     render();
     return true;
   } catch (error) {
-    state.saved = false;
     render();
     const detail = readableError(error, 'Unknown storage error.');
     showToast(`The archive could not be saved. Your latest changes may not persist. ${detail}`, 'info');

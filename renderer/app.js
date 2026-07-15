@@ -2,6 +2,16 @@
 const desktop = window.galleryDesktop;
 
 const app = document.querySelector('#app');
+const SORT_OPTIONS = [['recent', 'Recently modified'], ['custom', 'Custom'], ['name', 'Name A-Z'], ['oldest', 'Oldest first']];
+const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
+
+function isSortMode(value) {
+  return SORT_OPTIONS.some(([sortMode]) => sortMode === value);
+}
+
+function isSupportedImageFile(value) {
+  return IMAGE_FILE_PATTERN.test(value);
+}
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, (character) => ({
@@ -71,7 +81,7 @@ function getActiveCharacter() {
 }
 
 function gallerySortMode(gallery = getGallery()) {
-  return ['recent', 'custom', 'name', 'oldest'].includes(gallery?.sortMode)
+  return isSortMode(gallery?.sortMode)
     ? gallery.sortMode
     : 'recent';
 }
@@ -480,7 +490,7 @@ async function saveCollectionOrder(orderedNames) {
 
 async function setSortMode(mode) {
   const gallery = getGallery();
-  state.sort = ['recent', 'custom', 'name', 'oldest'].includes(mode) ? mode : 'recent';
+  state.sort = isSortMode(mode) ? mode : 'recent';
   state.sortMenuOpen = false;
   if (gallery && !state.preview) gallery.sortMode = state.sort;
   render();
@@ -794,8 +804,8 @@ function installClipboardPasteHandler() {
     if (state.cropSession) return;
     const items = [...(event.clipboardData?.items || [])];
     const files = [...(event.clipboardData?.files || [])];
-    const imageItem = items.find((item) => item.kind === 'file' && (item.type.startsWith('image/') || /\.(png|jpe?g|bmp|gif|webp)$/i.test(item.getAsFile()?.name || '')));
-    const imageFile = imageItem?.getAsFile() || files.find((file) => file.type.startsWith('image/') || /\.(png|jpe?g|bmp|gif|webp)$/i.test(file.name));
+    const imageItem = items.find((item) => item.kind === 'file' && (item.type.startsWith('image/') || isSupportedImageFile(item.getAsFile()?.name || '')));
+    const imageFile = imageItem?.getAsFile() || files.find((file) => file.type.startsWith('image/') || isSupportedImageFile(file.name));
     if (imageFile) {
       event.preventDefault();
       openClipboardFile(imageFile).catch(() => showToast('The clipboard image could not be decoded.', 'info'));
@@ -852,7 +862,6 @@ async function boot() {
   try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }
   if (loaded?.galleries) {
     state.galleries = loaded.galleries.map((gallery) => ({ ...gallery, characters: gallery.characters.map(normalizedCharacter) }));
-    state.imageDirectory = loaded.imageDirectory;
     state.dataDirectory = loaded.dataDirectory;
     state.activeGallery = state.galleries[0]?.name || 'Default';
     state.sort = gallerySortMode();

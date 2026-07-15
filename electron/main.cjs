@@ -5,6 +5,8 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
 
+const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
+const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
 const isDev = !app.isPackaged;
 const projectRoot = path.join(__dirname, '..');
 const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
@@ -24,14 +26,14 @@ function readClipboardImage() {
     const buffer = clipboard.readBuffer(fileFormat);
     const encoding = /filenamew/i.test(fileFormat) ? 'utf16le' : 'utf8';
     const filePath = buffer.toString(encoding).split('\0')[0].trim().replace(/^"|"$/g, '');
-    if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(filePath)) {
+    if (IMAGE_FILE_PATTERN.test(filePath)) {
       const fileImage = nativeImage.createFromPath(filePath);
       if (!fileImage.isEmpty()) return fileImage;
     }
   }
 
   const textPath = clipboard.readText().trim().replace(/^"|"$/g, '');
-  if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(textPath)) {
+  if (IMAGE_FILE_PATTERN.test(textPath)) {
     const fileImage = nativeImage.createFromPath(textPath);
     if (!fileImage.isEmpty()) return fileImage;
   }
@@ -82,7 +84,6 @@ ipcMain.handle('library:load', async () => {
   return {
     galleries: data.galleries,
     dataDirectory: data.directory,
-    imageDirectory: path.join(data.directory, 'images'),
     warning: data.warning,
     recoveryFile: data.recoveryFile,
   };
@@ -95,7 +96,7 @@ ipcMain.handle('library:save', async (_event, galleries) => {
 ipcMain.handle('library:choose-image', async (_event, characterId) => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
-    filters: [{ name: 'Portrait images', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif'] }],
+    filters: [{ name: 'Portrait images', extensions: IMAGE_FILE_EXTENSIONS }],
   });
   if (result.canceled) return null;
   const source = result.filePaths[0];
@@ -124,7 +125,7 @@ ipcMain.handle('library:read-image-path', (_event, value) => {
   } catch {
     return null;
   }
-  if (!/\.(png|jpe?g|bmp|gif|webp)$/i.test(imagePath)) return null;
+  if (!IMAGE_FILE_PATTERN.test(imagePath)) return null;
   const image = nativeImage.createFromPath(imagePath);
   if (image.isEmpty()) return null;
   const size = image.getSize();

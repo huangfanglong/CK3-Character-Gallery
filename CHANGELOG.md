@@ -20,6 +20,7 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Replaced synchronous clipboard IPC with asynchronous reads so paste shortcuts no longer block the renderer.
 - Made Electron smoke and preview launchers use the installed platform-specific executable path.
 - Added ESLint checks, explicit asynchronous failure handling, and an isolated 500-record renderer regression benchmark.
+- Consolidated image and sort validation, added WebP to the portrait picker, and removed unused renderer state and preview tooling.
 - Removed the unused ME account badge, removed the empty inspector's Study a character heading, and renamed its creation action to New character.
 - Standardized Import collection wording in the File menu and sidebar.
 
