@@ -1,0 +1,24 @@
+name: Electron CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run licenses:check
+      - run: npm run lint
+      - run: npm run test:smoke
+      - run: npm run test:archive
+      - run: npm run test:transfer
+      - run: npm run test:renderer

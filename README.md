@@ -1,90 +1,121 @@
 # CK3 Character Gallery
 
-[![Build](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/compile.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/compile.yml)
-[![Tests](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/tests.yml)
+[![Electron CI](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml)
 
-A desktop application for managing and organizing Crusader Kings 3 character DNAs.
+![alt text](https://i.imgur.com/yU37mdf.png)
 
-![alt text](https://i.imgur.com/20jv1i4.png)
+CK3 Character Gallery is a local desktop archive for Crusader Kings III character DNA and portraits. I use it to keep faces, DNA strings, tags, and reference notes together instead of digging through screenshots and text files later.
 
-## Features
+Version 3 is currently an Electron alpha with a portrait-first archive. The v2 Python/Tkinter application is preserved on the `archive/v2` branch.
 
-- **Multiple Galleries**: Create, rename, and delete gallery sets (e.g., Male, Female) to organize characters or categorize them. Import & Export them to save online or share them with others.
-- **Character Management**: Add, delete, and batch-delete character entries within each gallery. Give each character entry specific tags and ability to search & narrow them in the search box.
-- **Portrait Cropping**: Adjust portrait images display with drag and scroll-to-zoom.
-- **Multi-Portrait Support**: Each character can have up to 5 portraits. Add slots with the `+` button, remove with `-`, and cycle through them with on-canvas arrow overlays.
-- **Hover Tooltips**: Hover over any button to see a brief description of what it does.
-- **DNA Displayer**:
-  - Store, view and edit raw character DNA strings.
-  - Clear, homogenize (gene-value duplication), save, and copy DNA with one click.
-- **Hotkeys**:
-  - Ctrl+S: Save current character data.
-  - Ctrl+Z: Undo DNA edits.
-  - Ctrl+N: New Character entry.
-  - Ctrl+D: Duplicate character entry.
-  - Ctrl+E: Exports current gallery.
-  - Ctrl+F: Search.
-  - Ctrl+V: Paste portrait image from clipboard into current slot.
-  - Delete: Remove selected characters.
-  - F2: Renames selected character.
+## Run v3
 
-## Installation
+You need Node.js 22.12 or newer.
 
-1. **Requirements**:
-   - Python 3.10+
-   - Tkinter (bundled with most Python installs)
-   - Pillow (see `requirements.txt`)
+```bash
+npm install
+npm run dev
+```
 
-2. **Clone the repository**:
-   ```bash
-   git clone https://github.com/huangfanglong/CK3-Character-Gallery.git
-   cd CK3-Character-Gallery
-   ```
+`npm run dev` opens the Electron app from the repository. Build a Windows portable executable with `npm run package:win`; output is written to `release/`.
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Basic Usage
 
-4. **Run the application**:
-   ```bash
-   python main.py
-   ```
+1. Create a character with `Ctrl+N` or click the `+ New character` button.
+2. Select the character card, then add a portrait from a file or paste one with `Ctrl+V`.
+3. Reposition and zoom a pasted image in the crop window. The saved portrait is a 450 x 450 PNG.
+4. Select the character card or open the DNA workbench, then paste the raw CK3 DNA, and save it.
+5. Add a title for the character card if you wish (maybe adding some title customization options soon).
+6. Just play around with it.
 
-## Or Build Executable (Optional)
-   To create a standalone `.exe` file:
-   ```bash
-   pyinstaller --onefile --noconsole main.py
-   ```
+A character can hold up to five portraits. Selecting a thumbnail in the inspector changes the large preview. The arrows on a character card choose which portrait appears as its cover, and that choice is saved with the record.
 
-   To create a standalone `.exe` file with a custom icon (OPTIONAL):
-   ```bash
-   pyinstaller --onefile --noconsole --icon app.ico --add-data "app.png;." main.py
-   ```
-   Place `app.ico` (small, for the .exe file icon) and `app.png` (higher
-   resolution, for the taskbar) in the project root.
+Favorites are stored in the Electron profile on the current computer. They are not part of `galleries.json` or exported collection manifests.
 
-   And then run the .exe
+Export collection opens a Save dialog with the collection folder name prefilled. Navigate into the destination you want and choose Export; the app creates the collection folder there.
 
-## Usage
+## Shortcuts
 
-1. Ctrl+N to create new character entry (or click the +New button).
-2. Click 'Change Portrait', or click directly in the Portrait box, or Copy (Ctrl+C) a picture of the character (I usually Ctrl+C directly from Snipping Tool after taking a snip in-game) and then Ctrl+V with that character entry selected. This replaces the image in the currently-selected portrait slot. Use the **+** and **-** buttons to add or remove portrait slots (up to 5 per character), and the on-canvas arrows or left/right edges of the portrait to cycle between them.
-3. Then it prompts a window to reposition the image to choose what portion of the image to display in the Portrait window (use mouse scroll to adjust zoom if you'd like to display a wider or narrower area of the image in the Portrait window).
-4. And then just Copy the DNA and paste it inside the Character DNA box.
-5. Save (Ctrl + S).
-6. **To use Tags** & narrow character entry list to specific tags, start with "tags:" or "tag:" in the search box followed by the tag, separate by comma if multiple.
-![alt text](https://i.imgur.com/PZoWoxh.png)
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+N` | Create a character |
+| `Ctrl+F` | Focus search |
+| `Ctrl+S` | Save the archive |
+| `Ctrl+D` | Duplicate the selected character |
+| `Ctrl+E` | Export the current collection |
+| `Ctrl+V` | Paste a portrait, create a character from an image, or open copied DNA |
+| `Ctrl+C` | Copy DNA from the selected character |
+| `Ctrl+Z` | Undo the last DNA workbench edit |
+| `Ctrl+Y` | Redo the last undone DNA workbench edit |
+| `F2` | Open record management for the selected character |
+| `Delete` | Delete the focused variant, selected character, or current batch |
+| `Enter` | Confirm a delete dialog |
+| `Escape` | Close the active dialog or menu, or leave batch selection |
 
-## Data Storage
+On macOS, the command shortcuts also respond to `Command` though I don't have a Mac to test with.
 
-- Galleries and character metadata are stored in `character_gallery_data/galleries.json`.
-- Portrait images are saved under `character_gallery_data/images/<character_id>/0.png`, `1.png`, etc.
+## Local Data
+
+Currently, similar to v2, v3 reads and writes the local archive at:
+
+```text
+character_gallery_data/
+  galleries.json
+  images/
+    <character_id>/
+      <portrait files>
+```
+
+Writes to `galleries.json` use a temporary file followed by a rename. A collection's `sortMode` stores its selected sort, while the character array stores its custom card order. Portrait deletion is restricted to the archive's `images` directory.
+
+A packaged Electron build uses `character_gallery_data` under Electron's application data directory instead of the repository. Use Import collection to bring an exported archive into the packaged app.
+
+See [CHANGELOG.md](CHANGELOG.md) for the v3 change history.
+
+## Checks
+
+Run the JavaScript linter:
+
+```bash
+npm run lint
+```
+
+Audit installed dependency licenses:
+
+```bash
+npm run licenses:check
+```
+
+Run the JavaScript syntax checks:
+
+```bash
+npm run test:smoke
+```
+
+Run the Electron renderer smoke test:
+
+```bash
+node scripts/smoke-renderer.cjs
+```
+
+Run the isolated collection round-trip test:
+
+```bash
+npm run test:transfer
+```
+
+Run all Node checks:
+
+```bash
+npm test
+```
+
+The renderer smoke test opens Electron and checks the archive, combinable filters, Ctrl-click selection, list portrait previews, custom card ordering, portrait variants, deletion focus, inspector, notes, menus, shortcuts, search, and viewport sizing. It creates temporary renderer-only character cards/records, so it does not rewrite the development archive.
 
 ## Contributing
 
-Bug reports and pull requests are welcome. Please follow standard GitHub contribution workflows.
+Bug reports and pull requests are welcome. For v3 changes, include the renderer smoke test when the behavior can be exercised through the UI. Prefer to include a test for everything to prevent regression.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT
