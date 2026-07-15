@@ -3,6 +3,7 @@
   "version": "3.0.0",
   "private": true,
   "author": "Huang Fang Long",
+  "license": "MIT",
   "description": "A visual desktop archive for Crusader Kings III character DNA and portraits.",
   "main": "electron/main.cjs",
   "scripts": {
@@ -10,13 +11,14 @@
     "start": "electron .",
     "postinstall": "node node_modules/electron/install.js",
     "lint": "eslint .",
+    "licenses:check": "node scripts/check-licenses.cjs",
     "test:smoke": "node --check electron/archive-store.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/gallery-transfer.cjs && node --check renderer/state.js && node --check renderer/dom-morph.js && node --check renderer/dna-workbench.js && node --check renderer/crop-editor.js && node --check renderer/persistence.js && node --check renderer/templates.js && node --check renderer/modals.js && node --check renderer/app.js",
     "test:archive": "node scripts/test-archive-store.cjs",
     "test:transfer": "node scripts/test-gallery-transfer.cjs",
     "test:renderer": "node scripts/smoke-renderer.cjs",
     "test": "npm run lint && npm run test:smoke && npm run test:archive && npm run test:transfer && npm run test:renderer",
-    "package:win": "electron-builder --win --x64",
-    "package:win:dir": "electron-builder --win --x64 --dir"
+    "package:win": "electron-builder --win --x64 && node scripts/verify-package-licenses.cjs",
+    "package:win:dir": "electron-builder --win --x64 --dir && node scripts/verify-package-licenses.cjs"
   },
   "devDependencies": {
     "electron": "^43.1.0",
@@ -36,6 +38,12 @@
       "electron/**",
       "renderer/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "licenses/CK3 Character Gallery LICENSE.txt"
+      }
     ],
     "win": {
       "target": "portable",

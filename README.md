@@ -2,7 +2,7 @@
 
 [![Electron CI](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml)
 
-![alt text](https://i.imgur.com/cBCOjk8.png)
+![alt text](https://i.imgur.com/yU37mdf.png)
 
 CK3 Character Gallery is a local desktop archive for Crusader Kings III character DNA and portraits. I use it to keep faces, DNA strings, tags, and reference notes together instead of digging through screenshots and text files later.
 
@@ -78,6 +78,12 @@ Run the JavaScript linter:
 
 ```bash
 npm run lint
+```
+
+Audit installed dependency licenses:
+
+```bash
+npm run licenses:check
 ```
 
 Run the JavaScript syntax checks:
