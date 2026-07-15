@@ -39,3 +39,13 @@ function resetSelection(activeId = null) {
 function hasMaximumPortraits(character) {
   return (character?.images?.length || 0) >= MAX_PORTRAIT_VARIANTS;
 }
+
+/* Modals that manage their own DOM (crop stage, note highlighter, DNA editor) tag their root
+   with a unique data-preserve token so morphing leaves the live subtree alone; a fresh token
+   per modal instance still lets a replacement modal render normally. */
+let modalPreserveCounter = 0;
+
+function modalPreserveAttribute(name) {
+  modalPreserveCounter += 1;
+  return `data-preserve="${name}-${modalPreserveCounter}"`;
+}

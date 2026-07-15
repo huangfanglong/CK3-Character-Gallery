@@ -175,18 +175,8 @@ function icon(name) {
 }
 
 function render() {
-  const scrollPositions = [
-    ['.main-content', app.querySelector('.main-content')],
-    ['.sidebar', app.querySelector('.sidebar')],
-    ['.inspector-scroll', app.querySelector('.inspector-scroll')],
-  ].map(([selector, element]) => ({ selector, top: element?.scrollTop || 0, left: element?.scrollLeft || 0 }));
   const characters = visibleCharacters();
-  app.innerHTML = `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`;
-  scrollPositions.forEach(({ selector, top, left }) => {
-    const element = app.querySelector(selector);
-    if (element) { element.scrollTop = top; element.scrollLeft = left; }
-  });
-  bindEvents();
+  morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
   void updateImageUrls().catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
@@ -210,141 +200,190 @@ async function updateImageUrls() {
   if (changed) render();
 }
 
-function bindEvents() {
-  app.querySelector('.main-content')?.addEventListener('click', (event) => {
-    const blankArchiveSpace = event.target.classList.contains('main-content')
-      || event.target.classList.contains('card-grid')
-      || event.target.classList.contains('table-view');
-    if (blankArchiveSpace && state.activeId) {
-      state.activeId = null;
-      state.focusContext = 'character';
-      state.selectedVariantIndex = null;
-      render();
-    }
+/* All UI events are delegated once from #app at boot; render() only morphs the DOM and never
+   rebinds listeners. Branches that previously stopped propagation on their own elements still
+   do so here, so the document-level modal/menu delegation keeps its original behavior. */
+function installEventDelegation() {
+  app.addEventListener('click', handleDelegatedClick);
+  app.addEventListener('contextmenu', handleDelegatedContextMenu);
+  app.addEventListener('keydown', handleDelegatedKeydown);
+  app.addEventListener('input', handleDelegatedInput);
+  app.addEventListener('change', handleDelegatedChange);
+  app.addEventListener('focusin', (event) => {
+    if (event.target.closest?.('.dna-modal') && event.target.dataset?.action !== 'save-dna') state.focusDnaSave = false;
   });
-  app.querySelectorAll('[data-character-id]').forEach((element) => {
-    element.addEventListener('click', (event) => {
-      if (event.target.closest('[data-action="favorite"]')) return toggleFavorite(element.dataset.characterId);
-      if (event.target.closest('[data-cycle-portrait]')) return;
-      if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
-      state.activeId = element.dataset.characterId;
-      state.focusContext = 'character';
-      state.selectedVariantIndex = null;
-      render();
-      restoreSelectionFocus();
-    });
-    element.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
-        state.activeId = element.dataset.characterId; state.focusContext = 'character'; state.selectedVariantIndex = null; render(); restoreSelectionFocus();
-      }
-    });
-    element.addEventListener('contextmenu', (event) => {
-      if (state.batchMode || state.preview) return;
-      event.preventDefault();
-      state.activeId = element.dataset.characterId;
-      state.focusContext = 'character';
-      state.selectedVariantIndex = null;
-      openContextMenu(event, { type: 'character', id: element.dataset.characterId });
-    });
-  });
-  bindCardDragAndDrop();
-  bindTablePortraitPreviews();
-  app.querySelectorAll('[data-action="favorite"]').forEach((button) => button.addEventListener('click', (event) => {
+  /* scroll and mouseenter/mouseleave do not bubble, but capture-phase listeners still see them. */
+  app.addEventListener('scroll', (event) => {
+    if (event.target?.id === 'note-input') syncNoteHighlightScroll(event.target);
+  }, true);
+  app.addEventListener('mouseenter', showTablePortraitPreview, true);
+  app.addEventListener('mouseleave', hideTablePortraitPreview, true);
+  installReorderDelegation();
+}
+
+function handleDelegatedClick(event) {
+  if (!(event.target instanceof Element)) return;
+  const favoriteButton = event.target.closest('[data-action="favorite"]');
+  if (favoriteButton) {
+    event.stopPropagation();
+    state.activeMenu = null;
+    if (state.batchMode) return;
+    return toggleFavorite(favoriteButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
+  }
+  const cycleButton = event.target.closest('[data-cycle-portrait]');
+  if (cycleButton) {
     event.stopPropagation();
     if (state.batchMode) return;
-    toggleFavorite(button.closest('[data-character-id]')?.dataset.characterId || state.activeId);
-  }));
-  app.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
-    const filter = button.dataset.filter;
+    return void cycleCardPortrait(cycleButton.closest('[data-character-id]')?.dataset.characterId, Number(cycleButton.dataset.cyclePortrait));
+  }
+  const moreButton = event.target.closest('[data-action="more"]');
+  if (moreButton) {
+    event.stopPropagation();
+    if (state.batchMode) return;
+    resetSelection(moreButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
+    return showManageModal();
+  }
+  const contextActionButton = event.target.closest('[data-context-action]');
+  if (contextActionButton) {
+    event.stopPropagation();
+    return void handleContextAction(contextActionButton.dataset.contextAction);
+  }
+  const menuButton = event.target.closest('[data-menu]');
+  if (menuButton) {
+    event.stopPropagation();
+    state.activeMenu = state.activeMenu === menuButton.dataset.menu ? null : menuButton.dataset.menu;
+    return render();
+  }
+  const variantButton = event.target.closest('[data-variant]');
+  if (variantButton) {
+    event.stopPropagation();
+    state.focusContext = 'variant';
+    state.selectedVariantIndex = Number(variantButton.dataset.variant);
+    render();
+    return focusWithoutScroll(document.querySelector(`[data-variant="${state.selectedVariantIndex}"]`));
+  }
+  const sortButton = event.target.closest('[data-sort]');
+  if (sortButton) return void setSortMode(sortButton.dataset.sort);
+  const dnaFilterButton = event.target.closest('[data-dna-filter]');
+  if (dnaFilterButton) {
+    state.filters.dna = dnaFilterButton.dataset.dnaFilter;
+    return render();
+  }
+  const filterButton = event.target.closest('[data-filter]');
+  if (filterButton) {
+    const filter = filterButton.dataset.filter;
     if (filter === 'all') clearFilters(false);
     if (filter === 'favorites') state.filters.favorites = !state.filters.favorites;
     if (filter === 'ready' || filter === 'drafts') state.filters.dna = state.filters.dna === filter ? 'all' : filter;
     state.filterPanelOpen = false;
+    return render();
+  }
+  const galleryButton = event.target.closest('[data-gallery]');
+  if (galleryButton) {
+    activateGallery(galleryButton.dataset.gallery);
+    return render();
+  }
+  const viewButton = event.target.closest('[data-view]');
+  if (viewButton) {
+    state.view = viewButton.dataset.view;
+    return render();
+  }
+  const actionButton = event.target.closest('[data-action]');
+  if (actionButton) return action(actionButton.dataset.action);
+  const characterElement = event.target.closest('[data-character-id]');
+  if (characterElement) return selectCharacterElement(characterElement, event);
+  const blankArchiveSpace = event.target.classList.contains('main-content')
+    || event.target.classList.contains('card-grid')
+    || event.target.classList.contains('table-view');
+  if (blankArchiveSpace && state.activeId) {
+    resetSelection();
     render();
-  }));
-  app.querySelectorAll('[data-gallery]').forEach((button) => button.addEventListener('click', () => {
-    state.activeGallery = button.dataset.gallery; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); cancelBatchSelection(false); render();
-  }));
-  app.querySelectorAll('[data-gallery]').forEach((button) => button.addEventListener('contextmenu', (event) => {
+  }
+}
+
+function selectCharacterElement(element, event) {
+  if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
+  resetSelection(element.dataset.characterId);
+  render();
+  restoreSelectionFocus();
+}
+
+function activateGallery(name) {
+  state.activeGallery = name;
+  resetSelection();
+  clearFilters(false);
+  state.filterPanelOpen = false;
+  state.sort = gallerySortMode();
+  cancelBatchSelection(false);
+}
+
+function handleDelegatedContextMenu(event) {
+  if (!(event.target instanceof Element)) return;
+  const characterElement = event.target.closest('[data-character-id]');
+  if (characterElement) {
+    if (state.batchMode || state.preview) return;
+    event.preventDefault();
+    resetSelection(characterElement.dataset.characterId);
+    return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId });
+  }
+  const galleryButton = event.target.closest('[data-gallery]');
+  if (galleryButton) {
     if (state.preview) return;
     event.preventDefault();
-    state.activeGallery = button.dataset.gallery; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); cancelBatchSelection(false);
-    openContextMenu(event, { type: 'collection', name: button.dataset.gallery });
-  }));
-  bindCollectionDragAndDrop();
-  app.querySelectorAll('[data-variant]').forEach((button) => button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    state.focusContext = 'variant';
-    state.selectedVariantIndex = Number(button.dataset.variant);
-    render();
-    focusWithoutScroll(document.querySelector(`[data-variant="${state.selectedVariantIndex}"]`));
-  }));
-  app.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
-  app.querySelectorAll('[data-cycle-portrait]').forEach((button) => button.addEventListener('click', (event) => {
-    event.stopImmediatePropagation();
-    if (state.batchMode) return;
-    const characterId = button.closest('[data-character-id]')?.dataset.characterId;
-    cycleCardPortrait(characterId, Number(button.dataset.cyclePortrait));
-  }));
-  app.querySelectorAll('[data-menu]').forEach((button) => button.addEventListener('click', (event) => {
-    event.stopPropagation(); state.activeMenu = state.activeMenu === button.dataset.menu ? null : button.dataset.menu; render();
-  }));
-  app.querySelectorAll('[data-action="more"]').forEach((button) => button.addEventListener('click', (event) => {
-    event.stopImmediatePropagation();
-    if (state.batchMode) return;
-    state.activeId = button.closest('[data-character-id]')?.dataset.characterId || state.activeId;
-    state.focusContext = 'character';
-    state.selectedVariantIndex = null;
-    showManageModal();
-  }));
-  app.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => action(button.dataset.action)));
-  app.querySelectorAll('[data-context-action]').forEach((button) => button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handleContextAction(button.dataset.contextAction);
-  }));
-  const search = document.querySelector('#search-input');
-  search?.addEventListener('input', () => { state.query = search.value; render(); requestAnimationFrame(() => { const input = document.querySelector('#search-input'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }); });
-  app.querySelectorAll('[data-dna-filter]').forEach((button) => button.addEventListener('click', () => {
-    state.filters.dna = button.dataset.dnaFilter;
-    render();
-  }));
-  document.querySelector('[data-favorite-filter]')?.addEventListener('change', (event) => {
-    state.filters.favorites = event.target.checked;
-    render();
-  });
-  app.querySelectorAll('[data-filter-tag]').forEach((input) => input.addEventListener('change', () => {
-    const tag = input.value.toLowerCase();
-    if (input.checked) state.filters.tags.add(tag); else state.filters.tags.delete(tag);
-    render();
-  }));
-  app.querySelectorAll('[data-sort]').forEach((button) => button.addEventListener('click', () => setSortMode(button.dataset.sort)));
-  app.querySelectorAll('[data-sort]').forEach((button) => button.addEventListener('keydown', (event) => {
+    activateGallery(galleryButton.dataset.gallery);
+    openContextMenu(event, { type: 'collection', name: galleryButton.dataset.gallery });
+  }
+}
+
+function handleDelegatedKeydown(event) {
+  if (!(event.target instanceof Element)) return;
+  const sortButton = event.target.closest('[data-sort]');
+  if (sortButton) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     const options = [...document.querySelectorAll('[data-sort]')];
-    const index = options.indexOf(button);
+    const index = options.indexOf(sortButton);
     const next = event.key === 'Home' ? 0
       : event.key === 'End' ? options.length - 1
         : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-    options[next]?.focus();
-  }));
-  document.querySelector('#dna-input')?.addEventListener('input', (event) => {
-    updateDnaCount();
-    recordDnaHistory(event.target.value);
-  });
-  const noteInput = document.querySelector('#note-input');
-  noteInput?.addEventListener('input', () => updateNoteHighlights(noteInput));
-  noteInput?.addEventListener('scroll', () => syncNoteHighlightScroll(noteInput));
-  document.querySelector('.dna-modal')?.addEventListener('focusin', (event) => {
-    if (event.target.dataset?.action !== 'save-dna') state.focusDnaSave = false;
-  });
-  const titleInput = document.querySelector('#character-title');
-  titleInput?.addEventListener('change', () => saveCharacterTitle(titleInput.value));
-  titleInput?.addEventListener('keydown', (event) => {
+    return options[next]?.focus();
+  }
+  if (event.target.id === 'character-title') {
+    const titleInput = event.target;
     if (event.key === 'Enter') { event.preventDefault(); titleInput.blur(); }
     if (event.key === 'Escape') { event.preventDefault(); titleInput.value = getActiveCharacter()?.title || ''; titleInput.blur(); }
-  });
+    return;
+  }
+  if (event.key !== 'Enter') return;
+  const characterElement = event.target.closest('[data-character-id]');
+  if (characterElement) selectCharacterElement(characterElement, event);
+}
+
+function handleDelegatedInput(event) {
+  const target = event.target;
+  if (target.id === 'search-input') {
+    state.query = target.value;
+    return render();
+  }
+  if (target.id === 'dna-input') {
+    updateDnaCount();
+    return recordDnaHistory(target.value);
+  }
+  if (target.id === 'note-input') updateNoteHighlights(target);
+}
+
+function handleDelegatedChange(event) {
+  const target = event.target;
+  if (target.id === 'character-title') return void saveCharacterTitle(target.value);
+  if (target.matches?.('[data-favorite-filter]')) {
+    state.filters.favorites = target.checked;
+    return render();
+  }
+  if (target.matches?.('[data-filter-tag]')) {
+    const tag = target.value.toLowerCase();
+    if (target.checked) state.filters.tags.add(tag); else state.filters.tags.delete(tag);
+    render();
+  }
 }
 
 function openContextMenu(event, target) {
@@ -358,23 +397,25 @@ function openContextMenu(event, target) {
   render();
 }
 
-function bindTablePortraitPreviews() {
-  app.querySelectorAll('.table-avatar').forEach((avatar) => {
-    const preview = avatar.querySelector('.table-portrait-preview');
-    if (!preview) return;
-    avatar.addEventListener('mouseenter', () => {
-      const anchor = avatar.getBoundingClientRect();
-      const width = preview.offsetWidth;
-      const height = preview.offsetHeight;
-      const right = anchor.right + 14;
-      const left = right + width <= window.innerWidth - 12 ? right : Math.max(12, anchor.left - width - 14);
-      const top = Math.max(46, Math.min(anchor.top + anchor.height / 2 - height / 2, window.innerHeight - height - 12));
-      preview.style.left = `${left}px`;
-      preview.style.top = `${top}px`;
-      preview.classList.add('visible');
-    });
-    avatar.addEventListener('mouseleave', () => preview.classList.remove('visible'));
-  });
+function showTablePortraitPreview(event) {
+  if (!(event.target instanceof Element) || !event.target.matches('.table-avatar')) return;
+  const avatar = event.target;
+  const preview = avatar.querySelector('.table-portrait-preview');
+  if (!preview) return;
+  const anchor = avatar.getBoundingClientRect();
+  const width = preview.offsetWidth;
+  const height = preview.offsetHeight;
+  const right = anchor.right + 14;
+  const left = right + width <= window.innerWidth - 12 ? right : Math.max(12, anchor.left - width - 14);
+  const top = Math.max(46, Math.min(anchor.top + anchor.height / 2 - height / 2, window.innerHeight - height - 12));
+  preview.style.left = `${left}px`;
+  preview.style.top = `${top}px`;
+  preview.classList.add('visible');
+}
+
+function hideTablePortraitPreview(event) {
+  if (!(event.target instanceof Element) || !event.target.matches('.table-avatar')) return;
+  event.target.querySelector('.table-portrait-preview')?.classList.remove('visible');
 }
 
 async function handleContextAction(actionName) {
@@ -401,79 +442,88 @@ async function handleContextAction(actionName) {
   render();
 }
 
-function bindCardDragAndDrop() {
-  bindReorderableList({
-    container: app.querySelector('.card-grid'),
+const REORDERABLE_LISTS = [
+  {
+    containerSelector: '.card-grid',
     itemSelector: '.character-card',
     key: (item) => item.dataset.characterId,
     canStart: (event) => !event.target.closest('button'),
+    onStart: () => {},
     insertAfter: (event, dragged, target) => {
       const targetRect = target.getBoundingClientRect();
       const draggedRect = dragged.getBoundingClientRect();
       const sameRow = Math.abs(draggedRect.top - targetRect.top) < targetRect.height / 2;
       return sameRow ? event.clientX > targetRect.left + targetRect.width / 2 : event.clientY > targetRect.top + targetRect.height / 2;
     },
-    commit: saveCustomCardOrder,
-  });
-}
-
-function bindCollectionDragAndDrop() {
-  bindReorderableList({
-    container: app.querySelector('.collection-nav'),
+    commit: (order) => saveCustomCardOrder(order),
+  },
+  {
+    containerSelector: '.collection-nav',
     itemSelector: '.collection-item',
     key: (item) => item.dataset.gallery,
+    canStart: () => true,
     onStart: () => { state.contextMenu = null; },
     insertAfter: (event, _dragged, target) => {
       const rect = target.getBoundingClientRect();
       return event.clientY > rect.top + rect.height / 2;
     },
-    commit: saveCollectionOrder,
-  });
-}
+    commit: (order) => saveCollectionOrder(order),
+  },
+];
 
-function bindReorderableList({ container, itemSelector, key, canStart = () => true, onStart = () => {}, insertAfter, commit }) {
-  const items = [...(container?.querySelectorAll(`${itemSelector}[draggable="true"]`) || [])];
-  if (!container || items.length < 2) return;
-  let draggedItem = null;
-  let initialOrder = [];
-  let committed = false;
+let reorderSession = null;
 
-  items.forEach((item) => {
-    item.addEventListener('dragstart', (event) => {
-      if (!canStart(event)) { event.preventDefault(); return; }
-      draggedItem = item;
-      initialOrder = items.map(key);
-      committed = false;
-      onStart(item);
+function installReorderDelegation() {
+  app.addEventListener('dragstart', (event) => {
+    if (!(event.target instanceof Element)) return;
+    for (const config of REORDERABLE_LISTS) {
+      const item = event.target.closest(`${config.itemSelector}[draggable="true"]`);
+      const container = item?.closest(config.containerSelector);
+      if (!item || !container) continue;
+      const items = [...container.querySelectorAll(`${config.itemSelector}[draggable="true"]`)];
+      if (items.length < 2) return;
+      if (!config.canStart(event)) { event.preventDefault(); return; }
+      reorderSession = { config, container, item, initialOrder: items.map(config.key), committed: false };
+      config.onStart(item);
       event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', key(item));
+      event.dataTransfer.setData('text/plain', config.key(item));
       container.classList.add('is-reordering');
-      requestAnimationFrame(() => item.classList.add('dragging'));
-    });
-    item.addEventListener('dragend', () => {
-      container.classList.remove('is-reordering');
-      item.classList.remove('dragging');
-      if (draggedItem && !committed) render();
-      draggedItem = null;
-    });
+      requestAnimationFrame(() => { if (reorderSession?.item === item) item.classList.add('dragging'); });
+      return;
+    }
   });
 
-  container.addEventListener('dragover', (event) => {
-    if (!draggedItem) return;
+  app.addEventListener('dragover', (event) => {
+    if (!reorderSession || !(event.target instanceof Element)) return;
+    const { config, container, item } = reorderSession;
+    if (event.target.closest(config.containerSelector) !== container) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    const target = event.target.closest(itemSelector);
-    if (!target || target === draggedItem) return;
-    container.insertBefore(draggedItem, insertAfter(event, draggedItem, target) ? target.nextElementSibling : target);
+    const target = event.target.closest(config.itemSelector);
+    if (!target || target === item) return;
+    container.insertBefore(item, config.insertAfter(event, item, target) ? target.nextElementSibling : target);
   });
 
-  container.addEventListener('drop', (event) => {
-    if (!draggedItem) return;
+  app.addEventListener('drop', (event) => {
+    if (!reorderSession || !(event.target instanceof Element)) return;
+    const { config, container, item } = reorderSession;
+    if (event.target.closest(config.containerSelector) !== container) return;
     event.preventDefault();
-    if (!event.target.closest(itemSelector)) container.appendChild(draggedItem);
-    const order = [...container.querySelectorAll(itemSelector)].map(key);
-    if (order.some((value, index) => value !== initialOrder[index])) { committed = true; commit(order); }
-    else render();
+    if (!event.target.closest(config.itemSelector)) container.appendChild(item);
+    const order = [...container.querySelectorAll(config.itemSelector)].map(config.key);
+    if (order.some((value, index) => value !== reorderSession.initialOrder[index])) {
+      reorderSession.committed = true;
+      config.commit(order);
+    } else render();
+  });
+
+  app.addEventListener('dragend', () => {
+    if (!reorderSession) return;
+    const { container, item, committed } = reorderSession;
+    container.classList.remove('is-reordering');
+    item.classList.remove('dragging');
+    reorderSession = null;
+    if (!committed) render();
   });
 }
 
@@ -853,6 +903,7 @@ function openClipboardSource(source) {
 }
 
 async function boot() {
+  installEventDelegation();
   bindModalDelegation();
   installKeyboardShortcuts();
   installClipboardPasteHandler();
