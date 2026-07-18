@@ -60,6 +60,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 kbd { margin-left: auto; color: #9b7360; font: 9px var(--mono); border: 1px solid #624233; padding: 2px 5px; }
 .library-nav, .collection-nav { display: flex; flex-direction: column; gap: 3px; }
 .nav-label { color: var(--paper-muted); margin: 0 9px 7px; font-size: 8px; }
+.collection-batch-count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 6px; border: 1px solid #81533d; background: rgba(190,112,78,.16); color: var(--copper-bright); font: 10px var(--mono); }
 .nav-item, .collection-item { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 3px; background: transparent; color: #a5aaa1; min-height: 34px; padding: 0 9px; text-align: left; }
 .nav-item:hover, .collection-item:hover, .nav-item.active, .collection-item.active { background: #1e2924; color: var(--paper); }
 .nav-item.active, .collection-item.active { box-shadow: inset 2px 0 0 var(--copper); }

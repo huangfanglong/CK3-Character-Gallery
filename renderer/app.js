@@ -723,6 +723,16 @@ function toggleGalleryBatchSelection(name, allowStart = false) {
 }
 
 function syncGalleryBatchSelection() {
+  const label = app.querySelector('.collection-nav .nav-label');
+  let count = label?.querySelector('.collection-batch-count');
+  if (state.galleryBatchMode && state.selectedGalleryNames.size) {
+    if (!count) {
+      count = document.createElement('span');
+      count.className = 'collection-batch-count';
+      label.appendChild(count);
+    }
+    count.textContent = String(state.selectedGalleryNames.size);
+  } else count?.remove();
   app.querySelectorAll('.collection-item').forEach((item) => {
     const selected = state.galleryBatchMode && state.selectedGalleryNames.has(item.dataset.gallery);
     item.classList.toggle('batch-selected', selected);
