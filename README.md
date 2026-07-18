@@ -12,21 +12,35 @@ Version 3 is currently an Electron alpha with a portrait-first archive. The v2 P
 
 You need Node.js 22.12 or newer.
 
+Opens the Electron app directly from the repository:
 ```bash
 npm install
 npm run dev
 ```
 
-`npm run dev` opens the Electron app from the repository. Build a Windows portable executable with `npm run package:win`; output is written to `release/`.
+Or produce an executable:
+
+Unpacked:
+```bash
+npm run package:win:dir
+```
+
+Packed:
+```bash
+npm ci --include=dev
+npm test
+npm run package:win
+```
+
+Output is written to `release/`.
 
 ## Basic Usage
 
-1. Create a character with `Ctrl+N` or click the `+ New character` button.
-2. Select the character card, then add a portrait from a file or paste one with `Ctrl+V`.
-3. Reposition and zoom a pasted image in the crop window. The saved portrait is a 450 x 450 PNG.
-4. Select the character card or open the DNA workbench, then paste the raw CK3 DNA, and save it.
-5. Add a title for the character card if you wish (maybe adding some title customization options soon).
-6. Just play around with it.
+1. Create a character with `Ctrl+N`, or click the `+ New character` button, or just copy an image you have then `Ctrl+V` and it will prompt you to create a new character with that image, or if you have a valid CK3 DNA string (the full Persistent DNA or DNA string) copied you can also `Ctrl+V` in the app and it will prompt you to create a new character with that DNA.
+2. If you created a character card with just a portrait photo, you can then select that character card in the app, then go and copy the DNA string to your clipboard and `Ctrl+V` it in the app, it will add the DNA to that character card.
+3. Likewise if you created a character card with just a DNA string, you can copy an img and `Ctrl+V` it in the app with the card selected and it will add the portrait img to that character card.
+4. Easy repositioning by drag-and-drop, or sort it.
+6. Just play around with it. I have tried to make it convenient and intuitive to use as I play the game and use it at the same time.
 
 A character can hold up to five portraits. Selecting a thumbnail in the inspector changes the large preview. The arrows on a character card choose which portrait appears as its cover, and that choice is saved with the record.
 
@@ -66,9 +80,9 @@ character_gallery_data/
       <portrait files>
 ```
 
-Writes to `galleries.json` use a temporary file followed by a rename. A collection's `sortMode` stores its selected sort, while the character array stores its custom card order. Portrait deletion is restricted to the archive's `images` directory.
+Writes to `galleries.json` use a temporary file followed by a rename.
 
-A packaged Electron build uses `character_gallery_data` under Electron's application data directory instead of the repository. Use Import collection to bring an exported archive into the packaged app.
+A packaged Electron build uses `character_gallery_data` under Electron's application data directory. Supports importing and exporting galleries. Backward compatible with v2's gallery export.
 
 See [CHANGELOG.md](CHANGELOG.md) for the v3 change history.
 
