@@ -27,6 +27,8 @@ const state = {
   transferCharacterIds: [],
   batchMode: false,
   selectedCharacterIds: new Set(),
+  galleryBatchMode: false,
+  selectedGalleryNames: new Set(),
   contextMenu: null,
   favorites: new Set(JSON.parse(localStorage.getItem('ck3-favorites') || '[]')),
 };

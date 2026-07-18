@@ -14,10 +14,13 @@ function contextMenuMarkup() {
   const menu = state.contextMenu;
   if (!menu) return '';
   const batch = menu.type === 'batch';
+  const galleryBatch = menu.type === 'gallery-batch';
   const character = menu.type === 'character' ? getCharacters().find((item) => item.id === menu.id) : null;
-  const heading = menu.type === 'collection' ? menu.name : batch ? `${menu.ids.length} RECORDS SELECTED` : character?.name;
+  const heading = menu.type === 'collection' ? menu.name : galleryBatch ? `${menu.names.length} COLLECTIONS SELECTED` : batch ? `${menu.ids.length} RECORDS SELECTED` : character?.name;
   const items = menu.type === 'collection'
-    ? [['rename', icon('edit'), 'Rename'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']]
+    ? [['rename', icon('edit'), 'Rename'], ['duplicate', icon('copy'), 'Duplicate'], ['batch-select', icon('check'), 'Batch select'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']]
+    : galleryBatch
+      ? [['delete-selected-galleries', icon('trash'), 'Delete selected', 'danger'], ['divider'], ['cancel-gallery-batch', icon('close'), 'Cancel selection']]
     : batch
       ? [['transfer', icon('arrow'), 'Move / Copy'], ['divider'], ['delete-batch', icon('trash'), 'Delete selected', 'danger']]
       : [['manage', icon('edit'), 'Manage record'], ['favorite', icon('star'), state.favorites.has(menu.id) ? 'Remove favorite' : 'Add favorite'], ['divider'], ['copy-dna', icon('copy'), 'Copy DNA'], ['paste-dna', icon('download'), 'Paste DNA'], ['transfer', icon('arrow'), 'Move / Copy'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']];

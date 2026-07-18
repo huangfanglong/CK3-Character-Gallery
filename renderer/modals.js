@@ -33,6 +33,16 @@ function showDeleteGalleryConfirmation() {
   render('modal'); document.querySelector('[data-action="confirm-delete-gallery"]')?.focus();
 }
 
+function showGalleryBatchDeleteConfirmation() {
+  const names = new Set(state.selectedGalleryNames);
+  const galleries = state.galleries.filter((gallery) => names.has(gallery.name));
+  if (!state.galleryBatchMode || !galleries.length) return;
+  if (galleries.length === state.galleries.length) return showToast('At least one collection must remain.', 'info');
+  const characterCount = galleries.reduce((sum, gallery) => sum + gallery.characters.length, 0);
+  state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE COLLECTIONS</p><h2>Remove ${galleries.length} collections?</h2><p class="modal-copy">This removes ${characterCount} character record${characterCount === 1 ? '' : 's'} from the selected collections. This cannot be undone.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete-gallery-batch" autofocus>Delete selected</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
+  render('modal'); document.querySelector('[data-action="confirm-delete-gallery-batch"]')?.focus();
+}
+
 function showImportModal(folder, suggestedName = '') {
   state.importFolder = folder;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">IMPORT COLLECTION</p><h2>Bring in a court</h2><p class="modal-copy">Portraits, DNA, notes, and collection metadata will be copied into this archive. The original folder stays untouched.</p><label class="modal-label">Collection name<input id="modal-import-name" value="${escapeHtml(suggestedName)}" autofocus placeholder="e.g. House of Wessex" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-import">Import collection ${icon('arrow')}</button></div></div></div>`;
@@ -185,6 +195,50 @@ async function handleModalAction(name) {
     localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
     const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
     showToast(cleanupFailures ? `Collection deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `Collection "${gallery.name}" deleted.`, cleanupFailures ? 'info' : 'success');
+  }
+  if (name === 'confirm-delete-gallery-batch') {
+    const names = new Set(state.selectedGalleryNames);
+    const deletedGalleries = state.galleries.filter((gallery) => names.has(gallery.name));
+    if (!deletedGalleries.length || deletedGalleries.length === state.galleries.length) return;
+    const previousGalleries = state.galleries;
+    const previousState = {
+      activeGallery: state.activeGallery,
+      sort: state.sort,
+      filters: { dna: state.filters.dna, favorites: state.filters.favorites, tags: new Set(state.filters.tags) },
+      filterPanelOpen: state.filterPanelOpen,
+      activeId: state.activeId,
+      focusContext: state.focusContext,
+      selectedVariantIndex: state.selectedVariantIndex,
+      batchMode: state.batchMode,
+      selectedCharacterIds: new Set(state.selectedCharacterIds),
+      galleryBatchMode: state.galleryBatchMode,
+      selectedGalleryNames: new Set(state.selectedGalleryNames),
+    };
+    const deletedIds = new Set(deletedGalleries.flatMap((gallery) => gallery.characters.map((character) => character.id)));
+    const imagePaths = deletedGalleries.flatMap((gallery) => gallery.characters.flatMap((character) => character.images || []));
+    state.galleries = state.galleries.filter((gallery) => !names.has(gallery.name));
+    if (names.has(state.activeGallery)) state.activeGallery = state.galleries[0].name;
+    clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); resetSelection(); state.modal = null; cancelBatchSelection(false); cancelGalleryBatchSelection(false); render();
+    if (!(await saveLibrary())) {
+      state.galleries = previousGalleries;
+      state.activeGallery = previousState.activeGallery;
+      state.sort = previousState.sort;
+      state.filters = previousState.filters;
+      state.filterPanelOpen = previousState.filterPanelOpen;
+      state.activeId = previousState.activeId;
+      state.focusContext = previousState.focusContext;
+      state.selectedVariantIndex = previousState.selectedVariantIndex;
+      state.batchMode = previousState.batchMode;
+      state.selectedCharacterIds = previousState.selectedCharacterIds;
+      state.galleryBatchMode = previousState.galleryBatchMode;
+      state.selectedGalleryNames = previousState.selectedGalleryNames;
+      render();
+      return;
+    }
+    deletedIds.forEach((id) => { state.favorites.delete(id); state.imageUrls.delete(id); });
+    localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
+    const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
+    showToast(cleanupFailures ? `${deletedGalleries.length} collections deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `${deletedGalleries.length} collections deleted.`, cleanupFailures ? 'info' : 'success');
   }
   if (name === 'create-import') {
     const input = document.querySelector('#modal-import-name'); const nameValue = input?.value.trim();

@@ -77,6 +77,7 @@ kbd { margin-left: auto; color: #9b7360; font: 9px var(--mono); border: 1px soli
 .collection-nav.is-reordering .collection-item.dragging { opacity: .4; border-color: var(--copper); cursor: grabbing; }
 .collection-dot { width: 5px; height: 5px; background: var(--paper-muted); border-radius: 50%; }
 .collection-item.active .collection-dot { background: var(--copper); box-shadow: 0 0 0 3px rgba(190,112,78,.15); }
+.collection-item.batch-selected { border-color: var(--copper-bright); background: #20261f; box-shadow: inset 2px 0 0 var(--copper-bright), 0 0 0 1px rgba(190,112,78,.28); color: var(--paper); }
 .text-icon, .icon-button, .more-button { display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--paper-muted); padding: 4px; }
 .text-icon:hover, .icon-button:hover, .more-button:hover, .icon-button.active { color: var(--copper-bright); }
 .icon { display: inline-block; width: 16px; height: 16px; flex: 0 0 auto; }
