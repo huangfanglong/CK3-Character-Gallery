@@ -263,6 +263,10 @@ function installEventDelegation() {
 
 function handleDelegatedClick(event) {
   if (!(event.target instanceof Element)) return;
+  if (state.galleryBatchMode && !event.target.closest('.collection-nav, .context-menu, .modal-backdrop')) {
+    cancelGalleryBatchSelection(false);
+    syncGalleryBatchSelection();
+  }
   const favoriteButton = event.target.closest('[data-action="favorite"]');
   if (favoriteButton) {
     event.stopPropagation();
