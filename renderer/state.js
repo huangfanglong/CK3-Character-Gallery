@@ -24,6 +24,7 @@ const state = {
   pendingDnaSource: null,
   dnaHistory: null,
   focusDnaSave: false,
+  transferCharacterIds: [],
   batchMode: false,
   selectedCharacterIds: new Set(),
   contextMenu: null,

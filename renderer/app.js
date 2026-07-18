@@ -362,8 +362,15 @@ function handleDelegatedContextMenu(event) {
   if (!(event.target instanceof Element)) return;
   const characterElement = event.target.closest('[data-character-id]');
   if (characterElement) {
-    if (state.batchMode || state.preview) return;
+    if (state.preview) return;
     event.preventDefault();
+    if (state.batchMode) {
+      if (!state.selectedCharacterIds.has(characterElement.dataset.characterId)) {
+        state.selectedCharacterIds.clear();
+        state.selectedCharacterIds.add(characterElement.dataset.characterId);
+      }
+      return openContextMenu(event, { type: 'batch', ids: [...state.selectedCharacterIds] });
+    }
     resetSelection(characterElement.dataset.characterId);
     return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId });
   }
@@ -434,7 +441,7 @@ function openContextMenu(event, target) {
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 174 : 306))),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 174 : target.type === 'batch' ? 112 : 342))),
   };
   if (target.type === 'character' && !hadSortMenu) {
     render('selection');
@@ -483,8 +490,13 @@ async function handleContextAction(actionName) {
     if (actionName === 'favorite') return toggleFavorite(menu.id);
     if (actionName === 'copy-dna') return copyDna();
     if (actionName === 'paste-dna') return pasteDnaFromClipboard();
+    if (actionName === 'transfer') return showTransferCharacterModal([menu.id]);
     if (actionName === 'duplicate') return duplicateSelectedCharacter();
     if (actionName === 'delete') return showDeleteConfirmation();
+  }
+  if (menu.type === 'batch') {
+    if (actionName === 'transfer') return showTransferCharacterModal(menu.ids);
+    if (actionName === 'delete-batch') return showBatchDeleteConfirmation();
   }
   render();
 }
@@ -887,7 +899,7 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; render('modal'); restoreSelectionFocus(); }
+      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
       else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
       else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }

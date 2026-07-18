@@ -13,11 +13,14 @@ function chromeMarkup() {
 function contextMenuMarkup() {
   const menu = state.contextMenu;
   if (!menu) return '';
+  const batch = menu.type === 'batch';
   const character = menu.type === 'character' ? getCharacters().find((item) => item.id === menu.id) : null;
-  const heading = menu.type === 'collection' ? menu.name : character?.name;
+  const heading = menu.type === 'collection' ? menu.name : batch ? `${menu.ids.length} RECORDS SELECTED` : character?.name;
   const items = menu.type === 'collection'
     ? [['rename', icon('edit'), 'Rename'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']]
-    : [['manage', icon('edit'), 'Manage record'], ['favorite', icon('star'), state.favorites.has(menu.id) ? 'Remove favorite' : 'Add favorite'], ['divider'], ['copy-dna', icon('copy'), 'Copy DNA'], ['paste-dna', icon('download'), 'Paste DNA'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']];
+    : batch
+      ? [['transfer', icon('arrow'), 'Move / Copy'], ['divider'], ['delete-batch', icon('trash'), 'Delete selected', 'danger']]
+      : [['manage', icon('edit'), 'Manage record'], ['favorite', icon('star'), state.favorites.has(menu.id) ? 'Remove favorite' : 'Add favorite'], ['divider'], ['copy-dna', icon('copy'), 'Copy DNA'], ['paste-dna', icon('download'), 'Paste DNA'], ['transfer', icon('arrow'), 'Move / Copy'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']];
   return `<div class="context-menu" role="menu" style="left:${menu.x}px;top:${menu.y}px"><p>${escapeHtml(heading || '')}</p>${items.map(([actionName, itemIcon, label, className]) => actionName === 'divider' ? '<div class="context-menu-divider"></div>' : `<button class="${className || ''}" data-context-action="${actionName}" role="menuitem">${itemIcon}<span>${label}</span></button>`).join('')}</div>`;
 }
 

@@ -28,7 +28,7 @@ html, body, #app { width: 100%; height: 100%; min-height: 0; margin: 0; overflow
 body { background: var(--ink); color: var(--paper); font-family: var(--sans); font-size: 13px; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--copper-bright); outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--copper-bright); outline-offset: 3px; }
 
 .window-chrome { position: relative; z-index: 50; display: flex; align-items: center; width: 100%; height: 38px; padding: 0 148px 0 12px; border-bottom: 1px solid #26302b; background: #0d100f; -webkit-app-region: drag; user-select: none; }
 .chrome-title { display: flex; align-items: center; gap: 8px; color: #d8d0c1; font-size: 11px; white-space: nowrap; }
@@ -47,7 +47,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .chrome-menu kbd { border: 0; color: #68756c; margin: 0; padding: 0; }
 .chrome-menu-divider { height: 1px; background: #303b35; margin: 5px 3px; }
 .app-shell { display: grid; grid-template-columns: 230px minmax(600px, 1fr) 380px; width: 100%; height: calc(100% - 38px); min-height: 0; background: var(--ink); }
-.sidebar { display: flex; flex-direction: column; gap: 18px; background: var(--rail); border-right: 1px solid var(--line); padding: 27px 16px 20px; min-width: 0; }
+.sidebar { display: flex; flex-direction: column; gap: 18px; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: var(--rail); padding: 27px 16px 20px; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
 .brand-seal { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #81533d; color: var(--copper-bright); font: 600 18px var(--serif); letter-spacing: -2px; transform: rotate(-8deg); }
 .brand span, .eyebrow, .nav-label, .inspector-id, .portrait-caption, .variant-heading, .section-heading, .table-header, .card-topline, .archive-footer, .storage-note { font: 500 9px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
@@ -70,7 +70,7 @@ kbd { margin-left: auto; color: #9b7360; font: 9px var(--mono); border: 1px soli
 .collection-actions { display: flex; align-items: center; gap: 1px; }
 .collection-actions .text-icon { padding: 3px; }
 .collection-actions .text-icon:disabled { color: #414a44; cursor: default; }
-.collection-nav { margin-top: 8px; }
+.collection-nav { flex: 1 1 auto; min-height: 0; margin-top: 8px; overflow-y: auto; padding-right: 2px; }
 .collection-item { font-size: 12px; }
 .collection-item[draggable="true"] { cursor: grab; }
 .collection-nav.is-reordering .collection-item { border: 1px solid #3f5047; }
@@ -339,8 +339,10 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .modal h2, .dna-modal h2 { color: var(--paper); font: 600 27px var(--serif); margin: 7px 0 9px; }
 .modal-copy { color: var(--paper-muted); line-height: 1.5; margin-bottom: 23px; }
 .modal-label { display: flex; flex-direction: column; gap: 8px; color: #9faa9f; font: 10px var(--mono); text-transform: uppercase; }
-.modal-label input { border: 1px solid #405046; outline: 0; background: #0e1310; color: var(--paper); padding: 11px; text-transform: none; }
-.modal-label input:focus { border-color: var(--copper); }
+.modal-label input, .modal-label select { border: 1px solid #405046; outline: 0; background: #0e1310; color: var(--paper); padding: 11px; text-transform: none; }
+.modal-label select { color-scheme: dark; font-size: 13px; }
+.modal-label select option { background: #0e1310; color: var(--paper); }
+.modal-label input:focus, .modal-label select:focus { border-color: var(--copper); }
 .modal-actions { display: flex; justify-content: end; gap: 8px; margin-top: 25px; }
 .manage-actions { display: flex; align-items: center; gap: 8px; margin-top: 25px; }
 .manage-actions .danger-text { margin-right: auto; border: 0; background: none; color: #d47b66; padding: 7px 0; }
