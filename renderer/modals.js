@@ -33,6 +33,16 @@ function showDeleteGalleryConfirmation() {
   render('modal'); document.querySelector('[data-action="confirm-delete-gallery"]')?.focus();
 }
 
+function showGalleryBatchDeleteConfirmation() {
+  const names = new Set(state.selectedGalleryNames);
+  const galleries = state.galleries.filter((gallery) => names.has(gallery.name));
+  if (!state.galleryBatchMode || !galleries.length) return;
+  if (galleries.length === state.galleries.length) return showToast('At least one collection must remain.', 'info');
+  const characterCount = galleries.reduce((sum, gallery) => sum + gallery.characters.length, 0);
+  state.modal = `<div class="modal-backdrop"><div class="modal delete-modal"><p class="eyebrow">DELETE COLLECTIONS</p><h2>Remove ${galleries.length} collections?</h2><p class="modal-copy">This removes ${characterCount} character record${characterCount === 1 ? '' : 's'} from the selected collections. This cannot be undone.</p><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="confirm-delete-gallery-batch" autofocus>Delete selected</button></div><p class="dialog-shortcuts"><span>Enter to confirm</span><span>Esc to cancel</span></p></div></div>`;
+  render('modal'); document.querySelector('[data-action="confirm-delete-gallery-batch"]')?.focus();
+}
+
 function showImportModal(folder, suggestedName = '') {
   state.importFolder = folder;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">IMPORT COLLECTION</p><h2>Bring in a court</h2><p class="modal-copy">Portraits, DNA, notes, and collection metadata will be copied into this archive. The original folder stays untouched.</p><label class="modal-label">Collection name<input id="modal-import-name" value="${escapeHtml(suggestedName)}" autofocus placeholder="e.g. House of Wessex" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-import">Import collection ${icon('arrow')}</button></div></div></div>`;
@@ -68,8 +78,23 @@ function updateNoteHighlights(input) {
 function showManageModal() {
   const character = getActiveCharacter();
   if (!character) return;
-  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="transfer-character"${state.preview ? ' disabled' : ''}>Move / Copy</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
   render('modal');
+}
+
+function showTransferCharacterModal(characterIds = [getActiveCharacter()?.id]) {
+  const source = getGallery();
+  const characters = source?.characters.filter((character) => characterIds.includes(character.id)) || [];
+  const destinations = state.galleries.filter((gallery) => gallery !== getGallery());
+  if (!characters.length || state.preview) return;
+  if (!destinations.length) return showToast('Create another collection before moving a record.', 'info');
+  state.transferCharacterIds = characters.map((character) => character.id);
+  const multiple = characters.length > 1;
+  const subject = multiple ? `${characters.length} selected records` : characters[0].name;
+  const noun = multiple ? 'these records' : 'this record';
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MOVE OR COPY ${multiple ? 'RECORDS' : 'RECORD'}</p><h2>${escapeHtml(subject)}</h2><p class="modal-copy">Copy keeps ${noun} in ${escapeHtml(source.name)} and duplicates ${multiple ? 'them' : 'it'} in the destination. Move deletes ${noun} from ${escapeHtml(source.name)} and re-creates ${multiple ? 'them' : 'it'} in the destination.</p><label class="modal-label">Destination collection<select id="transfer-gallery">${destinations.map((gallery) => `<option value="${escapeHtml(gallery.name)}">${escapeHtml(gallery.name)}</option>`).join('')}</select></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="outline-button" data-action="copy-character">Copy to collection</button><button class="primary-button" data-action="move-character">Move to collection ${icon('arrow')}</button></div></div></div>`;
+  render('modal');
+  document.querySelector('#transfer-gallery')?.focus();
 }
 
 function showDeleteConfirmation() {
@@ -113,6 +138,7 @@ async function handleModalAction(name) {
     state.pendingDnaSource = null;
     state.dnaHistory = null;
     state.focusDnaSave = false;
+    state.transferCharacterIds = [];
     render('modal');
     restoreSelectionFocus();
     return;
@@ -140,7 +166,8 @@ async function handleModalAction(name) {
   }
   if (name === 'create-gallery') {
     const input = document.querySelector('#modal-gallery-name'); const nameValue = input?.value.trim();
-    if (!nameValue || state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) return input?.focus();
+    if (!nameValue) return input?.focus();
+    if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists.', 'info'); return input.focus(); }
     state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection created.', 'success');
   }
   if (name === 'confirm-rename-gallery') {
@@ -169,9 +196,54 @@ async function handleModalAction(name) {
     const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
     showToast(cleanupFailures ? `Collection deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `Collection "${gallery.name}" deleted.`, cleanupFailures ? 'info' : 'success');
   }
+  if (name === 'confirm-delete-gallery-batch') {
+    const names = new Set(state.selectedGalleryNames);
+    const deletedGalleries = state.galleries.filter((gallery) => names.has(gallery.name));
+    if (!deletedGalleries.length || deletedGalleries.length === state.galleries.length) return;
+    const previousGalleries = state.galleries;
+    const previousState = {
+      activeGallery: state.activeGallery,
+      sort: state.sort,
+      filters: { dna: state.filters.dna, favorites: state.filters.favorites, tags: new Set(state.filters.tags) },
+      filterPanelOpen: state.filterPanelOpen,
+      activeId: state.activeId,
+      focusContext: state.focusContext,
+      selectedVariantIndex: state.selectedVariantIndex,
+      batchMode: state.batchMode,
+      selectedCharacterIds: new Set(state.selectedCharacterIds),
+      galleryBatchMode: state.galleryBatchMode,
+      selectedGalleryNames: new Set(state.selectedGalleryNames),
+    };
+    const deletedIds = new Set(deletedGalleries.flatMap((gallery) => gallery.characters.map((character) => character.id)));
+    const imagePaths = deletedGalleries.flatMap((gallery) => gallery.characters.flatMap((character) => character.images || []));
+    state.galleries = state.galleries.filter((gallery) => !names.has(gallery.name));
+    if (names.has(state.activeGallery)) state.activeGallery = state.galleries[0].name;
+    clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(); resetSelection(); state.modal = null; cancelBatchSelection(false); cancelGalleryBatchSelection(false); render();
+    if (!(await saveLibrary())) {
+      state.galleries = previousGalleries;
+      state.activeGallery = previousState.activeGallery;
+      state.sort = previousState.sort;
+      state.filters = previousState.filters;
+      state.filterPanelOpen = previousState.filterPanelOpen;
+      state.activeId = previousState.activeId;
+      state.focusContext = previousState.focusContext;
+      state.selectedVariantIndex = previousState.selectedVariantIndex;
+      state.batchMode = previousState.batchMode;
+      state.selectedCharacterIds = previousState.selectedCharacterIds;
+      state.galleryBatchMode = previousState.galleryBatchMode;
+      state.selectedGalleryNames = previousState.selectedGalleryNames;
+      render();
+      return;
+    }
+    deletedIds.forEach((id) => { state.favorites.delete(id); state.imageUrls.delete(id); });
+    localStorage.setItem('ck3-favorites', JSON.stringify([...state.favorites]));
+    const cleanupFailures = await cleanupUnusedPortraits(imagePaths);
+    showToast(cleanupFailures ? `${deletedGalleries.length} collections deleted, but ${cleanupFailures} portrait file${cleanupFailures === 1 ? '' : 's'} could not be removed.` : `${deletedGalleries.length} collections deleted.`, cleanupFailures ? 'info' : 'success');
+  }
   if (name === 'create-import') {
     const input = document.querySelector('#modal-import-name'); const nameValue = input?.value.trim();
-    if (!nameValue || !state.importFolder || state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) return input?.focus();
+    if (!nameValue || !state.importFolder) return input?.focus();
+    if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists. Choose a different name to import it as a separate collection.', 'info'); return input.focus(); }
     try {
       const imported = await desktop.importGallery(state.importFolder, nameValue);
       state.galleries.push(imported); state.activeGallery = imported.name; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(imported); state.modal = null; state.importFolder = null; state.preview = false; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection imported into the archive.', 'success');
@@ -180,6 +252,8 @@ async function handleModalAction(name) {
   if (name === 'save-dna') {
     const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; render(); if (await saveLibrary()) showToast('DNA saved to the archive.', 'success'); }
   }
+  if (name === 'transfer-character') return showTransferCharacterModal();
+  if (name === 'copy-character' || name === 'move-character') return transferCharacters(name === 'copy-character' ? 'copy' : 'move', document.querySelector('#transfer-gallery')?.value, state.transferCharacterIds);
   if (name === 'clear-dna') {
     if (document.querySelector('#dna-input')) { setDnaEditorValue(''); showToast('DNA editor cleared. Save to keep the change.', 'success'); }
   }

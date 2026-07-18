@@ -19,6 +19,48 @@ async function duplicateSelectedCharacter() {
   } catch (error) { showToast(readableError(error, 'The character could not be duplicated.'), 'info'); }
 }
 
+async function transferCharacters(mode, destinationName, characterIds) {
+  const source = getGallery();
+  const destination = state.galleries.find((gallery) => gallery.name === destinationName);
+  const selectedIds = new Set(characterIds);
+  const characters = source?.characters.filter((character) => selectedIds.has(character.id)) || [];
+  if (!characters.length || !destination || destination === source || state.preview) return;
+  const sourceCharacters = [...source.characters];
+  const destinationCharacters = [...destination.characters];
+  const selection = {
+    activeId: state.activeId,
+    focusContext: state.focusContext,
+    selectedVariantIndex: state.selectedVariantIndex,
+    batchMode: state.batchMode,
+    selectedCharacterIds: [...state.selectedCharacterIds],
+  };
+  const transferred = mode === 'copy'
+    ? characters.map((character) => ({ ...character, id: crypto.randomUUID(), images: [...(character.images || [])], tags: [...(character.tags || [])], created: Date.now(), modified: Date.now() }))
+    : characters;
+  destination.characters.push(...transferred);
+  if (mode === 'move') {
+    source.characters = source.characters.filter((character) => !selectedIds.has(character.id));
+    resetSelection();
+    cancelBatchSelection(false);
+  }
+  state.modal = null;
+  state.transferCharacterIds = [];
+  render();
+  if (await saveLibrary()) {
+    const label = characters.length === 1 ? 'Record' : `${characters.length} records`;
+    showToast(mode === 'copy' ? `${label} copied to ${destination.name}.` : `${label} moved to ${destination.name}.`, 'success');
+    return;
+  }
+  source.characters = sourceCharacters;
+  destination.characters = destinationCharacters;
+  state.activeId = selection.activeId;
+  state.focusContext = selection.focusContext;
+  state.selectedVariantIndex = selection.selectedVariantIndex;
+  state.batchMode = selection.batchMode;
+  state.selectedCharacterIds = new Set(selection.selectedCharacterIds);
+  render();
+}
+
 function uniqueCollectionName(baseName) {
   let name = baseName;
   let suffix = 2;

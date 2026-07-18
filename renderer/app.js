@@ -183,6 +183,7 @@ function render(scope = 'all') {
   if (scope === 'chrome') return renderChrome();
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
+  syncGalleryBatchSelection();
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
@@ -262,6 +263,10 @@ function installEventDelegation() {
 
 function handleDelegatedClick(event) {
   if (!(event.target instanceof Element)) return;
+  if (state.galleryBatchMode && !event.target.closest('.collection-nav, .context-menu, .modal-backdrop')) {
+    cancelGalleryBatchSelection(false);
+    syncGalleryBatchSelection();
+  }
   const favoriteButton = event.target.closest('[data-action="favorite"]');
   if (favoriteButton) {
     event.stopPropagation();
@@ -321,7 +326,9 @@ function handleDelegatedClick(event) {
   }
   const galleryButton = event.target.closest('[data-gallery]');
   if (galleryButton) {
+    if (state.galleryBatchMode || event.ctrlKey || event.metaKey) return toggleGalleryBatchSelection(galleryButton.dataset.gallery, event.ctrlKey || event.metaKey);
     activateGallery(galleryButton.dataset.gallery);
+    state.focusContext = 'collection';
     return render();
   }
   const viewButton = event.target.closest('[data-view]');
@@ -356,14 +363,22 @@ function activateGallery(name) {
   state.filterPanelOpen = false;
   state.sort = gallerySortMode();
   cancelBatchSelection(false);
+  cancelGalleryBatchSelection(false);
 }
 
 function handleDelegatedContextMenu(event) {
   if (!(event.target instanceof Element)) return;
   const characterElement = event.target.closest('[data-character-id]');
   if (characterElement) {
-    if (state.batchMode || state.preview) return;
+    if (state.preview) return;
     event.preventDefault();
+    if (state.batchMode) {
+      if (!state.selectedCharacterIds.has(characterElement.dataset.characterId)) {
+        state.selectedCharacterIds.clear();
+        state.selectedCharacterIds.add(characterElement.dataset.characterId);
+      }
+      return openContextMenu(event, { type: 'batch', ids: [...state.selectedCharacterIds] });
+    }
     resetSelection(characterElement.dataset.characterId);
     return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId });
   }
@@ -371,7 +386,15 @@ function handleDelegatedContextMenu(event) {
   if (galleryButton) {
     if (state.preview) return;
     event.preventDefault();
+    if (state.galleryBatchMode) {
+      if (!state.selectedGalleryNames.has(galleryButton.dataset.gallery)) {
+        state.selectedGalleryNames.clear();
+        state.selectedGalleryNames.add(galleryButton.dataset.gallery);
+      }
+      return openContextMenu(event, { type: 'gallery-batch', names: [...state.selectedGalleryNames] });
+    }
     activateGallery(galleryButton.dataset.gallery);
+    state.focusContext = 'collection';
     openContextMenu(event, { type: 'collection', name: galleryButton.dataset.gallery });
   }
 }
@@ -434,7 +457,7 @@ function openContextMenu(event, target) {
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 174 : 306))),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 342))),
   };
   if (target.type === 'character' && !hadSortMenu) {
     render('selection');
@@ -473,7 +496,12 @@ async function handleContextAction(actionName) {
     state.activeGallery = menu.name;
     if (actionName === 'rename') return showRenameGalleryModal();
     if (actionName === 'duplicate') return duplicateActiveGallery();
+    if (actionName === 'batch-select') return startGalleryBatchSelection(menu.name);
     if (actionName === 'delete') return showDeleteGalleryConfirmation();
+  }
+  if (menu.type === 'gallery-batch') {
+    if (actionName === 'delete-selected-galleries') return showGalleryBatchDeleteConfirmation();
+    if (actionName === 'cancel-gallery-batch') return cancelGalleryBatchSelection();
   }
   if (menu.type === 'character') {
     state.activeId = menu.id;
@@ -483,8 +511,13 @@ async function handleContextAction(actionName) {
     if (actionName === 'favorite') return toggleFavorite(menu.id);
     if (actionName === 'copy-dna') return copyDna();
     if (actionName === 'paste-dna') return pasteDnaFromClipboard();
+    if (actionName === 'transfer') return showTransferCharacterModal([menu.id]);
     if (actionName === 'duplicate') return duplicateSelectedCharacter();
     if (actionName === 'delete') return showDeleteConfirmation();
+  }
+  if (menu.type === 'batch') {
+    if (actionName === 'transfer') return showTransferCharacterModal(menu.ids);
+    if (actionName === 'delete-batch') return showBatchDeleteConfirmation();
   }
   render();
 }
@@ -645,6 +678,7 @@ function startBatchSelection() {
   if (state.preview || !visibleCharacters().length) return;
   state.batchMode = true;
   state.selectedCharacterIds.clear();
+  cancelGalleryBatchSelection(false);
   state.activeId = null;
   state.focusContext = 'character';
   state.selectedVariantIndex = null;
@@ -657,6 +691,55 @@ function cancelBatchSelection(shouldRender = true) {
   if (shouldRender) render();
 }
 
+function startGalleryBatchSelection(name) {
+  if (state.preview || !state.galleries.some((gallery) => gallery.name === name)) return;
+  state.galleryBatchMode = true;
+  state.selectedGalleryNames.clear();
+  state.selectedGalleryNames.add(name);
+  resetSelection();
+  state.focusContext = 'collection';
+  cancelBatchSelection(false);
+  render();
+}
+
+function cancelGalleryBatchSelection(shouldRender = true) {
+  state.galleryBatchMode = false;
+  state.selectedGalleryNames.clear();
+  if (shouldRender) render();
+}
+
+function toggleGalleryBatchSelection(name, allowStart = false) {
+  if (state.preview || !state.galleries.some((gallery) => gallery.name === name)) return;
+  if (!state.galleryBatchMode) {
+    if (!allowStart) return;
+    state.galleryBatchMode = true;
+    state.selectedGalleryNames.clear();
+    resetSelection();
+    state.focusContext = 'collection';
+    cancelBatchSelection(false);
+  }
+  state.selectedGalleryNames.has(name) ? state.selectedGalleryNames.delete(name) : state.selectedGalleryNames.add(name);
+  render();
+}
+
+function syncGalleryBatchSelection() {
+  const label = app.querySelector('.collection-nav .nav-label');
+  let count = label?.querySelector('.collection-batch-count');
+  if (state.galleryBatchMode && state.selectedGalleryNames.size) {
+    if (!count) {
+      count = document.createElement('span');
+      count.className = 'collection-batch-count';
+      label.appendChild(count);
+    }
+    count.textContent = String(state.selectedGalleryNames.size);
+  } else count?.remove();
+  app.querySelectorAll('.collection-item').forEach((item) => {
+    const selected = state.galleryBatchMode && state.selectedGalleryNames.has(item.dataset.gallery);
+    item.classList.toggle('batch-selected', selected);
+    item.setAttribute('aria-pressed', String(selected));
+  });
+}
+
 function toggleBatchSelection(id, allowStart = false) {
   if (!id || state.preview) return;
   if (!state.batchMode) {
@@ -664,6 +747,7 @@ function toggleBatchSelection(id, allowStart = false) {
     const activeId = state.activeId;
     state.batchMode = true;
     state.selectedCharacterIds.clear();
+    cancelGalleryBatchSelection(false);
     if (activeId) state.selectedCharacterIds.add(activeId);
     state.activeId = null;
     state.focusContext = 'character';
@@ -864,7 +948,9 @@ function installKeyboardShortcuts() {
     }
     if (event.key === 'Delete' && !editingText && !state.modal) {
       event.preventDefault();
-      if (state.batchMode) showBatchDeleteConfirmation();
+      if (state.galleryBatchMode) showGalleryBatchDeleteConfirmation();
+      else if (state.batchMode) showBatchDeleteConfirmation();
+      else if (state.focusContext === 'collection') showDeleteGalleryConfirmation();
       else if (state.focusContext === 'variant' && state.selectedVariantIndex !== null) showDeleteVariantConfirmation();
       else showDeleteConfirmation();
       return;
@@ -876,6 +962,7 @@ function installKeyboardShortcuts() {
     }
     const confirmationAction = state.modal && [
       'confirm-delete-gallery',
+      'confirm-delete-gallery-batch',
       'confirm-paste-dna',
       'confirm-delete-batch',
       'confirm-delete-variant',
@@ -887,12 +974,13 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; render('modal'); restoreSelectionFocus(); }
+      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
       else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
       else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }
       else if (state.sortMenuOpen) { state.sortMenuOpen = false; render(); focusWithoutScroll(document.querySelector('[data-action="sort-menu"]')); }
       else if (state.batchMode) cancelBatchSelection();
+      else if (state.galleryBatchMode) cancelGalleryBatchSelection();
     }
   });
 }
