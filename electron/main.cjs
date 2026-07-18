@@ -53,6 +53,7 @@ async function createWindow() {
     minWidth: 1080,
     minHeight: 700,
     backgroundColor: '#0d100f',
+    icon: path.join(projectRoot, 'assets', 'bloodline-index.ico'),
     title: 'The Bloodline Index',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
