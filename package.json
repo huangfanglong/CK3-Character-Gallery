@@ -37,6 +37,7 @@
     "files": [
       "electron/**",
       "renderer/**",
+      "assets/bloodline-index.ico",
       "package.json"
     ],
     "extraResources": [
@@ -46,6 +47,7 @@
       }
     ],
     "win": {
+      "icon": "assets/bloodline-index.ico",
       "target": "portable",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
