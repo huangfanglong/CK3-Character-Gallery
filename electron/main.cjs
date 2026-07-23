@@ -9,6 +9,9 @@ const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
 const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
 const isDev = !app.isPackaged;
 const projectRoot = path.join(__dirname, '..');
+const windowIconPath = isDev
+  ? path.join(projectRoot, 'assets', 'bloodline-index.ico')
+  : path.join(process.resourcesPath, 'assets', 'bloodline-index.ico');
 const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
 let lastExportParent = null;
 let archiveRecoveryWarning = null;
@@ -53,7 +56,7 @@ async function createWindow() {
     minWidth: 1080,
     minHeight: 700,
     backgroundColor: '#0d100f',
-    icon: path.join(projectRoot, 'assets', 'bloodline-index.ico'),
+    icon: windowIconPath,
     title: 'The Bloodline Index',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',

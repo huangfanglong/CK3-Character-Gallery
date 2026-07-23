@@ -37,10 +37,13 @@
     "files": [
       "electron/**",
       "renderer/**",
-      "assets/bloodline-index.ico",
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "assets/bloodline-index.ico",
+        "to": "assets/bloodline-index.ico"
+      },
       {
         "from": "LICENSE",
         "to": "licenses/CK3 Character Gallery LICENSE.txt"
