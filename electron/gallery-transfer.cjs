@@ -4,6 +4,30 @@ const path = require('node:path');
 
 const SORT_MODES = new Set(['recent', 'custom', 'name', 'oldest']);
 
+function normalizeAppearanceColor(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
+}
+
+function appearanceColorLuminance(value) {
+  const color = normalizeAppearanceColor(value);
+  if (!color) return 0;
+  const channels = [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16) / 255);
+  const [red, green, blue] = channels.map((channel) => (
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  ));
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function hasReadableNameColor(value) {
+  const foreground = appearanceColorLuminance(value);
+  return Boolean(normalizeAppearanceColor(value))
+    && ['#101413', '#111713', '#141a17', '#171e1a', '#1c2520', '#20261f', '#2b241d'].every((background) => {
+      const backgroundLuminance = appearanceColorLuminance(background);
+      return (Math.max(foreground, backgroundLuminance) + 0.05)
+        / (Math.min(foreground, backgroundLuminance) + 0.05) >= 4.5;
+    });
+}
+
 function safeFolderName(value) {
   const cleaned = String(value || 'Collection')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -173,6 +197,10 @@ async function importGalleryFromFolder(folder, galleryName, destinationDataDirec
       for (const field of ['title', 'note', 'color']) {
         if (typeof source[field] === 'string') character[field] = source[field];
       }
+      const nameColor = normalizeAppearanceColor(source.nameColor);
+      const titleGlowColor = normalizeAppearanceColor(source.titleGlowColor);
+      if (nameColor && hasReadableNameColor(nameColor)) character.nameColor = nameColor;
+      if (titleGlowColor) character.titleGlowColor = titleGlowColor;
       importedCharacters.push(character);
     }
     return { name: galleryName, sortMode: info.sortMode, characters: importedCharacters };

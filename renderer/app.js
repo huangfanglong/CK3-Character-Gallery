@@ -87,7 +87,7 @@ function gallerySortMode(gallery = getGallery()) {
 }
 
 function normalizedCharacter(character) {
-  return {
+  const normalized = {
     ...character,
     tags: characterTags(character),
     images: Array.isArray(character.images) ? character.images : [],
@@ -96,6 +96,12 @@ function normalizedCharacter(character) {
     variants: character.variants || character.images?.length || 0,
     color: character.color || colorFor(character.name),
   };
+  const candidateNameColor = normalizeAppearanceColor(character.nameColor);
+  const nameColor = hasReadableNameColor(candidateNameColor) ? candidateNameColor : '';
+  const titleGlowColor = normalizeAppearanceColor(character.titleGlowColor);
+  if (nameColor) normalized.nameColor = nameColor; else delete normalized.nameColor;
+  if (titleGlowColor) normalized.titleGlowColor = titleGlowColor; else delete normalized.titleGlowColor;
+  return normalized;
 }
 
 function colorFor(name = '') {
@@ -167,6 +173,7 @@ function icon(name) {
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>',
     check: '<path d="m5 12 4 4L19 6"></path>',
     edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"></path>',
+    palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h3a6 6 0 0 0 0-12z"></path><circle cx="7.5" cy="10.5" r=".8"></circle><circle cx="9" cy="6.8" r=".8"></circle><circle cx="13" cy="6" r=".8"></circle>',
     trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>',
     warning: '<path d="M12 4 21 20H3z"></path><path d="M12 9v5M12 17h.01"></path>',
     chevron: '<path d="m7 10 5 5 5-5"></path>',
@@ -183,6 +190,7 @@ function render(scope = 'all') {
   if (scope === 'chrome') return renderChrome();
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
+  syncCharacterAppearance(app);
   syncGalleryBatchSelection();
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
@@ -216,7 +224,7 @@ function renderSelection() {
     lastRenderedActiveId = state.activeId;
   }
   const inspector = app.querySelector('.inspector');
-  if (inspector) morphAppRegion(inspector, inspectorMarkup(getActiveCharacter()));
+  if (inspector) syncCharacterAppearance(morphAppRegion(inspector, inspectorMarkup(getActiveCharacter())));
 }
 
 function renderChrome() {
@@ -336,6 +344,13 @@ function handleDelegatedClick(event) {
     state.view = viewButton.dataset.view;
     return render();
   }
+  const appearanceSwatch = event.target.closest('[data-appearance-color]');
+  if (appearanceSwatch) {
+    return updateAppearanceSelection(
+      appearanceSwatch.closest('[data-appearance-field]')?.dataset.appearanceField,
+      appearanceSwatch.dataset.appearanceColor,
+    );
+  }
   const actionButton = event.target.closest('[data-action]');
   if (actionButton) return action(actionButton.dataset.action);
   const characterElement = event.target.closest('[data-character-id]');
@@ -401,6 +416,7 @@ function handleDelegatedContextMenu(event) {
 
 function handleDelegatedKeydown(event) {
   if (!(event.target instanceof Element)) return;
+  if (trapAppearanceFocus(event)) return;
   const sortButton = event.target.closest('[data-sort]');
   if (sortButton) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -425,6 +441,9 @@ function handleDelegatedKeydown(event) {
 
 function handleDelegatedInput(event) {
   const target = event.target;
+  if (target.matches?.('[data-appearance-custom]')) {
+    return updateAppearanceSelection(target.dataset.appearanceCustom, target.value);
+  }
   if (target.id === 'search-input') {
     state.query = target.value;
     return render();
@@ -457,7 +476,7 @@ function openContextMenu(event, target) {
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 342))),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 378))),
   };
   if (target.type === 'character' && !hadSortMenu) {
     render('selection');
@@ -508,6 +527,7 @@ async function handleContextAction(actionName) {
     state.focusContext = 'character';
     state.selectedVariantIndex = null;
     if (actionName === 'manage') return showManageModal();
+    if (actionName === 'customize-appearance') return showCharacterAppearanceModal();
     if (actionName === 'favorite') return toggleFavorite(menu.id);
     if (actionName === 'copy-dna') return copyDna();
     if (actionName === 'paste-dna') return pasteDnaFromClipboard();

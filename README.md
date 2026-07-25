@@ -44,6 +44,8 @@ Output is written to `release/`.
 
 A character can hold up to five portraits. Selecting a thumbnail in the inspector changes the large preview. The arrows on a character card choose which portrait appears as its cover, and that choice is saved with the record.
 
+Open a character's context menu or Manage Record dialog and choose Customize appearance to set a name color and title glow with preset colors or custom color pickers. Appearance settings carry across card, compact-list, and inspector views and are included when a collection is exported.
+
 Favorites are stored in the Electron profile on the current computer. They are not part of `galleries.json` or exported collection manifests.
 
 Export collection opens a Save dialog with the collection folder name prefilled. Navigate into the destination you want and choose Export; the app creates the collection folder there.

@@ -57,6 +57,8 @@ These notes start at the `v.2.0.1` tag and end at the current v3.
 - Added notes to character records.
 - Made Notes the tag editor: comma- or whitespace-terminated words beginning with `#` are highlighted in orange, normalized into the character tag list on save, and available to tag search.
 - Added an inline optional title editor to the inspector. Empty titles render no subtitle, and the old `Uncatalogued character` fallback is treated as empty.
+- Added per-character appearance customization with theme-matched swatches, custom color pickers, a live preview, and reset controls for name color and title glow.
+- Applied saved character appearance across portrait cards, compact-list rows, and the inspector, including collection export/import and record duplication.
 - Moved raw DNA editing into a focused workbench and kept one-click DNA copy in the inspector.
 - Enlarged the DNA workbench and restored Clear DNA and Homogenize DNA beside the save action. Homogenize uses v2's allele-copying behavior, now including a nested first gene written on the same line as `genes={`, and preserves the editor's scroll position. Both tools leave persistence to Save DNA.
 - Added workbench-local `Ctrl+Z` undo and `Ctrl+Y` redo history for typing, pasted replacements, Clear DNA, and Homogenize DNA. New edits after undo discard the abandoned redo branch.

@@ -78,7 +78,7 @@ function updateNoteHighlights(input) {
 function showManageModal() {
   const character = getActiveCharacter();
   if (!character) return;
-  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="transfer-character"${state.preview ? ' disabled' : ''}>Move / Copy</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><button class="appearance-entry" data-action="customize-appearance">${icon('palette')}<span><strong>Customize appearance</strong><small>Name color and title glow</small></span>${icon('arrow')}</button><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="transfer-character"${state.preview ? ' disabled' : ''}>Move / Copy</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
   render('modal');
 }
 
@@ -253,7 +253,10 @@ async function handleModalAction(name) {
     const character = getActiveCharacter(); const input = document.querySelector('#dna-input'); if (character && input) { character.dna = input.value; character.modified = Date.now(); state.dnaHistory = null; state.focusDnaSave = false; state.modal = null; render(); if (await saveLibrary()) showToast('DNA saved to the archive.', 'success'); }
   }
   if (name === 'transfer-character') return showTransferCharacterModal();
+  if (name === 'customize-appearance') return showCharacterAppearanceModal();
   if (name === 'copy-character' || name === 'move-character') return transferCharacters(name === 'copy-character' ? 'copy' : 'move', document.querySelector('#transfer-gallery')?.value, state.transferCharacterIds);
+  if (name === 'reset-appearance') return resetAppearanceEditor();
+  if (name === 'save-appearance') return saveCharacterAppearance();
   if (name === 'clear-dna') {
     if (document.querySelector('#dna-input')) { setDnaEditorValue(''); showToast('DNA editor cleared. Save to keep the change.', 'success'); }
   }
