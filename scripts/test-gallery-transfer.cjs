@@ -118,7 +118,7 @@ async function main() {
       titleGlowColor: '#12345g',
     }]));
     const unsafeGallery = await importGalleryFromFolder(unsafeImport, 'Unsafe Court', path.join(root, 'unsafe-import-data'));
-    assert.equal(unsafeGallery.characters[0].nameColor, undefined);
+    assert.equal(unsafeGallery.characters[0].nameColor, '#000000');
     assert.equal(unsafeGallery.characters[0].titleGlowColor, undefined);
 
     const brokenImport = path.join(root, 'broken-import');

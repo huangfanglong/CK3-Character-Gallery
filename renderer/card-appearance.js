@@ -1,6 +1,5 @@
 const DEFAULT_CHARACTER_NAME_COLOR = '#ebe7dc';
 const DEFAULT_TITLE_GLOW_COLOR = '#df966d';
-const CHARACTER_NAME_BACKGROUNDS = ['#101413', '#111713', '#141a17', '#171e1a', '#1c2520', '#20261f', '#2b241d'];
 const CHARACTER_COLOR_PRESETS = [
   ['Ivory', DEFAULT_CHARACTER_NAME_COLOR],
   ['Copper', '#df966d'],
@@ -18,29 +17,9 @@ function normalizeAppearanceColor(value) {
     : '';
 }
 
-function appearanceColorLuminance(value) {
-  const color = normalizeAppearanceColor(value);
-  if (!color) return 0;
-  const channels = [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16) / 255);
-  const [red, green, blue] = channels.map((channel) => (
-    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  ));
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
-function hasReadableNameColor(value) {
-  const foreground = appearanceColorLuminance(value);
-  return Boolean(normalizeAppearanceColor(value)) && CHARACTER_NAME_BACKGROUNDS.every((background) => {
-    const backgroundLuminance = appearanceColorLuminance(background);
-    return (Math.max(foreground, backgroundLuminance) + 0.05)
-      / (Math.min(foreground, backgroundLuminance) + 0.05) >= 4.5;
-  });
-}
-
 function applyCharacterAppearance(element, character) {
   if (!element) return;
-  const candidateNameColor = normalizeAppearanceColor(character?.nameColor);
-  const nameColor = hasReadableNameColor(candidateNameColor) ? candidateNameColor : '';
+  const nameColor = normalizeAppearanceColor(character?.nameColor);
   const titleGlowColor = normalizeAppearanceColor(character?.titleGlowColor);
   if (
     element.style.getPropertyValue('--character-name-color') === nameColor
@@ -82,8 +61,7 @@ function appearanceSwatchesMarkup(selectedColor) {
 function appearanceFieldMarkup(field, label, selectedColor, emptyLabel, fallbackColor) {
   const labelId = `appearance-${field}-label`;
   const inputId = `appearance-${field === 'nameColor' ? 'name-color' : 'title-glow-color'}`;
-  const error = field === 'nameColor' ? '<p class="appearance-error" id="appearance-name-color-error" role="alert" hidden></p>' : '';
-  return `<section class="appearance-field" data-appearance-field="${field}" data-appearance-value="${selectedColor}" aria-labelledby="${labelId}"><div class="appearance-field-heading"><h3 id="${labelId}">${label}</h3><button class="appearance-default ${selectedColor ? '' : 'selected'}" data-appearance-color="" aria-pressed="${!selectedColor}">${emptyLabel}</button></div><div class="appearance-color-row"><div class="appearance-swatches" role="group" aria-label="${label} presets">${appearanceSwatchesMarkup(selectedColor)}</div><label class="appearance-custom ${selectedColor && !CHARACTER_COLOR_PRESETS.some(([, color]) => color === selectedColor) ? 'selected' : ''}"><span>Custom</span><input id="${inputId}" type="color" data-appearance-custom="${field}" value="${selectedColor || fallbackColor}" aria-label="Custom ${label.toLowerCase()}" /></label></div>${error}</section>`;
+  return `<section class="appearance-field" data-appearance-field="${field}" data-appearance-value="${selectedColor}" aria-labelledby="${labelId}"><div class="appearance-field-heading"><h3 id="${labelId}">${label}</h3><button class="appearance-default ${selectedColor ? '' : 'selected'}" data-appearance-color="" aria-pressed="${!selectedColor}">${emptyLabel}</button></div><div class="appearance-color-row"><div class="appearance-swatches" role="group" aria-label="${label} presets">${appearanceSwatchesMarkup(selectedColor)}</div><label class="appearance-custom ${selectedColor && !CHARACTER_COLOR_PRESETS.some(([, color]) => color === selectedColor) ? 'selected' : ''}"><span>Custom</span><input id="${inputId}" type="color" data-appearance-custom="${field}" value="${selectedColor || fallbackColor}" aria-label="Custom ${label.toLowerCase()}" /></label></div></section>`;
 }
 
 function showCharacterAppearanceModal() {
@@ -137,13 +115,6 @@ function updateAppearanceSelection(field, value) {
     'selected',
     Boolean(color) && !CHARACTER_COLOR_PRESETS.some(([, preset]) => preset === color),
   );
-  if (field === 'nameColor') {
-    const error = document.querySelector('#appearance-name-color-error');
-    const input = document.querySelector('#appearance-name-color');
-    if (error) { error.hidden = true; error.textContent = ''; }
-    input?.removeAttribute('aria-invalid');
-    input?.removeAttribute('aria-describedby');
-  }
   updateAppearancePreview();
 }
 
@@ -173,17 +144,6 @@ async function saveCharacterAppearance() {
   };
   const nameColor = normalizeAppearanceColor(document.querySelector('[data-appearance-field="nameColor"]')?.dataset.appearanceValue);
   const titleGlowColor = normalizeAppearanceColor(document.querySelector('[data-appearance-field="titleGlowColor"]')?.dataset.appearanceValue);
-  if (nameColor && !hasReadableNameColor(nameColor)) {
-    const message = 'Choose a brighter name color with enough contrast for the archive.';
-    const error = document.querySelector('#appearance-name-color-error');
-    const input = document.querySelector('#appearance-name-color');
-    if (error) { error.hidden = false; error.textContent = message; }
-    input?.setAttribute('aria-invalid', 'true');
-    input?.setAttribute('aria-describedby', 'appearance-name-color-error');
-    showToast(message, 'info');
-    input?.focus();
-    return;
-  }
   if (nameColor) character.nameColor = nameColor; else delete character.nameColor;
   if (titleGlowColor) character.titleGlowColor = titleGlowColor; else delete character.titleGlowColor;
   character.modified = Date.now();
