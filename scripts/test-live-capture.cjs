@@ -3,6 +3,7 @@ const { parseGIF, decompressFrames } = require('gifuct-js');
 const {
   CAPTURE_SIZE,
   MAX_CAPTURE_FRAMES,
+  PALETTE_SAMPLE_FRAMES,
   appendCaptureFrame,
   createCaptureEncoder,
   finishCaptureEncoder,
@@ -33,13 +34,22 @@ function main() {
   assert.deepEqual(frames.map((item) => item.delay), [80, 130, 20, 1_000]);
   assert.deepEqual([...frames[0].patch.subarray(0, 4)], [255, 0, 0, 255]);
   assert.deepEqual([...frames[1].patch.subarray(0, 4)], [0, 0, 255, 255]);
+  const imageFrames = parsed.frames.filter((item) => item.image);
+  assert.ok(imageFrames.slice(1).every((item) => !item.image.descriptor.lct.exists), 'Capture frames should share the first frame global palette.');
+
+  const startupEncoder = createCaptureEncoder();
+  for (let index = 0; index < PALETTE_SAMPLE_FRAMES; index += 1) {
+    assert.equal(appendCaptureFrame(startupEncoder, frame(index, 50, 100).buffer, 450, 450, index * 83), index + 1);
+  }
+  assert.equal(startupEncoder.frames, PALETTE_SAMPLE_FRAMES);
+  assert.equal(startupEncoder.pendingFrames.length, 0);
 
   assert.throws(() => appendCaptureFrame(createCaptureEncoder(), new Uint8Array(1), 450, 450, 1), /frame data is invalid/i);
   assert.throws(() => appendCaptureFrame(createCaptureEncoder(), frame(1, 2, 3).buffer, 449, 450, 1), /450 by 450/i);
   assert.throws(() => finishCaptureEncoder(createCaptureEncoder()), /did not contain any frames/i);
   const capped = createCaptureEncoder(); capped.frames = MAX_CAPTURE_FRAMES;
   assert.throws(() => appendCaptureFrame(capped, frame(1, 2, 3).buffer, 450, 450, 1), /300 frame/i);
-  console.log('Live capture test passed: dimensions, animated GIF output, timing, pixels, frame cap, and invalid frame rejection.');
+  console.log('Live capture test passed: RGB565 global palette, dimensions, timing, pixels, frame cap, and invalid frame rejection.');
 }
 
 main();
