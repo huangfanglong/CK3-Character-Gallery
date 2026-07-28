@@ -281,6 +281,8 @@ function handleDelegatedClick(event) {
     if (state.batchMode) return;
     return toggleFavorite(favoriteButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
   }
+  const captureSource = event.target.closest('[data-capture-source]');
+  if (captureSource) return void selectLiveCaptureSource(captureSource.dataset.captureSource);
   const cycleButton = event.target.closest('[data-cycle-portrait]');
   if (cycleButton) {
     event.stopPropagation();
@@ -826,6 +828,7 @@ function action(name) {
   if (name === 'exit') return desktop?.quit();
   if (name === 'duplicate-shortcut') return duplicateSelectedCharacter();
   if (name === 'add-variant') return chooseImage();
+  if (name === 'capture-live-portrait') return showLiveCaptureModal();
   if (name === 'import') return importCollection();
   if (name === 'export') return exportCollection();
   if (name === 'filters') { state.sortMenuOpen = false; state.filterPanelOpen = !state.filterPanelOpen; return render(); }
@@ -1068,6 +1071,7 @@ async function boot() {
   installKeyboardShortcuts();
   installClipboardPasteHandler();
   desktop?.onPasteImage(() => { void pasteClipboardPortrait(); });
+  desktop?.onCaptureToggle((sessionId) => toggleLiveCapture(sessionId));
   let loaded = null;
   let loadError = null;
   try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }

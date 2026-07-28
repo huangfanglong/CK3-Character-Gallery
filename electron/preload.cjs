@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   prepareImageData: (dataUrl) => ipcRenderer.invoke('library:prepare-image-data', dataUrl),
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
   releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
+  listCaptureSources: () => ipcRenderer.invoke('capture:list-sources'),
+  armCapture: (sourceId) => ipcRenderer.invoke('capture:arm', sourceId),
+  appendCaptureFrame: (sessionId, frame, timestamp) => ipcRenderer.invoke('capture:append-frame', sessionId, frame, timestamp),
+  finishCapture: (sessionId, characterId) => ipcRenderer.invoke('capture:finish', sessionId, characterId),
+  releaseCapture: (sessionId) => ipcRenderer.invoke('capture:release', sessionId),
+  onCaptureToggle: (callback) => {
+    const listener = (_event, sessionId) => callback(sessionId);
+    ipcRenderer.on('capture:toggle', listener);
+    return () => ipcRenderer.removeListener('capture:toggle', listener);
+  },
   deleteImage: (imagePath) => ipcRenderer.invoke('library:delete-image', imagePath),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
   onPasteImage: (callback) => {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -6,6 +6,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
 const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = require('./portrait-processor.cjs');
+const { appendCaptureFrame, createCaptureEncoder, finishCaptureEncoder } = require('./live-capture.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
 const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
@@ -18,6 +19,10 @@ const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : 
 let lastExportParent = null;
 let archiveRecoveryWarning = null;
 const portraitSources = new Map();
+const captureSources = new Map();
+const captureSessions = new Map();
+let activeCaptureSessionId = null;
+let mainWindow = null;
 const dataDirectory = () => isDev
   ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
@@ -102,6 +107,7 @@ async function createWindow() {
       nodeIntegration: false,
     },
   });
+  mainWindow = window;
 
   window.webContents.on('before-input-event', (event, input) => {
     const command = input.control || input.meta;
@@ -112,6 +118,22 @@ async function createWindow() {
   });
   window.setMenuBarVisibility(false);
   await window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+}
+
+function releaseCaptureSession(sessionId) {
+  const capture = captureSessions.get(sessionId);
+  if (!capture) return false;
+  if (activeCaptureSessionId === sessionId) {
+    globalShortcut.unregister(capture.shortcut);
+    activeCaptureSessionId = null;
+  }
+  captureSessions.delete(sessionId);
+  return true;
+}
+
+function captureDirectory(characterId) {
+  if (typeof characterId !== 'string' || !/^[a-zA-Z0-9-]+$/.test(characterId)) throw new Error('The selected character is invalid.');
+  return path.join(dataDirectory(), 'images', characterId);
 }
 
 ipcMain.handle('library:load', async () => {
@@ -215,6 +237,49 @@ ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload
 
 ipcMain.handle('library:release-image-source', (_event, sourceId) => portraitSources.delete(sourceId));
 
+ipcMain.handle('capture:list-sources', async () => {
+  const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 320, height: 180 } });
+  captureSources.clear();
+  return sources.filter((source) => /crusader kings iii/i.test(source.name)).map((source) => {
+    captureSources.set(source.id, source);
+    return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
+  });
+});
+
+ipcMain.handle('capture:arm', (_event, sourceId) => {
+  if (!captureSources.has(sourceId)) throw new Error('The selected CK3 window is no longer available.');
+  if (activeCaptureSessionId) throw new Error('Another live portrait capture is already active.');
+  const shortcut = 'CommandOrControl+Shift+G';
+  const sessionId = crypto.randomUUID();
+  if (!globalShortcut.register(shortcut, () => mainWindow?.webContents.send('capture:toggle', sessionId))) {
+    throw new Error(`${shortcut} is already in use by another application.`);
+  }
+  captureSessions.set(sessionId, { sourceId, shortcut, encoder: createCaptureEncoder() });
+  activeCaptureSessionId = sessionId;
+  return { sessionId, shortcut };
+});
+
+ipcMain.handle('capture:append-frame', (_event, sessionId, frame, timestamp) => {
+  const capture = captureSessions.get(sessionId);
+  if (!capture) throw new Error('The live portrait capture has ended.');
+  return appendCaptureFrame(capture.encoder, frame, 450, 450, timestamp);
+});
+
+ipcMain.handle('capture:finish', async (_event, sessionId, characterId) => {
+  const capture = captureSessions.get(sessionId);
+  if (!capture) throw new Error('The live portrait capture has ended.');
+  try {
+    const data = finishCaptureEncoder(capture.encoder);
+    const directory = captureDirectory(characterId);
+    await fs.mkdir(directory, { recursive: true });
+    const destination = path.join(directory, `${Date.now()}.gif`);
+    await fs.writeFile(destination, data);
+    return { path: destination, url: pathToFileURL(destination).toString() };
+  } finally { releaseCaptureSession(sessionId); }
+});
+
+ipcMain.handle('capture:release', (_event, sessionId) => releaseCaptureSession(sessionId));
+
 ipcMain.handle('library:delete-image', async (_event, imagePath) => {
   if (typeof imagePath !== 'string' || !imagePath) return false;
   const imageRoot = path.resolve(dataDirectory(), 'images');
@@ -300,6 +365,11 @@ ipcMain.handle('library:image-url', (_event, imagePath) => {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    const capture = captureSessions.get(activeCaptureSessionId);
+    const source = capture && captureSources.get(capture.sourceId);
+    callback(source ? { video: source } : {});
+  }, { useSystemPicker: false });
   await ensureData();
   await createWindow();
   app.on('activate', () => {
@@ -315,3 +385,5 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());

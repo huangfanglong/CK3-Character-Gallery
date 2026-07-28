@@ -8,6 +8,7 @@ const rendererGlobals = Object.fromEntries([
   'morphAppContent', 'morphAppRegion',
   'chromeMarkup', 'contextMenuMarkup', 'cardMarkup', 'tableMarkup', 'sidebarMarkup', 'inspectorMarkup', 'mainMarkup', 'sortControlMarkup', 'filterPanelMarkup', 'emptyResultsMarkup',
   'showCropModal', 'initializeCropInteraction', 'resetCropPosition', 'clampCropOffset', 'applyCropTransform', 'saveCroppedPortrait', 'releaseCropSource', 'appendPortrait',
+  'showLiveCaptureModal', 'refreshLiveCaptureSources', 'renderLiveCaptureModal', 'selectLiveCaptureSource', 'initializeLiveCapturePreview', 'drawLiveCaptureFrame', 'toggleLiveCapture', 'finishLiveCapture', 'releaseLiveCapture', 'cancelLiveCapture',
   'showCharacterModal', 'showGalleryModal', 'showRenameGalleryModal', 'showDeleteGalleryConfirmation', 'showGalleryBatchDeleteConfirmation', 'showImportModal', 'showNoteModal', 'syncNoteHighlightScroll', 'updateNoteHighlights', 'showManageModal', 'showTransferCharacterModal', 'showDeleteConfirmation', 'showDeleteVariantConfirmation', 'showBatchDeleteConfirmation', 'showDnaOverwriteConfirmation', 'handleModalAction', 'deleteSelectedVariant',
   'duplicateSelectedCharacter', 'transferCharacters', 'uniqueCollectionName', 'duplicateActiveGallery', 'copyDna', 'saveLibrary', 'referencedImagePaths', 'cleanupUnusedPortraits', 'exportCollection', 'importCollection',
   'showDnaModal', 'hasBalancedBraces', 'isValidCk3Dna', 'openClipboardDna', 'pasteDnaFromClipboard', 'homogenizeDna', 'updateDnaCount', 'recordDnaHistory', 'setDnaEditorValue', 'undoDnaChange', 'redoDnaChange',
