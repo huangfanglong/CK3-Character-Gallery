@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
   releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
   listCaptureSources: () => ipcRenderer.invoke('capture:list-sources'),
-  armCapture: (sourceId) => ipcRenderer.invoke('capture:arm', sourceId),
+  armCapture: (sourceId, shortcut) => ipcRenderer.invoke('capture:arm', sourceId, shortcut),
   appendCaptureFrame: (sessionId, frame, timestamp) => ipcRenderer.invoke('capture:append-frame', sessionId, frame, timestamp),
   finishCapture: (sessionId, characterId) => ipcRenderer.invoke('capture:finish', sessionId, characterId),
   releaseCapture: (sessionId) => ipcRenderer.invoke('capture:release', sessionId),

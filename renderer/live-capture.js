@@ -1,12 +1,18 @@
 const LIVE_CAPTURE_FPS = 12;
 const LIVE_CAPTURE_MAX_FRAMES = 300;
 const LIVE_CAPTURE_MAX_DURATION_MS = 25_000;
+const LIVE_CAPTURE_SHORTCUTS = [
+  ['CommandOrControl+Alt+G', 'Ctrl + Alt + G'],
+  ['CommandOrControl+Shift+G', 'Ctrl + Shift + G'],
+  ['CommandOrControl+Alt+R', 'Ctrl + Alt + R'],
+  ['CommandOrControl+Shift+R', 'Ctrl + Shift + R'],
+];
 
 async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   if (!character || state.preview) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, sessionId: null, shortcut: '', crop: { x: 0, y: 0, size: 1 } };
+  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: { x: 0, y: 0, size: 1 } };
   renderLiveCaptureModal();
   try {
     state.captureSession.sources = await desktop.listCaptureSources();
@@ -34,18 +40,19 @@ function renderLiveCaptureModal() {
   const capture = state.captureSession;
   if (!capture) return;
   const sources = capture.sources.map((source) => `<button class="capture-source ${source.id === capture.selectedSourceId ? 'selected' : ''}" data-capture-source="${escapeHtml(source.id)}"><img src="${source.thumbnail}" alt=""/><span>${escapeHtml(source.name)}</span></button>`).join('');
+  const shortcutOptions = LIVE_CAPTURE_SHORTCUTS.map(([value, label]) => `<option value="${value}"${capture.shortcut === value ? ' selected' : ''}>${label}</option>`).join('');
   const status = capture.phase === 'loading' ? 'Looking for an open Crusader Kings III window.'
     : capture.phase === 'empty' ? 'No visible Crusader Kings III window was found. Start CK3 in borderless or windowed mode, then refresh.'
       : capture.phase === 'error' ? capture.error
         : capture.phase === 'recording' ? `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`
           : capture.phase === 'ready' ? `Frame the portrait, then press ${capture.shortcut} in CK3 to start recording.`
-            : 'Choose the visible Crusader Kings III window to capture.';
+            : capture.error || 'Choose the visible Crusader Kings III window to capture.';
   const preview = capture.phase === 'ready' || capture.phase === 'recording'
     ? '<div class="capture-preview" id="capture-preview"><video id="capture-video" autoplay muted playsinline></video><div class="capture-selection" id="capture-selection"></div></div>'
     : `<div class="capture-sources">${sources || '<p class="variant-empty">No CK3 window available.</p>'}</div>`;
   const primary = capture.phase === 'empty' ? '<button class="outline-button" data-action="capture-refresh">Refresh</button>'
     : capture.phase === 'recording' ? '<button class="danger-button" data-action="capture-stop">Stop recording</button>' : '';
-  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2>Capture ${escapeHtml(getActiveCharacter()?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p>${preview}<div class="capture-footer"><span id="capture-status">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
+  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2>Capture ${escapeHtml(getActiveCharacter()?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p><label class="capture-shortcut">Recording hotkey<select id="capture-shortcut"${capture.phase === 'recording' ? ' disabled' : ''}>${shortcutOptions}</select></label>${preview}<div class="capture-footer"><span id="capture-status">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
   render('modal');
   if (capture.stream) initializeLiveCapturePreview();
 }
@@ -54,14 +61,23 @@ async function selectLiveCaptureSource(sourceId) {
   const capture = state.captureSession;
   if (!capture || !capture.sources.some((source) => source.id === sourceId)) return;
   try {
-    const armed = await desktop.armCapture(sourceId);
+    const armed = await desktop.armCapture(sourceId, capture.shortcut);
     capture.selectedSourceId = sourceId; capture.sessionId = armed.sessionId; capture.shortcut = armed.shortcut; capture.phase = 'starting'; renderLiveCaptureModal();
     capture.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: LIVE_CAPTURE_FPS }, audio: false });
     capture.stream.getVideoTracks()[0].addEventListener('ended', () => { if (state.captureSession === capture && capture.phase !== 'finishing') void cancelLiveCapture('CK3 window capture ended.'); }, { once: true });
     capture.phase = 'ready'; renderLiveCaptureModal();
   } catch (error) {
-    await releaseLiveCapture(); capture.phase = 'error'; capture.error = readableError(error, 'CK3 capture could not start.'); renderLiveCaptureModal();
+    await releaseLiveCapture(); capture.phase = 'select-source'; capture.error = readableError(error, 'CK3 capture could not start.'); renderLiveCaptureModal();
   }
+}
+
+function setLiveCaptureShortcut(shortcut) {
+  const capture = state.captureSession;
+  if (!capture || capture.phase === 'recording' || !LIVE_CAPTURE_SHORTCUTS.some(([value]) => value === shortcut)) return;
+  capture.shortcut = shortcut;
+  capture.error = '';
+  const status = document.querySelector('#capture-status');
+  if (status && capture.phase === 'select-source') status.textContent = 'Choose the visible Crusader Kings III window to capture.';
 }
 
 function initializeLiveCapturePreview() {

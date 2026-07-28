@@ -7,6 +7,7 @@ const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
 const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = require('./portrait-processor.cjs');
 const { appendCaptureFrame, createCaptureEncoder, finishCaptureEncoder } = require('./live-capture.cjs');
+const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
 const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
@@ -246,10 +247,10 @@ ipcMain.handle('capture:list-sources', async () => {
   });
 });
 
-ipcMain.handle('capture:arm', (_event, sourceId) => {
+ipcMain.handle('capture:arm', (_event, sourceId, shortcut) => {
   if (!captureSources.has(sourceId)) throw new Error('The selected CK3 window is no longer available.');
   if (activeCaptureSessionId) throw new Error('Another live portrait capture is already active.');
-  const shortcut = 'CommandOrControl+Shift+G';
+  if (!isCaptureShortcut(shortcut)) throw new Error('Choose one of the available capture shortcuts.');
   const sessionId = crypto.randomUUID();
   if (!globalShortcut.register(shortcut, () => mainWindow?.webContents.send('capture:toggle', sessionId))) {
     throw new Error(`${shortcut} is already in use by another application.`);

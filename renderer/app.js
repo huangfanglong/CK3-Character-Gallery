@@ -459,6 +459,7 @@ function handleDelegatedInput(event) {
 function handleDelegatedChange(event) {
   const target = event.target;
   if (target.id === 'character-title') return void saveCharacterTitle(target.value);
+  if (target.id === 'capture-shortcut') return setLiveCaptureShortcut(target.value);
   if (target.matches?.('[data-favorite-filter]')) {
     state.filters.favorites = target.checked;
     return render();
