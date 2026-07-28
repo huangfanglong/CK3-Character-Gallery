@@ -2,6 +2,8 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { parseGIF, decompressFrames } = require('gifuct-js');
+const { GIFEncoder, applyPalette, quantize } = require('gifenc');
 
 const electron = require('electron');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
@@ -13,6 +15,23 @@ const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`],
   stdio: 'ignore',
 });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function animatedGifFixture() {
+  const gif = GIFEncoder();
+  const colors = [[255, 0, 0, 255], [0, 0, 255, 255]];
+  colors.forEach((color, index) => {
+    const rgba = new Uint8Array(4 * 3 * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(color, offset);
+    const palette = quantize(rgba, 256);
+    gif.writeFrame(applyPalette(rgba, palette), 4, 3, { palette, delay: index ? 120 : 80, repeat: 2 });
+  });
+  gif.finish();
+  return Buffer.from(gif.bytes());
+}
+
+function arrayBufferFor(buffer) {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
 
 function cleanup() {
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
@@ -66,6 +85,8 @@ async function main() {
   if (!(await evaluate("Boolean(document.querySelector('.toast.info')?.textContent.trim())"))) throw new Error('Archive save failure did not surface a user warning.');
   fs.rmSync(smokeDataDirectory, { force: true });
   fs.mkdirSync(smokeDataDirectory, { recursive: true });
+  const animatedGif = animatedGifFixture();
+  const animatedGifDataUrl = `data:image/gif;base64,${animatedGif.toString('base64')}`;
   const cardCount = await evaluate("document.querySelectorAll('.character-card').length");
   if (cardCount < 1) throw new Error('Expected at least one archive card.');
   if (await evaluate("Boolean(document.querySelector('.top-actions .avatar'))")) throw new Error('Redundant account avatar remained in the archive toolbar.');
@@ -488,7 +509,7 @@ async function main() {
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true}))");
   await delay(30);
   if ((await evaluate("document.activeElement?.id")) !== 'search-input') throw new Error('Ctrl+F did not focus archive search.');
-   if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function' && typeof window.galleryDesktop.duplicateCharacter === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
+   if (!(await evaluate("typeof window.galleryDesktop.readClipboardImage === 'function' && typeof window.galleryDesktop.readClipboardText === 'function' && typeof window.galleryDesktop.prepareImageData === 'function' && typeof window.galleryDesktop.saveCroppedImage === 'function' && typeof window.galleryDesktop.releaseImageSource === 'function' && typeof window.galleryDesktop.onPasteImage === 'function' && typeof window.galleryDesktop.exportGallery === 'function' && typeof window.galleryDesktop.duplicateGallery === 'function' && typeof window.galleryDesktop.duplicateCharacter === 'function'"))) throw new Error('Native clipboard and gallery transfer bridge was not exposed.');
   if (!(await evaluate("(()=>{const result=window.galleryDesktop.readClipboardText();return typeof result?.then==='function';})()"))) throw new Error('Clipboard text bridge did not return asynchronously.');
   if (!(await evaluate("portraitMarkup({name:'Blank character'},'card').includes('portrait-placeholder')"))) throw new Error('Missing portraits did not use the generic silhouette.');
   await evaluate("showCropModal({dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',width:1,height:1})");
@@ -502,6 +523,23 @@ async function main() {
   await evaluate("document.querySelector('#crop-stage').dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100}))");
   if ((await evaluate("document.querySelector('#crop-zoom').value")) !== '100' || (await evaluate("state.cropSession.zoom")) !== 1) throw new Error('Mouse wheel zoom-out did not synchronize the crop controls.');
   await evaluate("document.querySelector('.crop-modal [data-action=close-modal]').click()");
+  await evaluate(`(async()=>{state.activeId='smoke-base-a';render();const bytes=await (await fetch(${JSON.stringify(animatedGifDataUrl)})).arrayBuffer();await openClipboardFile(new File([bytes],'animated.gif',{type:'image/gif'}));})()`);
+  await delay(50);
+  const animatedCropState = JSON.parse(await evaluate("JSON.stringify({animated:state.cropSession?.animated,frames:state.cropSession?.frames,format:state.cropSession?.format,label:document.querySelector('.crop-footer>span')?.textContent,sourceId:state.cropSession?.sourceId,preview:document.querySelector('#crop-source')?.src})"));
+  if (!animatedCropState.animated || animatedCropState.frames !== 2 || animatedCropState.format !== 'gif' || !animatedCropState.label?.includes('animated GIF · 2 frames') || animatedCropState.preview !== animatedGifDataUrl) throw new Error(`Animated clipboard GIF did not open a frame-preserving crop session (${JSON.stringify(animatedCropState)}).`);
+  await evaluate("document.querySelector('.crop-modal [data-action=close-modal]').click()");
+  await delay(50);
+  if (await evaluate(`window.galleryDesktop.releaseImageSource(${JSON.stringify(animatedCropState.sourceId)})`)) throw new Error('Canceling an animated crop leaked its staged source.');
+  const rejectedSourceId = await evaluate(`(async()=>{const character=getActiveCharacter();const original=character.images;character.images=Array.from({length:MAX_PORTRAIT_VARIANTS},(_,index)=>String(index));const source=await window.galleryDesktop.prepareImageData(${JSON.stringify(animatedGifDataUrl)});openClipboardSource(source);character.images=original;return source.sourceId;})()`);
+  await delay(50);
+  if (await evaluate(`window.galleryDesktop.releaseImageSource(${JSON.stringify(rejectedSourceId)})`)) throw new Error('Rejecting an animated crop at the portrait limit leaked its staged source.');
+  await evaluate(`(async()=>{const bytes=await (await fetch(${JSON.stringify(animatedGifDataUrl)})).arrayBuffer();await openClipboardFile(new File([bytes],'animated.gif',{type:'image/gif'}));await saveCroppedPortrait();})()`);
+  const savedAnimatedPath = await evaluate("getActiveCharacter().images[0]");
+  if (!savedAnimatedPath?.endsWith('.gif') || !fs.existsSync(savedAnimatedPath)) throw new Error('Saving an animated crop did not create a GIF portrait file.');
+  const savedAnimatedBuffer = fs.readFileSync(savedAnimatedPath);
+  const savedAnimatedParsed = parseGIF(arrayBufferFor(savedAnimatedBuffer));
+  const savedAnimatedFrames = decompressFrames(savedAnimatedParsed, true);
+  if (savedAnimatedParsed.lsd.width !== 450 || savedAnimatedParsed.lsd.height !== 450 || savedAnimatedFrames.length !== 2 || JSON.stringify(savedAnimatedFrames.map((frame) => frame.delay)) !== '[80,120]') throw new Error('Saved animated crop did not preserve dimensions, frames, or timing.');
   const moreActionState = JSON.parse(await evaluate("(()=>{const card=[...document.querySelectorAll('.character-card')].find(item=>!item.classList.contains('selected'))||document.querySelector('.character-card');card.click();card.querySelector('.more-button').click();return JSON.stringify({id:card.dataset.characterId,name:card.querySelector('h3')?.textContent,active:state.activeId,selected:card.classList.contains('selected'),inspector:document.querySelector('.inspector-title h2')?.textContent,modal:document.querySelector('.modal h2')?.textContent});})()"));
   if (moreActionState.id !== moreActionState.active || !moreActionState.selected || moreActionState.inspector !== moreActionState.name || moreActionState.modal !== moreActionState.name) throw new Error(`More actions did not synchronize the selected record (${JSON.stringify(moreActionState)}).`);
   if (!(await evaluate("Boolean(document.querySelector('.modal'))"))) throw new Error('Record management modal did not open.');
@@ -568,7 +606,7 @@ async function main() {
   if (!renderBenchmark.retainedDuringModal) throw new Error('Large archive modal update replaced an unrelated keyed character card.');
   if (renderBenchmark.modalDuration > 1000) throw new Error(`Large archive modal update exceeded the regression ceiling (${renderBenchmark.modalDuration}ms).`);
   if (renderBenchmark.scopedFullMorphs !== 0) throw new Error(`Scoped updates invoked the full application morph ${renderBenchmark.scopedFullMorphs} time(s).`);
-  console.log(`Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, character appearance, clipboard DNA and DNA-only creation, DNA undo/redo, crop wheel zoom, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, resizing, a 750-record render in ${renderBenchmark.duration}ms, a scoped selection update in ${renderBenchmark.selectionDuration}ms, and a scoped modal update in ${renderBenchmark.modalDuration}ms.`);
+  console.log(`Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, character appearance, clipboard DNA and DNA-only creation, DNA undo/redo, static and animated GIF cropping, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, resizing, a 750-record render in ${renderBenchmark.duration}ms, a scoped selection update in ${renderBenchmark.selectionDuration}ms, and a scoped modal update in ${renderBenchmark.modalDuration}ms.`);
   socket.close();
   cleanup();
 }

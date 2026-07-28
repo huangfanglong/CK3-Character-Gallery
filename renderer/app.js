@@ -859,6 +859,7 @@ async function chooseImage() {
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
   try {
     const selected = await desktop.chooseImage(character.id); if (!selected) return;
+    if (selected.sourceId) return showCropModal(selected);
     await appendPortrait(character, selected, 'Portrait variant added.');
   } catch (error) { showToast(readableError(error, 'The portrait could not be added.'), 'info'); }
 }
@@ -993,7 +994,7 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
+      if (state.modal) { releaseCropSource(); state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
       else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
       else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }
@@ -1040,6 +1041,10 @@ async function openClipboardFile(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+  if (file.type.toLowerCase() === 'image/gif' || /\.gif$/i.test(file.name)) {
+    if (!desktop) throw new Error('Animated clipboard portraits are only available in the desktop app.');
+    return openClipboardSource(await desktop.prepareImageData(dataUrl));
+  }
   const dimensions = await new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
@@ -1052,8 +1057,8 @@ async function openClipboardFile(file) {
 function openClipboardSource(source) {
   const character = getActiveCharacter();
   if (!character) return showCharacterModal(source);
-  if (state.preview) return showToast('Start an empty gallery before adding your own portraits.', 'info');
-  if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
+  if (state.preview) { releaseCropSource(source); return showToast('Start an empty gallery before adding your own portraits.', 'info'); }
+  if (hasMaximumPortraits(character)) { releaseCropSource(source); return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info'); }
   showCropModal(source);
 }
 

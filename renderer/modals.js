@@ -132,6 +132,7 @@ function showDnaOverwriteConfirmation(dna) {
 
 async function handleModalAction(name) {
   if (name === 'close-modal') {
+    releaseCropSource();
     state.modal = null;
     state.cropSession = null;
     state.pendingPortraitSource = null;
@@ -153,7 +154,7 @@ async function handleModalAction(name) {
     if (state.preview) { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; state.sort = 'recent'; }
     const character = { id: crypto.randomUUID(), name: nameValue, images: [], dna: dnaSource || '', tags: [], created: Date.now(), modified: Date.now() };
     getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render();
-    if (!(await saveLibrary())) return;
+    if (!(await saveLibrary())) { releaseCropSource(portraitSource); return; }
     if (portraitSource) { showCropModal(portraitSource); showToast('Record created. Position the clipboard portrait.', 'success'); }
     else if (dnaSource) showToast('Record created with clipboard DNA.', 'success');
     else showToast('Record created. Add a portrait when ready.', 'success');

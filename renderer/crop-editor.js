@@ -2,6 +2,10 @@ function showCropModal(source) {
   state.pendingPortraitSource = null;
   state.cropSession = {
     dataUrl: source.dataUrl,
+    sourceId: source.sourceId || null,
+    format: source.format || null,
+    animated: Boolean(source.animated),
+    frames: Number(source.frames) || 1,
     sourceWidth: source.width,
     sourceHeight: source.height,
     viewport: 480,
@@ -10,7 +14,10 @@ function showCropModal(source) {
     offsetX: 0,
     offsetY: 0,
   };
-  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('crop')}><div class="crop-modal"><div class="modal-head"><div><p class="eyebrow">ADJUST IMAGE POSITION</p><h2>Compose the portrait</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Drag the image to position it inside the square. Use the slider or mouse wheel to zoom before adding it to the selected character.</p><div class="crop-stage" id="crop-stage"><img id="crop-source" src="${source.dataUrl}" alt="Clipboard portrait preview" draggable="false"/><div class="crop-grid"><span></span><span></span><span></span><span></span></div></div><div class="crop-controls"><button class="outline-button" data-action="crop-reset">Reset</button><label><span>Zoom</span><input id="crop-zoom" type="range" min="100" max="300" value="100"/><output id="crop-zoom-value">100%</output></label></div><div class="crop-footer"><span>Output: 450 × 450 PNG</span><div><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="save-crop">Use portrait ${icon('check')}</button></div></div></div></div>`;
+  const outputLabel = source.animated
+    ? `Output: 450 × 450 animated GIF · ${source.frames} frames`
+    : source.format === 'gif' ? 'Output: 450 × 450 GIF' : 'Output: 450 × 450 PNG';
+  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('crop')}><div class="crop-modal"><div class="modal-head"><div><p class="eyebrow">ADJUST IMAGE POSITION</p><h2>Compose the portrait</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Drag the image to position it inside the square. Use the slider or mouse wheel to zoom before adding it to the selected character.</p><div class="crop-stage" id="crop-stage"><img id="crop-source" src="${source.dataUrl}" alt="Portrait crop preview" draggable="false"/><div class="crop-grid"><span></span><span></span><span></span><span></span></div></div><div class="crop-controls"><button class="outline-button" data-action="crop-reset">Reset</button><label><span>Zoom</span><input id="crop-zoom" type="range" min="100" max="300" value="100"/><output id="crop-zoom-value">100%</output></label></div><div class="crop-footer"><span>${outputLabel}</span><div><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="save-crop">Use portrait ${icon('check')}</button></div></div></div></div>`;
   render('modal');
   initializeCropInteraction();
   requestAnimationFrame(initializeCropInteraction);
@@ -107,6 +114,7 @@ async function saveCroppedPortrait() {
   try {
     const selected = await desktop.saveCroppedImage(character.id, {
       dataUrl: session.dataUrl,
+      sourceId: session.sourceId,
       x: -session.offsetX / scale,
       y: -session.offsetY / scale,
       size: session.viewport / scale,
@@ -115,6 +123,15 @@ async function saveCroppedPortrait() {
     state.cropSession = null;
     await appendPortrait(character, selected, 'Clipboard portrait added.', true);
   } catch (error) { showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info'); }
+}
+
+function releaseCropSource(source = null) {
+  const sourceIds = new Set([
+    source?.sourceId,
+    state.cropSession?.sourceId,
+    state.pendingPortraitSource?.sourceId,
+  ].filter(Boolean));
+  sourceIds.forEach((sourceId) => { void desktop?.releaseImageSource(sourceId).catch(() => {}); });
 }
 
 async function appendPortrait(character, selected, message, makeCover = false) {

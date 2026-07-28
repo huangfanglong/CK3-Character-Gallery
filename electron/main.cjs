@@ -1,9 +1,11 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } = require('electron');
+const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
+const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = require('./portrait-processor.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
 const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
@@ -15,32 +17,61 @@ const windowIconPath = isDev
 const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
 let lastExportParent = null;
 let archiveRecoveryWarning = null;
+const portraitSources = new Map();
 const dataDirectory = () => isDev
   ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
 
-function readClipboardImage() {
-  const directImage = clipboard.readImage();
-  if (!directImage.isEmpty()) return directImage;
-
+function readClipboardImagePath() {
   const formats = clipboard.availableFormats();
   const fileFormat = formats.find((format) => /filenamew|filename/i.test(format));
   if (fileFormat) {
     const buffer = clipboard.readBuffer(fileFormat);
     const encoding = /filenamew/i.test(fileFormat) ? 'utf16le' : 'utf8';
     const filePath = buffer.toString(encoding).split('\0')[0].trim().replace(/^"|"$/g, '');
-    if (IMAGE_FILE_PATTERN.test(filePath)) {
-      const fileImage = nativeImage.createFromPath(filePath);
-      if (!fileImage.isEmpty()) return fileImage;
-    }
+    if (IMAGE_FILE_PATTERN.test(filePath)) return filePath;
   }
 
   const textPath = clipboard.readText().trim().replace(/^"|"$/g, '');
-  if (IMAGE_FILE_PATTERN.test(textPath)) {
-    const fileImage = nativeImage.createFromPath(textPath);
-    if (!fileImage.isEmpty()) return fileImage;
+  return IMAGE_FILE_PATTERN.test(textPath) ? textPath : '';
+}
+
+function readClipboardImage() {
+  const filePath = readClipboardImagePath();
+  if (filePath) return { filePath };
+  const gifFormat = clipboard.availableFormats().find((format) => /^(image\/gif|gif)$/i.test(format));
+  if (gifFormat) {
+    const gif = clipboard.readBuffer(gifFormat);
+    if (gif.length) return { gif };
   }
-  return null;
+  const image = clipboard.readImage();
+  return image.isEmpty() ? null : { image };
+}
+
+async function prepareGifSource(input, previewUrl) {
+  const info = await inspectPortraitSource(input);
+  if (info.format !== 'gif') throw new Error('The selected file is not a valid GIF image.');
+  const sourceId = crypto.randomUUID();
+  portraitSources.set(sourceId, input);
+  return {
+    sourceId,
+    dataUrl: previewUrl,
+    format: info.format,
+    animated: info.animated,
+    width: info.width,
+    height: info.height,
+    frames: info.frames,
+  };
+}
+
+function bufferFromDataUrl(value) {
+  if (typeof value !== 'string') throw new Error('The image data is invalid.');
+  const match = /^data:image\/gif;base64,([a-z0-9+/=]+)$/i.exec(value);
+  if (!match) throw new Error('Only GIF data can use the animated portrait pipeline.');
+  if (match[1].length > Math.ceil(MAX_PORTRAIT_BYTES / 3) * 4) {
+    throw new Error('Animated portrait exceeds the 50 MB file-size limit.');
+  }
+  return Buffer.from(match[1], 'base64');
 }
 
 async function ensureData() {
@@ -105,6 +136,7 @@ ipcMain.handle('library:choose-image', async (_event, characterId) => {
   if (result.canceled) return null;
   const source = result.filePaths[0];
   const extension = path.extname(source).toLowerCase() || '.png';
+  if (extension === '.gif') return prepareGifSource(source, pathToFileURL(source).toString());
   const directory = path.join(dataDirectory(), 'images', characterId);
   await fs.mkdir(directory, { recursive: true });
   const destination = path.join(directory, `${Date.now()}${extension}`);
@@ -112,11 +144,19 @@ ipcMain.handle('library:choose-image', async (_event, characterId) => {
   return { path: destination, url: pathToFileURL(destination).toString() };
 });
 
-ipcMain.handle('library:read-clipboard-image', () => {
-  const image = readClipboardImage();
-  if (!image) return null;
+ipcMain.handle('library:read-clipboard-image', async () => {
+  const source = readClipboardImage();
+  if (!source) return null;
+  if (source.filePath && path.extname(source.filePath).toLowerCase() === '.gif') {
+    return prepareGifSource(source.filePath, pathToFileURL(source.filePath).toString());
+  }
+  if (source.gif) {
+    return prepareGifSource(source.gif, `data:image/gif;base64,${source.gif.toString('base64')}`);
+  }
+  const image = source.image || nativeImage.createFromPath(source.filePath);
+  if (image.isEmpty()) return null;
   const size = image.getSize();
-  return { dataUrl: image.toDataURL(), width: size.width, height: size.height };
+  return { dataUrl: image.toDataURL(), width: size.width, height: size.height, animated: false };
 });
 
 ipcMain.handle('library:read-image-path', (_event, value) => {
@@ -130,13 +170,31 @@ ipcMain.handle('library:read-image-path', (_event, value) => {
     return null;
   }
   if (!IMAGE_FILE_PATTERN.test(imagePath)) return null;
+  if (path.extname(imagePath).toLowerCase() === '.gif') {
+    return prepareGifSource(imagePath, pathToFileURL(imagePath).toString());
+  }
   const image = nativeImage.createFromPath(imagePath);
   if (image.isEmpty()) return null;
   const size = image.getSize();
   return { dataUrl: image.toDataURL(), width: size.width, height: size.height };
 });
 
+ipcMain.handle('library:prepare-image-data', async (_event, dataUrl) => {
+  const input = bufferFromDataUrl(dataUrl);
+  return prepareGifSource(input, dataUrl);
+});
+
 ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload) => {
+  if (typeof payload.sourceId === 'string' && portraitSources.has(payload.sourceId)) {
+    const input = portraitSources.get(payload.sourceId);
+    const processed = await processPortraitCrop(input, payload);
+    const directory = path.join(dataDirectory(), 'images', characterId);
+    await fs.mkdir(directory, { recursive: true });
+    const destination = path.join(directory, `${Date.now()}${processed.extension}`);
+    await fs.writeFile(destination, processed.data);
+    portraitSources.delete(payload.sourceId);
+    return { path: destination, url: pathToFileURL(destination).toString() };
+  }
   const image = nativeImage.createFromDataURL(payload.dataUrl);
   if (image.isEmpty()) throw new Error('The clipboard image could not be decoded.');
   const imageSize = image.getSize();
@@ -154,6 +212,8 @@ ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload
   await fs.writeFile(destination, cropped.toPNG());
   return { path: destination, url: pathToFileURL(destination).toString() };
 });
+
+ipcMain.handle('library:release-image-source', (_event, sourceId) => portraitSources.delete(sourceId));
 
 ipcMain.handle('library:delete-image', async (_event, imagePath) => {
   if (typeof imagePath !== 'string' || !imagePath) return false;

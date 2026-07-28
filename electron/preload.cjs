@@ -6,7 +6,9 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   chooseImage: (characterId) => ipcRenderer.invoke('library:choose-image', characterId),
   readClipboardImage: () => ipcRenderer.invoke('library:read-clipboard-image'),
   readImagePath: (value) => ipcRenderer.invoke('library:read-image-path', value),
+  prepareImageData: (dataUrl) => ipcRenderer.invoke('library:prepare-image-data', dataUrl),
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
+  releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
   deleteImage: (imagePath) => ipcRenderer.invoke('library:delete-image', imagePath),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
   onPasteImage: (callback) => {
