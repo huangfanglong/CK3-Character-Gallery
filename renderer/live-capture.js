@@ -12,7 +12,7 @@ async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   if (!character || state.preview) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: { x: 0, y: 0, size: 1 } };
+  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null };
   renderLiveCaptureModal();
   try {
     state.captureSession.sources = await desktop.listCaptureSources();
@@ -85,20 +85,31 @@ function initializeLiveCapturePreview() {
   if (!capture || !video || !preview || !selection || video.dataset.bound) return;
   video.dataset.bound = 'true'; video.srcObject = capture.stream;
   const apply = () => {
-    const previewRect = preview.getBoundingClientRect(); const videoRect = video.getBoundingClientRect();
-    const size = Math.max(24, Math.min(capture.crop.size * videoRect.width, videoRect.width, videoRect.height));
-    selection.style.cssText = `width:${size}px;height:${size}px;left:${videoRect.left - previewRect.left + capture.crop.x * videoRect.width}px;top:${videoRect.top - previewRect.top + capture.crop.y * videoRect.height}px`;
+    if (!capture.crop || !video.videoWidth || !video.videoHeight) return;
+    const previewRect = preview.getBoundingClientRect();
+    const display = displayRectForVideo(previewRect.width, previewRect.height, video.videoWidth, video.videoHeight);
+    const selectionRect = selectionRectForCrop(capture.crop, display, video.videoWidth, video.videoHeight);
+    selection.style.cssText = `width:${selectionRect.size}px;height:${selectionRect.size}px;left:${selectionRect.x}px;top:${selectionRect.y}px`;
   };
-  video.addEventListener('loadedmetadata', () => { capture.crop = { x: 0, y: 0, size: 1 }; apply(); }, { once: true });
+  video.addEventListener('loadedmetadata', () => {
+    if (!capture.crop) capture.crop = defaultCaptureCrop(video.videoWidth, video.videoHeight);
+    apply();
+  }, { once: true });
   let start = null;
   preview.addEventListener('pointerdown', (event) => {
-    if (capture.phase !== 'ready') return; const rect = video.getBoundingClientRect();
-    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
-    start = { x: event.clientX - rect.left, y: event.clientY - rect.top }; preview.setPointerCapture(event.pointerId);
+    if (capture.phase !== 'ready') return;
+    const previewRect = preview.getBoundingClientRect(); const display = displayRectForVideo(previewRect.width, previewRect.height, video.videoWidth, video.videoHeight);
+    const point = { x: event.clientX - previewRect.left - display.x, y: event.clientY - previewRect.top - display.y };
+    if (point.x < 0 || point.x > display.width || point.y < 0 || point.y > display.height) return;
+    start = point; preview.setPointerCapture(event.pointerId);
   });
   preview.addEventListener('pointermove', (event) => {
-    if (!start) return; const rect = video.getBoundingClientRect(); const x = Math.max(0, Math.min(start.x, event.clientX - rect.left)); const y = Math.max(0, Math.min(start.y, event.clientY - rect.top)); const size = Math.min(Math.abs(event.clientX - rect.left - start.x), Math.abs(event.clientY - rect.top - start.y), rect.width - x, rect.height - y);
-    if (size > 8) { capture.crop = { x: x / rect.width, y: y / rect.width, size: size / rect.width }; apply(); }
+    if (!start) return;
+    const previewRect = preview.getBoundingClientRect(); const display = displayRectForVideo(previewRect.width, previewRect.height, video.videoWidth, video.videoHeight);
+    const end = { x: event.clientX - previewRect.left - display.x, y: event.clientY - previewRect.top - display.y };
+    const nextCrop = dragCaptureCrop(start, end, display, video.videoWidth, video.videoHeight);
+    const minimumSize = 8 * video.videoWidth / display.width;
+    if (nextCrop.size >= minimumSize) { capture.crop = nextCrop; apply(); }
   });
   preview.addEventListener('pointerup', () => { start = null; });
 }
@@ -107,8 +118,9 @@ function drawLiveCaptureFrame() {
   const capture = state.captureSession; const video = document.querySelector('#capture-video');
   if (!capture || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
   const canvas = document.createElement('canvas'); canvas.width = 450; canvas.height = 450;
-  const context = canvas.getContext('2d', { willReadFrequently: true }); const x = Math.round(capture.crop.x * video.videoWidth); const y = Math.round(capture.crop.y * video.videoWidth); const size = Math.max(1, Math.min(Math.round(capture.crop.size * video.videoWidth), video.videoWidth - x, video.videoHeight - y));
-  context.drawImage(video, x, y, size, size, 0, 0, 450, 450);
+  if (!capture.crop) return;
+  const context = canvas.getContext('2d', { willReadFrequently: true }); const crop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
+  context.drawImage(video, crop.x, crop.y, crop.size, crop.size, 0, 0, 450, 450);
   void desktop.appendCaptureFrame(capture.sessionId, context.getImageData(0, 0, 450, 450).data.buffer, performance.now()).then((frames) => {
     if (state.captureSession !== capture) return; capture.frames = frames; document.querySelector('#capture-status').textContent = `Recording ${frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`; if (frames >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
   }).catch((error) => { if (state.captureSession === capture) void cancelLiveCapture(readableError(error, 'A capture frame could not be recorded.')); });
@@ -118,9 +130,19 @@ function toggleLiveCapture(sessionId) {
   const capture = state.captureSession;
   if (!capture || capture.sessionId !== sessionId) return;
   if (capture.phase === 'ready') {
-    capture.phase = 'recording'; capture.timer = setInterval(drawLiveCaptureFrame, 1_000 / LIVE_CAPTURE_FPS); drawLiveCaptureFrame(); renderLiveCaptureModal();
+    capture.phase = 'recording'; capture.timer = setInterval(drawLiveCaptureFrame, 1_000 / LIVE_CAPTURE_FPS); drawLiveCaptureFrame();
+    updateLiveCaptureRecordingUi(capture);
     setTimeout(() => { if (state.captureSession === capture && capture.phase === 'recording') void finishLiveCapture('Maximum recording duration reached.'); }, LIVE_CAPTURE_MAX_DURATION_MS);
   } else if (capture.phase === 'recording') void finishLiveCapture();
+}
+
+function updateLiveCaptureRecordingUi(capture) {
+  const status = document.querySelector('#capture-status');
+  const shortcut = document.querySelector('#capture-shortcut');
+  const controls = document.querySelector('.capture-footer > div');
+  if (status) status.textContent = `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`;
+  if (shortcut) shortcut.disabled = true;
+  if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="capture-stop">Stop recording</button>';
 }
 
 async function finishLiveCapture(reason = '') {
