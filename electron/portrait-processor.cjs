@@ -5,6 +5,7 @@ const { GIFEncoder, applyPalette, quantize } = require('gifenc');
 const MAX_PORTRAIT_BYTES = 50 * 1024 * 1024;
 const MAX_PORTRAIT_FRAMES = 300;
 const MAX_AGGREGATE_FRAME_PIXELS = 100_000_000;
+const PALETTE_SAMPLE_FRAMES = 24;
 
 function portraitLimits(options = {}) {
   return {
@@ -134,23 +135,54 @@ function resizedCrop(pixels, sourceWidth, crop, outputSize = 450) {
   return output;
 }
 
+function hasTransparency(pixels) {
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (pixels[index] < 255) return true;
+  }
+  return false;
+}
+
+function paletteSampleIndexes(frameCount) {
+  const sampleCount = Math.min(frameCount, PALETTE_SAMPLE_FRAMES);
+  return new Set(Array.from({ length: sampleCount }, (_, index) => Math.round(index * (frameCount - 1) / Math.max(1, sampleCount - 1))));
+}
+
 async function processPortraitCrop(input, crop, options = {}) {
   const source = await inspectPortraitSource(input, options);
   const region = normalizedCrop(crop, source.width, source.height);
-  const gif = GIFEncoder();
+  const sampleIndexes = paletteSampleIndexes(source.frames);
+  const samples = [];
+  let transparent = false;
+  let index = 0;
   for (const frame of compositedFrames(source.parsed, source.width, source.height)) {
     const rgba = resizedCrop(frame.pixels, source.width, region);
-    const palette = quantize(rgba, 256, { format: 'rgba4444', oneBitAlpha: true });
-    const indexed = applyPalette(rgba, palette, 'rgba4444');
-    const transparentIndex = palette.findIndex((color) => color[3] === 0);
+    transparent ||= hasTransparency(rgba);
+    if (sampleIndexes.has(index)) samples.push(rgba);
+    index += 1;
+  }
+  const samplePixels = new Uint8Array(samples.reduce((length, sample) => length + sample.length, 0));
+  let offset = 0;
+  for (const sample of samples) {
+    samplePixels.set(sample, offset);
+    offset += sample.length;
+  }
+  const format = transparent ? 'rgba4444' : 'rgb565';
+  const palette = quantize(samplePixels, 256, transparent ? { format, oneBitAlpha: true } : { format });
+  const transparentIndex = transparent ? palette.findIndex((color) => color[3] === 0) : -1;
+  const gif = GIFEncoder();
+  index = 0;
+  for (const frame of compositedFrames(source.parsed, source.width, source.height)) {
+    const rgba = resizedCrop(frame.pixels, source.width, region);
+    const indexed = applyPalette(rgba, palette, format);
     gif.writeFrame(indexed, 450, 450, {
-      palette,
+      palette: index === 0 ? palette : undefined,
       delay: frame.delay,
       repeat: source.loop,
       transparent: transparentIndex >= 0,
-      transparentIndex: Math.max(0, transparentIndex),
+      transparentIndex: transparentIndex >= 0 ? transparentIndex : undefined,
       dispose: 1,
     });
+    index += 1;
   }
   gif.finish();
   return { data: Buffer.from(gif.bytes()), extension: '.gif', animated: source.animated };
@@ -160,6 +192,7 @@ module.exports = {
   MAX_AGGREGATE_FRAME_PIXELS,
   MAX_PORTRAIT_BYTES,
   MAX_PORTRAIT_FRAMES,
+  PALETTE_SAMPLE_FRAMES,
   inspectPortraitSource,
   processPortraitCrop,
 };

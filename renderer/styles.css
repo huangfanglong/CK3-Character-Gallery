@@ -282,6 +282,7 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .empty-inspector .outline-button { margin-top: 22px; }
 
 .portrait-image { display: block; object-fit: cover; }
+.portrait-video { background: #111; }
 .portrait-placeholder { position: relative; overflow: hidden; background: #303633; }
 .portrait-placeholder::before { content: ''; position: absolute; width: 72%; aspect-ratio: 1; top: 13%; left: 14%; border-radius: 50%; background: #39413d; }
 .silhouette-head { position: absolute; z-index: 1; width: 31%; aspect-ratio: .86; top: 24%; left: 34.5%; border-radius: 48% 48% 44% 44%; background: #7b837f; }

@@ -152,6 +152,9 @@ function coverVariantIndex(character) {
 
 function portraitMarkup(character, size = 'card', variantIndex = 0) {
   const image = imageUrlFor(character, variantIndex);
+  if (image?.split(/[?#]/, 1)[0].toLowerCase().endsWith('.webm')) {
+    return `<video class="portrait-image portrait-video ${size}" src="${escapeHtml(image)}" autoplay loop muted playsinline preload="metadata" aria-label="${escapeHtml(character.name)} portrait"></video>`;
+  }
   if (image) return `<img class="portrait-image ${size}" src="${escapeHtml(image)}" alt="${escapeHtml(character.name)} portrait" />`;
   return `<div class="portrait-placeholder ${size}" aria-label="No portrait available"><span class="silhouette-head"></span><span class="silhouette-shoulders"></span></div>`;
 }

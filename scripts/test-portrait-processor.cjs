@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { parseGIF, decompressFrames } = require('gifuct-js');
 const { GIFEncoder, applyPalette, quantize } = require('gifenc');
-const { inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
+const { PALETTE_SAMPLE_FRAMES, inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
 
 function arrayBufferFor(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -24,6 +24,23 @@ function animatedFixture() {
   frames.forEach((rgba, index) => {
     const palette = quantize(rgba, 256);
     gif.writeFrame(applyPalette(rgba, palette), 4, 3, { palette, delay: index ? 120 : 80, repeat: 2 });
+  });
+  gif.finish();
+  return Buffer.from(gif.bytes());
+}
+
+function transparentFixture() {
+  const gif = GIFEncoder();
+  const rgba = new Uint8Array([
+    255, 0, 0, 255, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 255, 255,
+  ]);
+  const palette = quantize(rgba, 256, { format: 'rgba4444', oneBitAlpha: true });
+  const transparentIndex = palette.findIndex((color) => color[3] === 0);
+  gif.writeFrame(applyPalette(rgba, palette, 'rgba4444'), 2, 2, {
+    palette,
+    transparent: true,
+    transparentIndex,
   });
   gif.finish();
   return Buffer.from(gif.bytes());
@@ -56,13 +73,20 @@ async function main() {
   assert.equal(loopCount(parsed), 2);
   assert.deepEqual([...frames[0].patch.subarray(0, 4)], [0, 255, 0, 255]);
   assert.deepEqual([...frames[1].patch.subarray(0, 4)], [255, 255, 0, 255]);
+  const imageFrames = parsed.frames.filter((frame) => frame.image);
+  assert.ok(imageFrames.slice(1).every((frame) => !frame.image.descriptor.lct.exists), 'Cropped GIF frames should share the global palette.');
+  assert.equal(PALETTE_SAMPLE_FRAMES, 24);
+
+  const transparentOutput = await processPortraitCrop(transparentFixture(), { x: 0, y: 0, size: 2 });
+  const transparentFrames = decompressFrames(parseGIF(arrayBufferFor(transparentOutput.data)), true);
+  assert.ok([...transparentFrames[0].patch].some((_, index) => index % 4 === 3 && transparentFrames[0].patch[index] === 0), 'Transparent GIF pixels should remain transparent after cropping.');
 
   await assert.rejects(() => inspectPortraitSource(input, { maxBytes: input.length - 1 }), /50 MB|file-size limit/i);
   await assert.rejects(() => inspectPortraitSource(input, { maxFrames: 1 }), /300 frames|frame limit/i);
   await assert.rejects(() => inspectPortraitSource(input, { maxAggregatePixels: 23 }), /100 million|pixel limit/i);
   await assert.rejects(() => inspectPortraitSource(Buffer.from('not a gif')), /not a valid GIF/i);
 
-  console.log('Portrait processor test passed: animated GIF crop, frame pixels, timing, looping, dimensions, malformed input, and resource limits.');
+  console.log('Portrait processor test passed: globally-paletted animated GIF crop, frame pixels, timing, looping, dimensions, malformed input, and resource limits.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

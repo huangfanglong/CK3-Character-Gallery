@@ -1,5 +1,5 @@
-const LIVE_CAPTURE_FPS = 12;
-const LIVE_CAPTURE_MAX_FRAMES = 300;
+const LIVE_CAPTURE_FPS = 24;
+const LIVE_CAPTURE_MAX_FRAMES = LIVE_CAPTURE_FPS * 25;
 const LIVE_CAPTURE_MAX_DURATION_MS = 25_000;
 const LIVE_CAPTURE_SHORTCUTS = [
   ['CommandOrControl+Alt+G', 'Ctrl + Alt + G'],
@@ -12,7 +12,7 @@ async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   if (!character || state.preview) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null };
+  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, canvas: null, canvasStream: null, recorder: null, recordingDone: null, chunks: [] };
   renderLiveCaptureModal();
   try {
     state.captureSession.sources = await desktop.listCaptureSources();
@@ -114,25 +114,74 @@ function initializeLiveCapturePreview() {
   preview.addEventListener('pointerup', () => { start = null; });
 }
 
-function drawLiveCaptureFrame() {
-  const capture = state.captureSession; const video = document.querySelector('#capture-video');
+function drawLiveCaptureFrame(capture) {
+  const video = document.querySelector('#capture-video');
   if (!capture || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-  const canvas = document.createElement('canvas'); canvas.width = 450; canvas.height = 450;
   if (!capture.crop) return;
-  const context = canvas.getContext('2d', { willReadFrequently: true }); const crop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
+  const context = capture.canvas.getContext('2d'); const crop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   context.drawImage(video, crop.x, crop.y, crop.size, crop.size, 0, 0, 450, 450);
-  void desktop.appendCaptureFrame(capture.sessionId, context.getImageData(0, 0, 450, 450).data.buffer, performance.now()).then((frames) => {
-    if (state.captureSession !== capture) return; capture.frames = frames; document.querySelector('#capture-status').textContent = `Recording ${frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`; if (frames >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
-  }).catch((error) => { if (state.captureSession === capture) void cancelLiveCapture(readableError(error, 'A capture frame could not be recorded.')); });
+}
+
+function supportedCaptureMimeType() {
+  return ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function startLiveCaptureRecording(capture) {
+  const mimeType = supportedCaptureMimeType();
+  if (!mimeType) throw new Error('This Electron build cannot record WebM video.');
+  capture.canvas = document.createElement('canvas');
+  capture.canvas.width = 450;
+  capture.canvas.height = 450;
+  capture.canvasStream = capture.canvas.captureStream(LIVE_CAPTURE_FPS);
+  capture.chunks = [];
+  capture.recorder = new MediaRecorder(capture.canvasStream, { mimeType, videoBitsPerSecond: 6_000_000 });
+  capture.recordingError = null;
+  capture.recordingDone = new Promise((resolve) => {
+    capture.recorder.addEventListener('dataavailable', (event) => {
+      if (event.data.size > 0) capture.chunks.push(event.data);
+    });
+    capture.recorder.addEventListener('error', () => {
+      capture.recordingError = new Error('WebM recording failed.');
+      resolve();
+      if (state.captureSession === capture && capture.phase === 'recording') void cancelLiveCapture(capture.recordingError.message);
+    }, { once: true });
+    capture.recorder.addEventListener('stop', resolve, { once: true });
+  });
+  capture.recorder.start(1_000);
+  drawLiveCaptureFrame(capture);
+  capture.frames = 1;
+  capture.timer = setInterval(() => {
+    drawLiveCaptureFrame(capture);
+    capture.frames += 1;
+    const status = document.querySelector('#capture-status');
+    if (status) status.textContent = `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`;
+    if (capture.frames >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
+  }, 1_000 / LIVE_CAPTURE_FPS);
+}
+
+async function stopLiveCaptureRecording(capture) {
+  if (capture?.timer) clearInterval(capture.timer);
+  if (capture?.durationTimer) clearTimeout(capture.durationTimer);
+  if (capture?.recorder?.state === 'recording') capture.recorder.stop();
+  if (capture?.recordingDone) await capture.recordingDone;
+  capture.recordingDone = null;
+  if (capture?.recordingError) throw capture.recordingError;
+  capture?.canvasStream?.getTracks().forEach((track) => track.stop());
+  return capture?.chunks?.length ? new Blob(capture.chunks, { type: capture.recorder.mimeType }) : null;
 }
 
 function toggleLiveCapture(sessionId) {
   const capture = state.captureSession;
   if (!capture || capture.sessionId !== sessionId) return;
   if (capture.phase === 'ready') {
-    capture.phase = 'recording'; capture.timer = setInterval(drawLiveCaptureFrame, 1_000 / LIVE_CAPTURE_FPS); drawLiveCaptureFrame();
+    try { startLiveCaptureRecording(capture); }
+    catch (error) { void cancelLiveCapture(readableError(error, 'WebM recording could not start.')); return; }
+    capture.phase = 'recording';
     updateLiveCaptureRecordingUi(capture);
-    setTimeout(() => { if (state.captureSession === capture && capture.phase === 'recording') void finishLiveCapture('Maximum recording duration reached.'); }, LIVE_CAPTURE_MAX_DURATION_MS);
+    capture.durationTimer = setTimeout(() => { if (state.captureSession === capture && capture.phase === 'recording') void finishLiveCapture('Maximum recording duration reached.'); }, LIVE_CAPTURE_MAX_DURATION_MS);
   } else if (capture.phase === 'recording') void finishLiveCapture();
 }
 
@@ -148,16 +197,23 @@ function updateLiveCaptureRecordingUi(capture) {
 async function finishLiveCapture(reason = '') {
   const capture = state.captureSession; const character = getActiveCharacter();
   if (!capture || !character || capture.phase === 'finishing') return;
-  capture.phase = 'finishing'; stopLiveCaptureStream(capture);
-  try { const selected = await desktop.finishCapture(capture.sessionId, character.id); state.captureSession = null; state.modal = null; await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true); }
+  capture.phase = 'finishing';
+  try {
+    const video = await stopLiveCaptureRecording(capture);
+    if (!video) throw new Error('Live portrait capture did not contain any video frames.');
+    const selected = await desktop.finishCapture(capture.sessionId, character.id, await video.arrayBuffer());
+    stopLiveCaptureStream(capture);
+    state.captureSession = null; state.modal = null; await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true);
+  }
   catch (error) { await cancelLiveCapture(readableError(error, 'The live portrait could not be saved.')); }
 }
 
-function stopLiveCaptureStream(capture) { if (capture?.timer) clearInterval(capture.timer); capture?.stream?.getTracks().forEach((track) => track.stop()); }
+function stopLiveCaptureStream(capture) { if (capture?.timer) clearInterval(capture.timer); if (capture?.durationTimer) clearTimeout(capture.durationTimer); capture?.canvasStream?.getTracks().forEach((track) => track.stop()); capture?.stream?.getTracks().forEach((track) => track.stop()); }
 async function releaseLiveCapture() {
   const capture = state.captureSession;
   if (!capture) return;
   capture.phase = 'releasing';
+  await stopLiveCaptureRecording(capture).catch(() => {});
   stopLiveCaptureStream(capture);
   if (capture.sessionId) await desktop?.releaseCapture(capture.sessionId).catch(() => {});
 }
