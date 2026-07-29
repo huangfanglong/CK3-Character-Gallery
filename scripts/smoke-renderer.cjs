@@ -5,6 +5,7 @@ const path = require('node:path');
 const { parseGIF, decompressFrames } = require('gifuct-js');
 const { GIFEncoder, applyPalette, quantize } = require('gifenc');
 const { validateCaptureVideo } = require('../electron/capture-video.cjs');
+const { normalizeWebmColor } = require('../renderer/webm-color.js');
 
 const electron = require('electron');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
@@ -75,7 +76,7 @@ async function main() {
   const webmEncoder = JSON.parse(await evaluate(`(async()=>{const mimeType=['video/webm;codecs=vp8','video/webm;codecs=vp9','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));if(!mimeType)return JSON.stringify({supported:false});const canvas=document.createElement('canvas');canvas.width=450;canvas.height=450;canvas.style.cssText='position:fixed;inset:0;z-index:-1;opacity:.01;pointer-events:none';document.body.append(canvas);const context=canvas.getContext('2d');const stream=canvas.captureStream(0);const track=stream.getVideoTracks()[0];const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:200000});const chunks=[];const stopped=new Promise((resolve,reject)=>{recorder.addEventListener('dataavailable',event=>{if(event.data.size)chunks.push(event.data)});recorder.addEventListener('stop',resolve,{once:true});recorder.addEventListener('error',()=>reject(new Error('MediaRecorder error')),{once:true})});recorder.start();for(let frame=0;frame<24;frame+=1){context.fillStyle=frame%2?'#7f513f':'#3f617f';context.fillRect(0,0,450,450);track.requestFrame();await new Promise(resolve=>setTimeout(resolve,100))}recorder.stop();await stopped;stream.getTracks().forEach(item=>item.stop());canvas.remove();const data=new Uint8Array(await new Blob(chunks,{type:mimeType}).arrayBuffer());let binary='';data.forEach(byte=>{binary+=String.fromCharCode(byte)});return JSON.stringify({supported:true,mimeType,bytes:data.length,ebml:[...data.slice(0,4)],webm:new TextDecoder().decode(data.slice(0,4096)).includes('webm'),payload:btoa(binary)});})()`));
   if (!webmEncoder.supported || webmEncoder.bytes < 4 || webmEncoder.ebml.join(',') !== '26,69,223,163' || !webmEncoder.webm) throw new Error(`Chromium did not produce a valid WebM capture (${JSON.stringify(webmEncoder)}).`);
   try {
-    validateCaptureVideo(arrayBufferFor(Buffer.from(webmEncoder.payload, 'base64')));
+    validateCaptureVideo(normalizeWebmColor(arrayBufferFor(Buffer.from(webmEncoder.payload, 'base64'))));
   } catch (error) {
     throw new Error(`Chromium WebM payload failed structural validation: ${error.message} (${JSON.stringify(webmEncoder)})`);
   }

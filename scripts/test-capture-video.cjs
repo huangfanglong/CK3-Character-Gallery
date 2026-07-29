@@ -22,11 +22,18 @@ function uint(value) {
   return Buffer.from([(value >> 8) & 0xFF, value & 0xFF]);
 }
 
-function webmBuffer({ width = 450, height = 450, codec = 'V_VP9', includeCluster = true } = {}) {
+function webmBuffer({ width = 450, height = 450, codec = 'V_VP9', includeCluster = true, includeColor = true } = {}) {
   const ebml = element([0x1A, 0x45, 0xDF, 0xA3], element([0x42, 0x82], Buffer.from('webm')));
+  const color = includeColor ? element([0x55, 0xB0], Buffer.concat([
+    element([0x55, 0xB1], uint(1)),
+    element([0x55, 0xB9], uint(2)),
+    element([0x55, 0xBA], uint(13)),
+    element([0x55, 0xBB], uint(1)),
+  ])) : Buffer.alloc(0);
   const video = element([0xE0], Buffer.concat([
     element([0xB0], uint(width)),
     element([0xBA], uint(height)),
+    color,
   ]));
   const track = element([0xAE], Buffer.concat([
     element([0x83], uint(1)),
@@ -56,6 +63,7 @@ async function main() {
   assert.throws(() => validateCaptureVideo(webmBuffer({ width: 451 })), /450 x 450/i);
   assert.throws(() => validateCaptureVideo(webmBuffer({ codec: 'V_MPEG4' })), /codec/i);
   assert.throws(() => validateCaptureVideo(webmBuffer({ includeCluster: false })), /media data/i);
+  assert.throws(() => validateCaptureVideo(webmBuffer({ includeColor: false })), /BT\.709\/sRGB/i);
 
   const truncated = webmBuffer().slice(0, -2);
   assert.throws(() => validateCaptureVideo(truncated), /truncated|invalid/i);
