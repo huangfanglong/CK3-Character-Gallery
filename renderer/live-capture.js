@@ -56,15 +56,39 @@ function renderLiveCaptureModal() {
 
 async function selectLiveCaptureSource(sourceId) {
   const capture = state.captureSession;
-  if (!capture || !capture.sources.some((source) => source.id === sourceId)) return;
+  if (!capture || capture.phase !== 'select-source' || !capture.sources.some((source) => source.id === sourceId)) return;
+  capture.phase = 'starting';
+  capture.error = '';
+  renderLiveCaptureModal();
+  let sessionId = null;
+  let stream = null;
   try {
     const armed = await desktop.armCapture(sourceId, capture.shortcut);
-    capture.selectedSourceId = sourceId; capture.sessionId = armed.sessionId; capture.shortcut = armed.shortcut; capture.phase = 'starting'; renderLiveCaptureModal();
-    capture.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: LIVE_CAPTURE_FPS }, audio: false });
-    capture.stream.getVideoTracks()[0].addEventListener('ended', () => { if (state.captureSession === capture && capture.phase !== 'finishing') void cancelLiveCapture('CK3 window capture ended.'); }, { once: true });
+    sessionId = armed.sessionId;
+    if (state.captureSession !== capture || capture.phase !== 'starting') {
+      await desktop.releaseCapture(sessionId).catch(() => {});
+      return;
+    }
+    capture.selectedSourceId = sourceId;
+    capture.sessionId = sessionId;
+    capture.shortcut = armed.shortcut;
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: LIVE_CAPTURE_FPS }, audio: false });
+    if (state.captureSession !== capture || capture.phase !== 'starting') {
+      stream.getTracks().forEach((track) => track.stop());
+      await desktop.releaseCapture(sessionId).catch(() => {});
+      return;
+    }
+    capture.stream = stream;
+    stream.getVideoTracks()[0].addEventListener('ended', () => { if (state.captureSession === capture && capture.phase !== 'finishing') void cancelLiveCapture('CK3 window capture ended.'); }, { once: true });
     capture.phase = 'ready'; renderLiveCaptureModal();
   } catch (error) {
-    await releaseLiveCapture(); capture.phase = 'select-source'; capture.error = readableError(error, 'CK3 capture could not start.'); renderLiveCaptureModal();
+    stream?.getTracks().forEach((track) => track.stop());
+    if (sessionId) await desktop.releaseCapture(sessionId).catch(() => {});
+    if (state.captureSession !== capture) return;
+    capture.sessionId = null;
+    capture.phase = 'select-source';
+    capture.error = readableError(error, 'CK3 capture could not start.');
+    renderLiveCaptureModal();
   }
 }
 

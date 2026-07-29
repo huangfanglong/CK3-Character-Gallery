@@ -1001,7 +1001,7 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { releaseCropSource(); state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
+      if (state.modal) { event.preventDefault(); runModalAction('close-modal'); }
       else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
       else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }

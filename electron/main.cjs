@@ -9,6 +9,7 @@ const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = requi
 const { saveCaptureVideo } = require('./capture-video.cjs');
 const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 const { CaptureSessionManager } = require('./capture-session-manager.cjs');
+const { imageDirectory } = require('./image-directory.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
 const IMAGE_FILE_PATTERN = /\.(png|jpe?g|bmp|gif|webp)$/i;
@@ -136,11 +137,6 @@ function requireCaptureOwner(event, sessionId) {
   return capture;
 }
 
-function captureDirectory(characterId) {
-  if (typeof characterId !== 'string' || !/^[a-zA-Z0-9-]+$/.test(characterId)) throw new Error('The selected character is invalid.');
-  return path.join(dataDirectory(), 'images', characterId);
-}
-
 ipcMain.handle('library:load', async () => {
   const data = await ensureData();
   return {
@@ -156,6 +152,7 @@ ipcMain.handle('library:save', async (_event, galleries) => {
 });
 
 ipcMain.handle('library:choose-image', async (_event, characterId) => {
+  const directory = imageDirectory(dataDirectory(), characterId);
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [{ name: 'Portrait images', extensions: IMAGE_FILE_EXTENSIONS }],
@@ -164,7 +161,6 @@ ipcMain.handle('library:choose-image', async (_event, characterId) => {
   const source = result.filePaths[0];
   const extension = path.extname(source).toLowerCase() || '.png';
   if (extension === '.gif') return prepareGifSource(source, pathToFileURL(source).toString());
-  const directory = path.join(dataDirectory(), 'images', characterId);
   await fs.mkdir(directory, { recursive: true });
   const destination = path.join(directory, `${Date.now()}${extension}`);
   await fs.copyFile(source, destination);
@@ -212,10 +208,10 @@ ipcMain.handle('library:prepare-image-data', async (_event, dataUrl) => {
 });
 
 ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload) => {
+  const directory = imageDirectory(dataDirectory(), characterId);
   if (typeof payload.sourceId === 'string' && portraitSources.has(payload.sourceId)) {
     const input = portraitSources.get(payload.sourceId);
     const processed = await processPortraitCrop(input, payload);
-    const directory = path.join(dataDirectory(), 'images', characterId);
     await fs.mkdir(directory, { recursive: true });
     const destination = path.join(directory, `${Date.now()}${processed.extension}`);
     await fs.writeFile(destination, processed.data);
@@ -233,7 +229,6 @@ ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload
     height: 450,
     quality: 'best',
   });
-  const directory = path.join(dataDirectory(), 'images', characterId);
   await fs.mkdir(directory, { recursive: true });
   const destination = path.join(directory, `${Date.now()}.png`);
   await fs.writeFile(destination, cropped.toPNG());
@@ -272,7 +267,7 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
 ipcMain.handle('capture:finish', async (event, sessionId, characterId, video) => {
   requireCaptureOwner(event, sessionId);
   try {
-    const destination = await saveCaptureVideo(captureDirectory(characterId), video);
+    const destination = await saveCaptureVideo(imageDirectory(dataDirectory(), characterId), video);
     return { path: destination, url: pathToFileURL(destination).toString() };
   } finally { releaseCaptureSession(sessionId); }
 });
