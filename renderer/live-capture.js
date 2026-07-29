@@ -1,6 +1,3 @@
-const LIVE_CAPTURE_FPS = 24;
-const LIVE_CAPTURE_MAX_FRAMES = LIVE_CAPTURE_FPS * 25;
-const LIVE_CAPTURE_MAX_DURATION_MS = 25_000;
 const LIVE_CAPTURE_SHORTCUTS = [
   ['CommandOrControl+Alt+G', 'Ctrl + Alt + G'],
   ['CommandOrControl+Shift+G', 'Ctrl + Shift + G'],
@@ -125,7 +122,7 @@ function drawLiveCaptureFrame(capture) {
 }
 
 function supportedCaptureMimeType() {
-  return ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  return CAPTURE_MIME_TYPES
     .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }
 
@@ -137,7 +134,7 @@ function startLiveCaptureRecording(capture) {
   capture.canvas.height = 450;
   capture.canvasStream = capture.canvas.captureStream(LIVE_CAPTURE_FPS);
   capture.chunks = [];
-  capture.recorder = new MediaRecorder(capture.canvasStream, { mimeType, videoBitsPerSecond: 6_000_000 });
+  capture.recorder = new MediaRecorder(capture.canvasStream, { mimeType, videoBitsPerSecond: LIVE_CAPTURE_VIDEO_BITRATE });
   capture.recordingError = null;
   capture.recordingDone = new Promise((resolve) => {
     capture.recorder.addEventListener('dataavailable', (event) => {

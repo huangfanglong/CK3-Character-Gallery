@@ -44,9 +44,9 @@ function webmBuffer({ width = 450, height = 450, codec = 'V_VP9', includeCluster
 
 async function main() {
   assert.equal(CAPTURE_SIZE, 450);
-  assert.equal(CAPTURE_FPS, 24);
+  assert.equal(CAPTURE_FPS, 30);
   assert.equal(MAX_CAPTURE_DURATION_MS, 25_000);
-  assert.equal(MAX_CAPTURE_FRAMES, 600);
+  assert.equal(MAX_CAPTURE_FRAMES, 750);
   assert.doesNotThrow(() => validateCaptureVideo(webmBuffer()));
   assert.throws(() => validateCaptureVideo(new ArrayBuffer(0)), /invalid/i);
   assert.throws(() => validateCaptureVideo(new Uint8Array([0x1A, 0x45, 0xDF, 0xA3])), /invalid/i);
@@ -69,7 +69,7 @@ async function main() {
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
-  console.log('Capture video test passed: fixed 24 FPS WebM contract, validated persistence, frame cap, and payload rejection.');
+  console.log('Capture video test passed: fixed 30 FPS WebM contract, validated persistence, frame cap, and payload rejection.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

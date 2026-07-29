@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const CAPTURE_SIZE = 450;
-const CAPTURE_FPS = 24;
+const CAPTURE_FPS = 30;
 const MAX_CAPTURE_DURATION_MS = 25_000;
 const MAX_CAPTURE_FRAMES = CAPTURE_FPS * (MAX_CAPTURE_DURATION_MS / 1_000);
 const MAX_CAPTURE_VIDEO_BYTES = 75 * 1024 * 1024;
