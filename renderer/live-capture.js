@@ -222,7 +222,7 @@ async function finishLiveCapture(reason = '') {
   try {
     const video = await stopLiveCaptureRecording(capture);
     if (!video) throw new Error('Live portrait capture did not contain any video frames.');
-    const selected = await desktop.finishCapture(capture.sessionId, character.id, normalizeWebmColor(await video.arrayBuffer()));
+    const selected = await desktop.finishCapture(capture.sessionId, character.id, await video.arrayBuffer());
     stopLiveCaptureStream(capture);
     state.captureSession = null; state.modal = null; await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true);
   }
