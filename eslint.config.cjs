@@ -8,8 +8,8 @@ const rendererGlobals = Object.fromEntries([
   'morphAppContent', 'morphAppRegion',
   'chromeMarkup', 'contextMenuMarkup', 'cardMarkup', 'tableMarkup', 'sidebarMarkup', 'inspectorMarkup', 'mainMarkup', 'sortControlMarkup', 'filterPanelMarkup', 'emptyResultsMarkup',
   'showCropModal', 'initializeCropInteraction', 'resetCropPosition', 'clampCropOffset', 'applyCropTransform', 'saveCroppedPortrait', 'releaseCropSource', 'appendPortrait',
-  'showLiveCaptureModal', 'refreshLiveCaptureSources', 'renderLiveCaptureModal', 'selectLiveCaptureSource', 'setLiveCaptureShortcut', 'initializeLiveCapturePreview', 'drawLiveCaptureFrame', 'toggleLiveCapture', 'finishLiveCapture', 'releaseLiveCapture', 'cancelLiveCapture',
-  'clampCaptureCrop', 'defaultCaptureCrop', 'displayRectForVideo', 'dragCaptureCrop', 'selectionRectForCrop', 'LIVE_CAPTURE_FPS', 'LIVE_CAPTURE_MAX_DURATION_MS', 'LIVE_CAPTURE_MAX_FRAMES', 'LIVE_CAPTURE_VIDEO_BITRATE', 'createLiveCaptureEncoder',
+  'showLiveCaptureModal', 'refreshLiveCaptureSources', 'renderLiveCaptureModal', 'trapLiveCaptureFocus', 'selectLiveCaptureSource', 'setLiveCaptureShortcut', 'initializeLiveCapturePreview', 'resetLiveCaptureCrop', 'centerLiveCaptureCrop', 'setLiveCaptureDrawMode', 'updateLiveCaptureCoordinate', 'drawLiveCaptureFrame', 'toggleLiveCapture', 'finishLiveCapture', 'releaseLiveCapture', 'cancelLiveCapture',
+  'centeredCaptureCrop', 'clampCaptureCrop', 'defaultCaptureCrop', 'displayRectForVideo', 'dragCaptureCrop', 'moveCaptureCrop', 'normalizedCaptureCrop', 'resizeCaptureCrop', 'resizeCaptureCropFromCenter', 'restoredCaptureCrop', 'selectionRectForCrop', 'snapCaptureCrop', 'LIVE_CAPTURE_FPS', 'LIVE_CAPTURE_MAX_DURATION_MS', 'LIVE_CAPTURE_MAX_FRAMES', 'LIVE_CAPTURE_VIDEO_BITRATE', 'createLiveCaptureEncoder',
   'showCharacterModal', 'showGalleryModal', 'showRenameGalleryModal', 'showDeleteGalleryConfirmation', 'showGalleryBatchDeleteConfirmation', 'showImportModal', 'showNoteModal', 'syncNoteHighlightScroll', 'updateNoteHighlights', 'showManageModal', 'showTransferCharacterModal', 'showDeleteConfirmation', 'showDeleteVariantConfirmation', 'showBatchDeleteConfirmation', 'showDnaOverwriteConfirmation', 'handleModalAction', 'deleteSelectedVariant',
   'duplicateSelectedCharacter', 'transferCharacters', 'uniqueCollectionName', 'duplicateActiveGallery', 'copyDna', 'saveLibrary', 'referencedImagePaths', 'cleanupUnusedPortraits', 'exportCollection', 'importCollection',
   'showDnaModal', 'hasBalancedBraces', 'isValidCk3Dna', 'openClipboardDna', 'pasteDnaFromClipboard', 'homogenizeDna', 'updateDnaCount', 'recordDnaHistory', 'setDnaEditorValue', 'undoDnaChange', 'redoDnaChange',
@@ -50,6 +50,10 @@ module.exports = [
       'no-redeclare': ['error', { builtinGlobals: false }],
       'no-unused-vars': 'off',
     },
+  },
+  {
+    files: ['electron/capture-hud.js'],
+    languageOptions: { globals: globals.browser },
   },
   {
     files: ['renderer/capture-geometry.js'],

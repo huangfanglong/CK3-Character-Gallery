@@ -421,6 +421,7 @@ function handleDelegatedContextMenu(event) {
 function handleDelegatedKeydown(event) {
   if (!(event.target instanceof Element)) return;
   if (trapAppearanceFocus(event)) return;
+  if (trapLiveCaptureFocus(event)) return;
   const sortButton = event.target.closest('[data-sort]');
   if (sortButton) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -456,12 +457,18 @@ function handleDelegatedInput(event) {
     updateDnaCount();
     return recordDnaHistory(target.value);
   }
+  if (target.matches?.('[data-capture-coordinate]')) return updateLiveCaptureCoordinate(target.dataset.captureCoordinate, target.value);
   if (target.id === 'note-input') updateNoteHighlights(target);
 }
 
 function handleDelegatedChange(event) {
   const target = event.target;
   if (target.id === 'character-title') return void saveCharacterTitle(target.value);
+  if (target.matches?.('[data-capture-coordinate]')) {
+    const committed = updateLiveCaptureCoordinate(target.dataset.captureCoordinate, target.value);
+    if (committed !== null) target.value = String(committed);
+    return;
+  }
   if (target.id === 'capture-shortcut') return setLiveCaptureShortcut(target.value);
   if (target.matches?.('[data-favorite-filter]')) {
     state.filters.favorites = target.checked;
@@ -872,7 +879,7 @@ async function chooseImage() {
 }
 
 async function pasteClipboardPortrait() {
-  if (state.cropSession) return;
+  if (state.cropSession || state.captureSession) return;
   if (!desktop) return showToast('Clipboard portraits are only available in the desktop app.', 'info');
   try {
     const source = await desktop.readClipboardImage();
@@ -884,7 +891,7 @@ async function pasteClipboardPortrait() {
 }
 
 async function pasteClipboardContent() {
-  if (state.cropSession || !desktop) return;
+  if (state.cropSession || state.captureSession || !desktop) return;
   try {
     const source = await desktop.readClipboardImage();
     if (source) return openClipboardSource(source);
@@ -917,6 +924,8 @@ function installKeyboardShortcuts() {
     const key = event.key.toLowerCase();
     const target = event.target;
     const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
+    const blockedByCapture = state.captureSession && ((command && ['n', 'f', 'd', 'e'].includes(key)) || event.key === 'F2' || (command && key === 'v' && !editingText));
+    if (blockedByCapture) { event.preventDefault(); return; }
 
     if (command && key === 'z' && !event.shiftKey && document.querySelector('#dna-input')) {
       event.preventDefault();
@@ -1014,7 +1023,7 @@ function installKeyboardShortcuts() {
 
 function installClipboardPasteHandler() {
   document.addEventListener('paste', (event) => {
-    if (state.cropSession) return;
+    if (state.cropSession || state.captureSession) return;
     const items = [...(event.clipboardData?.items || [])];
     const files = [...(event.clipboardData?.files || [])];
     const imageItem = items.find((item) => item.kind === 'file' && (item.type.startsWith('image/') || isSupportedImageFile(item.getAsFile()?.name || '')));

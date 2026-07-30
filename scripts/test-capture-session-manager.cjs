@@ -31,6 +31,12 @@ function main() {
 
   assert.equal(sessionId, 'session-1');
   assert.equal(manager.get(sessionId).ownerWebContentsId, 10);
+  assert.equal(manager.get(sessionId).phase, 'arming');
+  assert.throws(() => manager.transition(sessionId, 'recording'), /cannot transition/i);
+  ['armed', 'starting', 'recording', 'saving', 'writing', 'written'].forEach((phase) => manager.transition(sessionId, phase));
+  assert.equal(manager.get(sessionId).phase, 'written');
+  assert.throws(() => manager.transition(sessionId, 'writing'), /cannot transition/i);
+  assert.throws(() => manager.transition('missing-session', 'armed'), /has ended/i);
   shortcut.registered.get('CommandOrControl+Shift+9')();
   assert.deepEqual(toggles, ['session-1']);
   assert.throws(() => manager.arm({ sourceId: 'source-2', shortcut: 'CommandOrControl+Shift+8', ownerWebContentsId: 11, onToggle() {} }), /already active/i);
@@ -41,7 +47,7 @@ function main() {
   assert.equal(manager.get(sessionId), undefined);
   assert.deepEqual(shortcut.unregistered, ['CommandOrControl+Shift+9']);
   assert.doesNotThrow(() => manager.arm({ sourceId: 'source-2', shortcut: 'CommandOrControl+Shift+8', ownerWebContentsId: 11, onToggle() {} }));
-  console.log('Capture session manager test passed: ownership cleanup unregisters shortcuts and permits a subsequent capture.');
+  console.log('Capture session manager test passed: ordered state transitions, ownership cleanup, shortcut release, and subsequent capture.');
 }
 
 main();

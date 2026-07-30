@@ -258,6 +258,9 @@ async function handleModalAction(name) {
   if (name === 'transfer-character') return showTransferCharacterModal();
   if (name === 'customize-appearance') return showCharacterAppearanceModal();
   if (name === 'capture-live-portrait') return showLiveCaptureModal();
+  if (name === 'capture-reset') return resetLiveCaptureCrop();
+  if (name === 'capture-center') return centerLiveCaptureCrop();
+  if (name === 'capture-draw') return setLiveCaptureDrawMode(!state.captureSession?.drawMode);
   if (name === 'capture-refresh') return refreshLiveCaptureSources();
   if (name === 'capture-stop') return finishLiveCapture();
   if (name === 'copy-character' || name === 'move-character') return transferCharacters(name === 'copy-character' ? 'copy' : 'move', document.querySelector('#transfer-gallery')?.value, state.transferCharacterIds);

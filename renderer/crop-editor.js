@@ -135,12 +135,20 @@ function releaseCropSource(source = null) {
 }
 
 async function appendPortrait(character, selected, message, makeCover = false) {
-  character.images = character.images || [];
-  const urls = state.imageUrls.get(character.id) || [];
-  const previousImages = [...character.images];
-  const previousUrls = [...urls];
+  const hadImages = Array.isArray(character.images);
+  const hadImageUrls = state.imageUrls.has(character.id);
+  const hadCover = Object.hasOwn(character, 'coverIndex');
+  const hadImageUrl = Object.hasOwn(character, '_imageUrl');
+  const hadModified = Object.hasOwn(character, 'modified');
+  const hadVariants = Object.hasOwn(character, 'variants');
+  const previousImages = [...(character.images || [])];
   const previousCover = character.coverIndex;
   const previousImageUrl = character._imageUrl;
+  const previousModified = character.modified;
+  const previousVariants = character.variants;
+  character.images = character.images || [];
+  const urls = state.imageUrls.get(character.id) || [];
+  const previousUrls = [...urls];
   if (makeCover) character.images.unshift(selected.path);
   else character.images.push(selected.path);
   if (makeCover) urls.unshift(selected.url);
@@ -151,14 +159,17 @@ async function appendPortrait(character, selected, message, makeCover = false) {
   character.modified = Date.now();
   character.variants = character.images.length;
   render();
-  if (await saveLibrary()) showToast(message, 'success');
+  if (await saveLibrary()) { showToast(message, 'success'); return true; }
   else {
-    character.images = previousImages;
-    character.variants = previousImages.length;
-    character.coverIndex = previousCover;
-    character._imageUrl = previousImageUrl;
-    state.imageUrls.set(character.id, previousUrls);
+    if (hadImages) character.images = previousImages; else delete character.images;
+    if (hadVariants) character.variants = previousVariants; else delete character.variants;
+    if (hadCover) character.coverIndex = previousCover; else delete character.coverIndex;
+    if (hadImageUrl) character._imageUrl = previousImageUrl; else delete character._imageUrl;
+    if (hadModified) character.modified = previousModified; else delete character.modified;
+    if (hadImageUrls) state.imageUrls.set(character.id, previousUrls); else state.imageUrls.delete(character.id);
     render();
+    if (hadImageUrls) state.imageUrls.set(character.id, previousUrls); else state.imageUrls.delete(character.id);
     await cleanupUnusedPortraits([selected.path]);
+    return false;
   }
 }

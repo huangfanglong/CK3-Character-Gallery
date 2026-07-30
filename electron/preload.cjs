@@ -11,8 +11,10 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
   listCaptureSources: () => ipcRenderer.invoke('capture:list-sources'),
   armCapture: (sourceId, shortcut) => ipcRenderer.invoke('capture:arm', sourceId, shortcut),
+  setCaptureStatus: (sessionId, status) => ipcRenderer.invoke('capture:status', sessionId, status),
   finishCapture: (sessionId, characterId, video) => ipcRenderer.invoke('capture:finish', sessionId, characterId, video),
-  releaseCapture: (sessionId) => ipcRenderer.invoke('capture:release', sessionId),
+  completeCapture: (sessionId, outcome) => ipcRenderer.invoke('capture:complete', sessionId, outcome),
+  releaseCapture: (sessionId, failureMessage = '') => ipcRenderer.invoke('capture:release', sessionId, failureMessage),
   onCaptureToggle: (callback) => {
     const listener = (_event, sessionId) => callback(sessionId);
     ipcRenderer.on('capture:toggle', listener);

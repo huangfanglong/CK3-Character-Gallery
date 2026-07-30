@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -9,6 +9,7 @@ const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = requi
 const { saveCaptureVideo } = require('./capture-video.cjs');
 const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 const { CaptureSessionManager } = require('./capture-session-manager.cjs');
+const { CaptureHud } = require('./capture-hud.cjs');
 const { imageDirectory } = require('./image-directory.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
@@ -24,9 +25,21 @@ let archiveRecoveryWarning = null;
 const portraitSources = new Map();
 const captureSources = new Map();
 const captureSessions = new CaptureSessionManager(globalShortcut, crypto.randomUUID);
+let captureHud = null;
+let mainWindowWebContentsId = null;
 const dataDirectory = () => isDev
   ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
+
+function ensureCaptureHud() {
+  captureHud ||= new CaptureHud({
+    BrowserWindow,
+    screen,
+    htmlPath: path.join(__dirname, 'capture-hud.html'),
+    preloadPath: path.join(__dirname, 'capture-hud-preload.cjs'),
+  });
+  return captureHud;
+}
 
 function readClipboardImagePath() {
   const formats = clipboard.availableFormats();
@@ -87,6 +100,7 @@ async function ensureData() {
 }
 
 async function createWindow() {
+  ensureCaptureHud();
   const window = new BrowserWindow({
     width: 1540,
     height: 960,
@@ -108,12 +122,20 @@ async function createWindow() {
       nodeIntegration: false,
     },
   });
-  const releaseOwnedCaptures = () => captureSessions.releaseByOwner(window.webContents.id);
+  mainWindowWebContentsId = window.webContents.id;
+  const releaseOwnedCaptures = () => releaseCaptureSessionsByOwner(window.webContents.id);
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) releaseOwnedCaptures();
   });
   window.webContents.on('render-process-gone', releaseOwnedCaptures);
   window.webContents.once('destroyed', releaseOwnedCaptures);
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.once('closed', () => {
+    if (mainWindowWebContentsId === window.webContents.id) mainWindowWebContentsId = null;
+    captureHud?.destroy();
+    captureHud = null;
+  });
 
   window.webContents.on('before-input-event', (event, input) => {
     const command = input.control || input.meta;
@@ -126,15 +148,42 @@ async function createWindow() {
   await window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
-function releaseCaptureSession(sessionId) {
-  return captureSessions.release(sessionId);
+function releaseCaptureSession(sessionId, terminalStatus = null) {
+  const released = captureSessions.release(sessionId);
+  try { captureHud?.release(sessionId, terminalStatus); }
+  catch (error) { console.error('Capture HUD could not release:', error); }
+  return released;
+}
+
+function releaseCaptureSessionsByOwner(ownerWebContentsId) {
+  const sessionId = captureSessions.activeSessionId;
+  const capture = sessionId && captureSessions.get(sessionId);
+  captureSessions.releaseByOwner(ownerWebContentsId);
+  if (capture?.ownerWebContentsId === ownerWebContentsId) {
+    try { captureHud?.release(sessionId); }
+    catch (error) { console.error('Capture HUD could not release:', error); }
+  }
+}
+
+function requireTrustedCaptureSender(event) {
+  const senderFrame = event.senderFrame;
+  const mainFrame = event.sender.mainFrame;
+  if (event.sender.id !== mainWindowWebContentsId || !senderFrame || senderFrame.processId !== mainFrame.processId || senderFrame.routingId !== mainFrame.routingId) {
+    throw new Error('Live capture is only available from the gallery window.');
+  }
 }
 
 function requireCaptureOwner(event, sessionId) {
+  requireTrustedCaptureSender(event);
   const capture = captureSessions.get(sessionId);
   if (!capture) throw new Error('The live portrait capture has ended.');
   if (capture.ownerWebContentsId !== event.sender.id) throw new Error('The live portrait capture belongs to another window.');
   return capture;
+}
+
+function captureFailureMessage(value) {
+  if (typeof value !== 'string' || value.length > 256) throw new Error('Capture failure message is invalid.');
+  return value.trim();
 }
 
 ipcMain.handle('library:load', async () => {
@@ -237,7 +286,8 @@ ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload
 
 ipcMain.handle('library:release-image-source', (_event, sourceId) => portraitSources.delete(sourceId));
 
-ipcMain.handle('capture:list-sources', async () => {
+ipcMain.handle('capture:list-sources', async (event) => {
+  requireTrustedCaptureSender(event);
   const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 320, height: 180 } });
   captureSources.clear();
   return sources.filter((source) => /crusader kings iii/i.test(source.name)).map((source) => {
@@ -247,7 +297,9 @@ ipcMain.handle('capture:list-sources', async () => {
 });
 
 ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
-  if (!captureSources.has(sourceId)) throw new Error('The selected CK3 window is no longer available.');
+  requireTrustedCaptureSender(event);
+  const source = captureSources.get(sourceId);
+  if (!source) throw new Error('The selected CK3 window is no longer available.');
   if (!isCaptureShortcut(shortcut)) throw new Error('Choose one of the available capture shortcuts.');
   const sessionId = captureSessions.arm({
     sourceId,
@@ -261,20 +313,54 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
       event.sender.send('capture:toggle', id);
     },
   });
+  try {
+    const hud = ensureCaptureHud();
+    hud.arm(sessionId, { displayId: source.display_id, shortcut });
+    hud.update(sessionId, { state: 'starting' });
+  } catch (error) { releaseCaptureSession(sessionId); throw error; }
   return { sessionId, shortcut };
 });
 
-ipcMain.handle('capture:finish', async (event, sessionId, characterId, video) => {
+ipcMain.handle('capture:status', (event, sessionId, status) => {
   requireCaptureOwner(event, sessionId);
-  try {
-    const destination = await saveCaptureVideo(imageDirectory(dataDirectory(), characterId), video);
-    return { path: destination, url: pathToFileURL(destination).toString() };
-  } finally { releaseCaptureSession(sessionId); }
+  if (!['armed', 'starting', 'recording', 'saving'].includes(status?.state)) throw new Error('Capture status is invalid.');
+  if (status.state === 'recording' && (!Number.isFinite(status.startedAt) || status.startedAt < Date.now() - 60_000 || status.startedAt > Date.now() + 5_000)) throw new Error('Capture start time is invalid.');
+  captureSessions.transition(sessionId, status.state);
+  try { return ensureCaptureHud().update(sessionId, { state: status.state, startedAt: status.startedAt }); }
+  catch (error) { console.error('Capture HUD could not update:', error); return false; }
 });
 
-ipcMain.handle('capture:release', (event, sessionId) => {
+ipcMain.handle('capture:finish', async (event, sessionId, characterId, video) => {
+  const capture = requireCaptureOwner(event, sessionId);
+  if (capture.phase !== 'saving') throw new Error('Live portrait capture is not ready to save.');
+  captureSessions.transition(sessionId, 'writing');
+  try {
+    const destination = await saveCaptureVideo(imageDirectory(dataDirectory(), characterId), video);
+    if (!captureSessions.get(sessionId)) {
+      await fs.unlink(destination).catch(() => {});
+      throw new Error('The live portrait capture has ended.');
+    }
+    captureSessions.transition(sessionId, 'written');
+    return { path: destination, url: pathToFileURL(destination).toString() };
+  } catch (error) {
+    releaseCaptureSession(sessionId, { state: 'failed', message: error.message });
+    throw error;
+  }
+});
+
+ipcMain.handle('capture:complete', (event, sessionId, outcome) => {
+  const capture = requireCaptureOwner(event, sessionId);
+  if (capture.phase !== 'written') throw new Error('Live portrait capture is not ready to complete.');
+  if (outcome?.state === 'saved') return releaseCaptureSession(sessionId, { state: 'saved' });
+  if (outcome?.state === 'cancelled') return releaseCaptureSession(sessionId);
+  if (outcome?.state === 'failed') return releaseCaptureSession(sessionId, { state: 'failed', message: captureFailureMessage(outcome.message) });
+  throw new Error('Capture completion status is invalid.');
+});
+
+ipcMain.handle('capture:release', (event, sessionId, failureMessage = '') => {
   requireCaptureOwner(event, sessionId);
-  return releaseCaptureSession(sessionId);
+  const message = captureFailureMessage(failureMessage);
+  return releaseCaptureSession(sessionId, message ? { state: 'failed', message } : null);
 });
 
 ipcMain.handle('library:delete-image', async (_event, imagePath) => {
@@ -362,12 +448,16 @@ ipcMain.handle('library:image-url', (_event, imagePath) => {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const capture = captureSessions.get(captureSessions.activeSessionId);
     const source = capture && captureSources.get(capture.sourceId);
-    callback(source ? { video: source } : {});
+    const requestingContents = request.frame && webContents.fromFrame(request.frame);
+    const isOwnerMainFrame = request.frame?.parent === null && requestingContents?.id === capture?.ownerWebContentsId;
+    callback(source && isOwnerMainFrame ? { video: source } : {});
   }, { useSystemPicker: false });
+  session.fromPartition('capture-hud').setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: false });
   await ensureData();
+  ensureCaptureHud();
   await createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -383,4 +473,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  captureHud?.destroy();
+  captureHud = null;
+  globalShortcut.unregisterAll();
+});

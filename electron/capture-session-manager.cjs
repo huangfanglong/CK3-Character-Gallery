@@ -12,13 +12,30 @@ class CaptureSessionManager {
     if (!this.globalShortcut.register(shortcut, () => onToggle(sessionId))) {
       throw new Error(`${shortcut} is already in use by another application.`);
     }
-    this.sessions.set(sessionId, { sourceId, shortcut, ownerWebContentsId });
+    this.sessions.set(sessionId, { sourceId, shortcut, ownerWebContentsId, phase: 'arming' });
     this.activeSessionId = sessionId;
     return sessionId;
   }
 
   get(sessionId) {
     return this.sessions.get(sessionId);
+  }
+
+  transition(sessionId, phase) {
+    const capture = this.sessions.get(sessionId);
+    if (!capture) throw new Error('The live portrait capture has ended.');
+    const allowed = {
+      arming: ['armed'],
+      armed: ['starting'],
+      starting: ['recording'],
+      recording: ['saving'],
+      saving: ['writing'],
+      writing: ['written'],
+      written: [],
+    };
+    if (!allowed[capture.phase]?.includes(phase)) throw new Error(`Capture cannot transition from ${capture.phase} to ${phase}.`);
+    capture.phase = phase;
+    return capture;
   }
 
   release(sessionId) {
