@@ -34,6 +34,29 @@ function arrayBufferFor(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 }
 
+function colorFidelity(source, decoded) {
+  const channelAbsoluteError = [0, 0, 0];
+  const channelBias = [0, 0, 0];
+  let maximumError = 0;
+  source.forEach((color, index) => color.forEach((value, channel) => {
+    const difference = decoded[index][channel] - value;
+    channelAbsoluteError[channel] += Math.abs(difference);
+    channelBias[channel] += difference;
+    maximumError = Math.max(maximumError, Math.abs(difference));
+  }));
+  return {
+    meanAbsoluteError: channelAbsoluteError.reduce((sum, value) => sum + value, 0) / (source.length * 3),
+    channelAbsoluteError: channelAbsoluteError.map((value) => value / source.length),
+    channelBias: channelBias.map((value) => value / source.length),
+    maximumError,
+  };
+}
+
+function isCoherentLimitedColor(color) {
+  if (color?.range !== 1) return false;
+  return [1, 6].some((value) => color.matrix === value && color.transfer === value && color.primaries === value);
+}
+
 function cleanup() {
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
   else child.kill();
@@ -52,6 +75,9 @@ async function getPage() {
 }
 
 async function main() {
+  if (!isCoherentLimitedColor({ matrix: 6, transfer: 6, primaries: 6, range: 1 })) throw new Error('SMPTE 170M limited-range metadata should be accepted.');
+  if (isCoherentLimitedColor({ matrix: 1, transfer: 6, primaries: 1, range: 1 })) throw new Error('Mixed color metadata should be rejected.');
+  if (isCoherentLimitedColor({ matrix: 1, transfer: 1, primaries: 1, range: 2 })) throw new Error('Full-range metadata should be rejected.');
   const page = await getPage();
   const socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -80,11 +106,15 @@ async function main() {
     }
   };
   await delay(1000);
+  await evaluate("window.__smokeVideoFrameCallback=HTMLVideoElement.prototype.requestVideoFrameCallback;HTMLVideoElement.prototype.requestVideoFrameCallback=function(callback){return setTimeout(()=>callback(performance.now(),{}),250)}");
+  const sourceColors = [[207, 130, 94], [139, 164, 150], [41, 44, 48], [229, 206, 159]];
   const webCodecsCapture = JSON.parse(await evaluate(`(async()=>{try{const colors=[[207,130,94],[139,164,150],[41,44,48],[229,206,159]];const canvas=document.createElement('canvas');canvas.width=450;canvas.height=450;const context=canvas.getContext('2d');colors.forEach((color,index)=>{context.fillStyle='rgb('+color.join(',')+')';context.fillRect((index%2)*225,Math.floor(index/2)*225,225,225)});const encoder=await createLiveCaptureEncoder();for(let frame=0;frame<30;frame+=1){while(!encoder.hasCapacity)await new Promise(resolve=>setTimeout(resolve,1));encoder.encode(canvas,frame*33333,frame)}const buffer=await encoder.finalize();const video=document.createElement('video');video.muted=true;video.playsInline=true;video.style.cssText='position:fixed;left:-500px;top:0;width:450px;height:450px';document.body.append(video);video.src=URL.createObjectURL(new Blob([buffer],{type:'video/webm'}));await Promise.race([new Promise((resolve,reject)=>{video.addEventListener('loadeddata',resolve,{once:true});video.addEventListener('error',()=>reject(new Error('WebCodecs WebM decode error')),{once:true})}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('WebCodecs WebM loadeddata timeout')),5000))]);const presented=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('WebCodecs WebM presentation timeout')),5000);video.requestVideoFrameCallback(()=>{clearTimeout(timeout);resolve()})});await video.play();await presented;video.pause();const decoded=document.createElement('canvas');decoded.width=450;decoded.height=450;const decodedContext=decoded.getContext('2d',{willReadFrequently:true});decodedContext.drawImage(video,0,0);const pixels=colors.map((_,index)=>Array.from(decodedContext.getImageData((index%2)*225+112,Math.floor(index/2)*225+112,1,1).data.slice(0,3)));const error=colors.reduce((total,color,index)=>total+color.reduce((sum,value,channel)=>sum+Math.abs(value-pixels[index][channel]),0),0)/colors.length;URL.revokeObjectURL(video.src);video.remove();const data=new Uint8Array(buffer);let binary='';data.forEach(byte=>{binary+=String.fromCharCode(byte)});return JSON.stringify({ok:true,bytes:data.length,error,pixels,payload:btoa(binary)})}catch(error){return JSON.stringify({ok:false,error:error.message,stack:error.stack})}})()`));
-  if (!webCodecsCapture.ok || webCodecsCapture.error > 12) throw new Error(`WebCodecs capture did not preserve source colors (${JSON.stringify(webCodecsCapture)}).`);
+  const fidelity = webCodecsCapture.ok ? colorFidelity(sourceColors, webCodecsCapture.pixels) : null;
+  if (!webCodecsCapture.ok || fidelity.meanAbsoluteError > 4 || fidelity.channelAbsoluteError.some((value) => value > 6) || fidelity.channelBias.some((value) => Math.abs(value) > 6) || fidelity.maximumError > 12) throw new Error(`WebCodecs capture did not preserve source colors (${JSON.stringify({ capture: webCodecsCapture, fidelity })}).`);
   const webCodecsTrack = validateCaptureVideo(arrayBufferFor(Buffer.from(webCodecsCapture.payload, 'base64')));
-  if (webCodecsTrack.color?.matrix !== 1 || webCodecsTrack.color?.primaries !== 1) throw new Error(`WebCodecs capture did not declare BT.709 color (${JSON.stringify(webCodecsTrack)}).`);
-  console.log(`WebCodecs VP9 color error: ${webCodecsCapture.error.toFixed(1)} (${JSON.stringify(webCodecsTrack.color)})`);
+  await evaluate("HTMLVideoElement.prototype.requestVideoFrameCallback=window.__smokeVideoFrameCallback;delete window.__smokeVideoFrameCallback");
+  if (!isCoherentLimitedColor(webCodecsTrack.color)) throw new Error(`WebCodecs capture declared inconsistent color metadata (${JSON.stringify(webCodecsTrack)}).`);
+  console.log(`WebCodecs VP9 color fidelity: ${JSON.stringify(fidelity)} (${JSON.stringify(webCodecsTrack.color)})`);
   const encoderBenchmark = JSON.parse(await evaluate(`(async()=>{const canvas=document.createElement('canvas');canvas.width=450;canvas.height=450;const context=canvas.getContext('2d');const encoder=await createLiveCaptureEncoder();let maximumQueue=0;const started=performance.now();for(let frame=0;frame<300;frame+=1){while(!encoder.hasCapacity)await new Promise(resolve=>setTimeout(resolve,1));context.fillStyle='rgb('+(frame%256)+',96,128)';context.fillRect(0,0,8,8);encoder.encode(canvas,frame*33333,frame);maximumQueue=Math.max(maximumQueue,encoder.encodeQueueSize)}const buffer=await encoder.finalize();return JSON.stringify({elapsed:performance.now()-started,bytes:buffer.byteLength,maximumQueue})})()`));
   if (encoderBenchmark.elapsed > 10_000 || encoderBenchmark.maximumQueue > 4) throw new Error(`WebCodecs capture exceeded its performance budget (${JSON.stringify(encoderBenchmark)}).`);
   console.log(`WebCodecs encoded 300 frames in ${Math.round(encoderBenchmark.elapsed)}ms with queue <= ${encoderBenchmark.maximumQueue}.`);
