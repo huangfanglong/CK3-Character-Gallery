@@ -17,6 +17,11 @@ const CODEC_ID = 0x86;
 const VIDEO = 0xE0;
 const PIXEL_WIDTH = 0xB0;
 const PIXEL_HEIGHT = 0xBA;
+const COLOUR = 0x55B0;
+const MATRIX_COEFFICIENTS = 0x55B1;
+const RANGE = 0x55B9;
+const TRANSFER_CHARACTERISTICS = 0x55BA;
+const PRIMARIES = 0x55BB;
 const CLUSTER = 0x1F43B675;
 
 function readVint(bytes, offset, stripMarker) {
@@ -68,6 +73,15 @@ function inspectTrack(bytes, start, end) {
       readElements(bytes, dataStart, dataEnd, (videoId, videoStart, videoEnd) => {
         if (videoId === PIXEL_WIDTH) track.width = readUnsigned(bytes, videoStart, videoEnd);
         if (videoId === PIXEL_HEIGHT) track.height = readUnsigned(bytes, videoStart, videoEnd);
+        if (videoId === COLOUR) {
+          track.color = {};
+          readElements(bytes, videoStart, videoEnd, (colorId, colorStart, colorEnd) => {
+            if (colorId === MATRIX_COEFFICIENTS) track.color.matrix = readUnsigned(bytes, colorStart, colorEnd);
+            if (colorId === RANGE) track.color.range = readUnsigned(bytes, colorStart, colorEnd);
+            if (colorId === TRANSFER_CHARACTERISTICS) track.color.transfer = readUnsigned(bytes, colorStart, colorEnd);
+            if (colorId === PRIMARIES) track.color.primaries = readUnsigned(bytes, colorStart, colorEnd);
+          });
+        }
       });
     }
   });
@@ -111,6 +125,7 @@ function validateCaptureVideo(video) {
   if (videoTrack.width !== CAPTURE_SIZE || videoTrack.height !== CAPTURE_SIZE) {
     throw new Error(`Captured video must be ${CAPTURE_SIZE} x ${CAPTURE_SIZE}.`);
   }
+  return videoTrack;
 }
 
 async function saveCaptureVideo(directory, video, timestamp = Date.now()) {

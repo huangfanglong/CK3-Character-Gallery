@@ -9,7 +9,7 @@ async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   if (!character || state.preview) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, canvas: null, canvasStream: null, recorder: null, recordingDone: null, chunks: [] };
+  state.captureSession = { sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, canvas: null, encoder: null, recordingError: null };
   renderLiveCaptureModal();
   try {
     state.captureSession.sources = await desktop.listCaptureSources();
@@ -41,10 +41,11 @@ function renderLiveCaptureModal() {
   const status = capture.phase === 'loading' ? 'Looking for an open Crusader Kings III window.'
     : capture.phase === 'empty' ? 'No visible Crusader Kings III window was found. Start CK3 in borderless or windowed mode, then refresh.'
       : capture.phase === 'error' ? capture.error
-        : capture.phase === 'recording' ? `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`
+        : capture.phase === 'starting-recording' ? 'Starting the high-quality video encoder.'
+          : capture.phase === 'recording' ? `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`
           : capture.phase === 'ready' ? `Frame the portrait, then press ${capture.shortcut} in CK3 to start recording.`
             : capture.error || 'Choose the visible Crusader Kings III window to capture.';
-  const preview = capture.phase === 'ready' || capture.phase === 'recording'
+  const preview = ['ready', 'starting-recording', 'recording'].includes(capture.phase)
     ? '<div class="capture-preview" id="capture-preview"><video id="capture-video" autoplay muted playsinline></video><div class="capture-selection" id="capture-selection"></div></div>'
     : `<div class="capture-sources">${sources || '<p class="variant-empty">No CK3 window available.</p>'}</div>`;
   const primary = capture.phase === 'empty' ? '<button class="outline-button" data-action="capture-refresh">Refresh</button>'
@@ -137,69 +138,87 @@ function initializeLiveCapturePreview() {
 
 function drawLiveCaptureFrame(capture) {
   const video = document.querySelector('#capture-video');
-  if (!capture || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-  if (!capture.crop) return;
+  if (!capture || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !capture.crop) return false;
   const context = capture.canvas.getContext('2d'); const crop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
   context.drawImage(video, crop.x, crop.y, crop.size, crop.size, 0, 0, 450, 450);
+  return true;
 }
 
-function supportedCaptureMimeType() {
-  return CAPTURE_MIME_TYPES
-    .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-}
-
-function startLiveCaptureRecording(capture) {
-  const mimeType = supportedCaptureMimeType();
-  if (!mimeType) throw new Error('This Electron build cannot record WebM video.');
+async function startLiveCaptureRecording(capture) {
   capture.canvas = document.createElement('canvas');
   capture.canvas.width = 450;
   capture.canvas.height = 450;
-  capture.canvasStream = capture.canvas.captureStream(LIVE_CAPTURE_FPS);
-  capture.chunks = [];
-  capture.recorder = new MediaRecorder(capture.canvasStream, { mimeType, videoBitsPerSecond: LIVE_CAPTURE_VIDEO_BITRATE });
+  capture.encoder = await createLiveCaptureEncoder();
   capture.recordingError = null;
-  capture.recordingDone = new Promise((resolve) => {
-    capture.recorder.addEventListener('dataavailable', (event) => {
-      if (event.data.size > 0) capture.chunks.push(event.data);
-    });
-    capture.recorder.addEventListener('error', () => {
-      capture.recordingError = new Error('WebM recording failed.');
-      resolve();
-      if (state.captureSession === capture && capture.phase === 'recording') void cancelLiveCapture(capture.recordingError.message);
-    }, { once: true });
-    capture.recorder.addEventListener('stop', resolve, { once: true });
-  });
-  capture.recorder.start(1_000);
-  drawLiveCaptureFrame(capture);
+  if (!drawLiveCaptureFrame(capture)) {
+    capture.encoder.close();
+    capture.encoder = null;
+    throw new Error('Wait for the CK3 preview to finish loading before recording.');
+  }
+  capture.encoder.encode(capture.canvas, 0, 0);
   capture.frames = 1;
+  capture.encodedFrames = 1;
+  capture.startedAt = performance.now();
+  capture.lastTimestamp = 0;
   capture.timer = setInterval(() => {
-    drawLiveCaptureFrame(capture);
+    if (capture.encoder.hasCapacity) {
+      try {
+        if (drawLiveCaptureFrame(capture)) {
+          const elapsedTimestamp = Math.round((performance.now() - capture.startedAt) * 1_000);
+          const timestamp = Math.max(elapsedTimestamp, capture.lastTimestamp + Math.round(1_000_000 / LIVE_CAPTURE_FPS));
+          capture.encoder.encode(capture.canvas, timestamp, capture.frames);
+          capture.lastTimestamp = timestamp;
+          capture.encodedFrames += 1;
+        }
+      } catch (error) {
+        capture.recordingError = error;
+        if (state.captureSession === capture && capture.phase === 'recording') void cancelLiveCapture('WebM recording failed.');
+        return;
+      }
+    }
     capture.frames += 1;
     const status = document.querySelector('#capture-status');
-    if (status) status.textContent = `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`;
-    if (capture.frames >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
+    if (status && capture.phase === 'recording') status.textContent = `Recording ${capture.frames}/${LIVE_CAPTURE_MAX_FRAMES} frames. Press ${capture.shortcut} in CK3 to stop.`;
+    if (capture.phase === 'recording' && capture.frames >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
   }, 1_000 / LIVE_CAPTURE_FPS);
 }
 
 async function stopLiveCaptureRecording(capture) {
   if (capture?.timer) clearInterval(capture.timer);
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
-  if (capture?.recorder?.state === 'recording') capture.recorder.stop();
-  if (capture?.recordingDone) await capture.recordingDone;
-  capture.recordingDone = null;
-  if (capture?.recordingError) throw capture.recordingError;
-  capture?.canvasStream?.getTracks().forEach((track) => track.stop());
-  return capture?.chunks?.length ? new Blob(capture.chunks, { type: capture.recorder.mimeType }) : null;
+  if (capture?.recordingError) {
+    capture.encoder?.close();
+    capture.encoder = null;
+    throw capture.recordingError;
+  }
+  if (!capture?.encoder || !capture.encodedFrames) return null;
+  try { return await capture.encoder.finalize(); }
+  finally { capture.encoder = null; }
 }
 
-function toggleLiveCapture(sessionId) {
+function discardLiveCaptureRecording(capture) {
+  if (capture?.timer) clearInterval(capture.timer);
+  if (capture?.durationTimer) clearTimeout(capture.durationTimer);
+  capture?.encoder?.close();
+  if (capture) capture.encoder = null;
+}
+
+async function toggleLiveCapture(sessionId) {
   const capture = state.captureSession;
   if (!capture || capture.sessionId !== sessionId) return;
   if (capture.phase === 'ready') {
-    try { startLiveCaptureRecording(capture); }
-    catch (error) { void cancelLiveCapture(readableError(error, 'WebM recording could not start.')); return; }
+    capture.phase = 'starting-recording';
+    try { await startLiveCaptureRecording(capture); }
+    catch (error) {
+      if (state.captureSession === capture && capture.phase === 'starting-recording') {
+        capture.phase = 'ready';
+        showToast(readableError(error, 'WebM recording could not start.'), 'info');
+      }
+      return;
+    }
+    if (state.captureSession !== capture || capture.phase !== 'starting-recording') { capture.encoder?.close(); return; }
     capture.phase = 'recording';
     updateLiveCaptureRecordingUi(capture);
     capture.durationTimer = setTimeout(() => { if (state.captureSession === capture && capture.phase === 'recording') void finishLiveCapture('Maximum recording duration reached.'); }, LIVE_CAPTURE_MAX_DURATION_MS);
@@ -221,20 +240,27 @@ async function finishLiveCapture(reason = '') {
   capture.phase = 'finishing';
   try {
     const video = await stopLiveCaptureRecording(capture);
+    if (state.captureSession !== capture || capture.phase !== 'finishing') return;
     if (!video) throw new Error('Live portrait capture did not contain any video frames.');
-    const selected = await desktop.finishCapture(capture.sessionId, character.id, await video.arrayBuffer());
+    const selected = await desktop.finishCapture(capture.sessionId, character.id, video);
+    if (state.captureSession !== capture || capture.phase !== 'finishing') {
+      await desktop.deleteImage(selected.path).catch(() => {});
+      return;
+    }
     stopLiveCaptureStream(capture);
     state.captureSession = null; state.modal = null; await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true);
   }
-  catch (error) { await cancelLiveCapture(readableError(error, 'The live portrait could not be saved.')); }
+  catch (error) {
+    if (state.captureSession === capture) await cancelLiveCapture(readableError(error, 'The live portrait could not be saved.'));
+  }
 }
 
-function stopLiveCaptureStream(capture) { if (capture?.timer) clearInterval(capture.timer); if (capture?.durationTimer) clearTimeout(capture.durationTimer); capture?.canvasStream?.getTracks().forEach((track) => track.stop()); capture?.stream?.getTracks().forEach((track) => track.stop()); }
+function stopLiveCaptureStream(capture) { if (capture?.timer) clearInterval(capture.timer); if (capture?.durationTimer) clearTimeout(capture.durationTimer); capture?.stream?.getTracks().forEach((track) => track.stop()); }
 async function releaseLiveCapture() {
   const capture = state.captureSession;
   if (!capture) return;
   capture.phase = 'releasing';
-  await stopLiveCaptureRecording(capture).catch(() => {});
+  discardLiveCaptureRecording(capture);
   stopLiveCaptureStream(capture);
   if (capture.sessionId) await desktop?.releaseCapture(capture.sessionId).catch(() => {});
 }

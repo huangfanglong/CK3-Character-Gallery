@@ -9,6 +9,7 @@ const requiredFiles = [
   path.join('resources', 'licenses', 'gifenc LICENSE.txt'),
   path.join('resources', 'licenses', 'gifuct-js LICENSE.txt'),
   path.join('resources', 'licenses', 'js-binary-schema-parser LICENSE.txt'),
+  path.join('resources', 'licenses', 'webm-muxer LICENSE.txt'),
 ];
 const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(outputDirectory, file)));
 

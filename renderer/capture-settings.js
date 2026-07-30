@@ -2,4 +2,3 @@ const LIVE_CAPTURE_FPS = 30;
 const LIVE_CAPTURE_MAX_DURATION_MS = 25_000;
 const LIVE_CAPTURE_MAX_FRAMES = LIVE_CAPTURE_FPS * (LIVE_CAPTURE_MAX_DURATION_MS / 1_000);
 const LIVE_CAPTURE_VIDEO_BITRATE = 6_000_000;
-const CAPTURE_MIME_TYPES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
