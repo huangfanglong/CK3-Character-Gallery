@@ -4,19 +4,29 @@ const { GIFEncoder, applyPalette, quantize } = require('gifenc');
 
 const MAX_PORTRAIT_BYTES = 50 * 1024 * 1024;
 const MAX_PORTRAIT_FRAMES = 300;
-const MAX_AGGREGATE_FRAME_PIXELS = 100_000_000;
+const MAX_LOGICAL_FRAME_PIXELS = 4_000_000;
+const MAX_AGGREGATE_FRAME_PIXELS = 20_000_000;
 const PALETTE_SAMPLE_FRAMES = 24;
 
 function portraitLimits(options = {}) {
   return {
     maxBytes: options.maxBytes ?? MAX_PORTRAIT_BYTES,
     maxFrames: options.maxFrames ?? MAX_PORTRAIT_FRAMES,
+    maxLogicalPixels: options.maxLogicalPixels ?? MAX_LOGICAL_FRAME_PIXELS,
     maxAggregatePixels: options.maxAggregatePixels ?? MAX_AGGREGATE_FRAME_PIXELS,
   };
 }
 
-async function portraitBuffer(input) {
-  return typeof input === 'string' ? fs.readFile(input) : Buffer.from(input);
+async function portraitBuffer(input, maxBytes) {
+  if (typeof input === 'string') {
+    const metadata = await fs.stat(input);
+    if (metadata.size > maxBytes) throw new Error('Animated portrait exceeds the 50 MB file-size limit.');
+    return fs.readFile(input);
+  }
+  if (Number(input?.byteLength ?? input?.length) > maxBytes) {
+    throw new Error('Animated portrait exceeds the 50 MB file-size limit.');
+  }
+  return Buffer.from(input);
 }
 
 function arrayBufferFor(buffer) {
@@ -31,7 +41,7 @@ function gifLoopCount(parsed) {
 
 async function inspectPortraitSource(input, options = {}) {
   const limits = portraitLimits(options);
-  const buffer = await portraitBuffer(input);
+  const buffer = await portraitBuffer(input, limits.maxBytes);
   if (buffer.length > limits.maxBytes) throw new Error('Animated portrait exceeds the 50 MB file-size limit.');
   if (buffer.length < 6 || !/^GIF8[79]a$/.test(buffer.subarray(0, 6).toString('ascii'))) {
     throw new Error('The selected file is not a valid GIF image.');
@@ -44,11 +54,24 @@ async function inspectPortraitSource(input, options = {}) {
   }
   const width = Number(parsed.lsd.width);
   const height = Number(parsed.lsd.height);
-  const frameCount = parsed.frames.reduce((count, frame) => count + (frame.image ? 1 : 0), 0);
+  const imageFrames = parsed.frames.filter((frame) => frame.image);
+  const frameCount = imageFrames.length;
   if (!width || !height || !frameCount) throw new Error('The portrait dimensions or frames could not be read.');
+  if (width * height > limits.maxLogicalPixels) throw new Error('Animated portrait dimensions exceed the logical frame pixel limit.');
   if (frameCount > limits.maxFrames) throw new Error('Animated portrait exceeds the 300 frames limit.');
   if (width * height * frameCount > limits.maxAggregatePixels) {
-    throw new Error('Animated portrait exceeds the 100 million aggregate frame pixel limit.');
+    throw new Error('Animated portrait exceeds the aggregate frame pixel limit.');
+  }
+  let descriptorPixels = 0;
+  for (const frame of imageFrames) {
+    const descriptor = frame.image.descriptor;
+    const values = [descriptor.left, descriptor.top, descriptor.width, descriptor.height].map(Number);
+    const [left, top, frameWidth, frameHeight] = values;
+    descriptorPixels += frameWidth * frameHeight;
+    if (!values.every(Number.isSafeInteger) || left < 0 || top < 0 || frameWidth < 1 || frameHeight < 1
+      || left + frameWidth > width || top + frameHeight > height || descriptorPixels > limits.maxAggregatePixels) {
+      throw new Error('Animated portrait frame dimensions are invalid.');
+    }
   }
   let frames;
   try {
@@ -94,18 +117,19 @@ function drawFramePatch(canvas, width, frame) {
   }
 }
 
-function* compositedFrames(parsed, width, height) {
-  const frames = decompressFrames(parsed, true);
+function* compositedFrames(frames, sourceFrames, width, height) {
   const canvas = new Uint8ClampedArray(width * height * 4);
   let previous = null;
   let restoreCanvas = null;
-  for (const frame of frames) {
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index];
     if (previous?.disposalType === 2) clearFrameRegion(canvas, width, previous.dims);
     if (previous?.disposalType === 3 && restoreCanvas) canvas.set(restoreCanvas);
     restoreCanvas = frame.disposalType === 3 ? canvas.slice() : null;
     drawFramePatch(canvas, width, frame);
     previous = frame;
-    yield { pixels: canvas.slice(), delay: frame.delay };
+    const rawDelay = sourceFrames[index]?.gce?.delay;
+    yield { pixels: canvas.slice(), delay: Number.isInteger(rawDelay) ? rawDelay * 10 : frame.delay };
   }
 }
 
@@ -151,10 +175,12 @@ async function processPortraitCrop(input, crop, options = {}) {
   const source = await inspectPortraitSource(input, options);
   const region = normalizedCrop(crop, source.width, source.height);
   const sampleIndexes = paletteSampleIndexes(source.frames);
+  const decodedFrames = decompressFrames(source.parsed, true);
+  const sourceFrames = source.parsed.frames.filter((frame) => frame.image);
   const samples = [];
   let transparent = false;
   let index = 0;
-  for (const frame of compositedFrames(source.parsed, source.width, source.height)) {
+  for (const frame of compositedFrames(decodedFrames, sourceFrames, source.width, source.height)) {
     const rgba = resizedCrop(frame.pixels, source.width, region);
     transparent ||= hasTransparency(rgba);
     if (sampleIndexes.has(index)) samples.push(rgba);
@@ -171,7 +197,7 @@ async function processPortraitCrop(input, crop, options = {}) {
   const transparentIndex = transparent ? palette.findIndex((color) => color[3] === 0) : -1;
   const gif = GIFEncoder();
   index = 0;
-  for (const frame of compositedFrames(source.parsed, source.width, source.height)) {
+  for (const frame of compositedFrames(decodedFrames, sourceFrames, source.width, source.height)) {
     const rgba = resizedCrop(frame.pixels, source.width, region);
     const indexed = applyPalette(rgba, palette, format);
     gif.writeFrame(indexed, 450, 450, {
@@ -180,7 +206,7 @@ async function processPortraitCrop(input, crop, options = {}) {
       repeat: source.loop,
       transparent: transparentIndex >= 0,
       transparentIndex: transparentIndex >= 0 ? transparentIndex : undefined,
-      dispose: 1,
+      dispose: 2,
     });
     index += 1;
   }
@@ -190,6 +216,7 @@ async function processPortraitCrop(input, crop, options = {}) {
 
 module.exports = {
   MAX_AGGREGATE_FRAME_PIXELS,
+  MAX_LOGICAL_FRAME_PIXELS,
   MAX_PORTRAIT_BYTES,
   MAX_PORTRAIT_FRAMES,
   PALETTE_SAMPLE_FRAMES,

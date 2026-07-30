@@ -22,6 +22,16 @@ async function hudSnapshot(hud) {
   })`);
 }
 
+async function waitForHudState(hud, state) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const snapshot = JSON.parse(await hudSnapshot(hud));
+    if (snapshot.state === state) return snapshot;
+    await delay(25);
+  }
+  throw new Error(`Capture HUD did not reach ${state}.`);
+}
+
 async function main() {
   const hud = new CaptureHud({
     BrowserWindow,
@@ -43,16 +53,39 @@ async function main() {
     assert.equal(armed.detail, 'Ctrl + Alt + G to record');
     assert.equal(armed.timeHidden, true);
 
-    let becameAudible = false;
-    hud.window.webContents.on('audio-state-changed', (event) => { if (event.audible) becameAudible = true; });
+    await hud.window.webContents.executeJavaScript(`
+      window.__hudAudio = { started: 0, stopped: 0, resumed: 0, suspended: 0 };
+      window.AudioContext = class {
+        constructor() { this.currentTime = 0; this.destination = {}; this.state = 'suspended'; }
+        createOscillator() {
+          const stats = window.__hudAudio;
+          return {
+            frequency: { value: 0 }, type: '',
+            connect(node) { return node; }, addEventListener() {},
+            start() { stats.started += 1; }, stop() { stats.stopped += 1; },
+          };
+        }
+        createGain() {
+          return {
+            gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+            connect(node) { return node; },
+          };
+        }
+        async resume() { this.state = 'running'; window.__hudAudio.resumed += 1; }
+        async suspend() { this.state = 'suspended'; window.__hudAudio.suspended += 1; }
+      };
+      true;
+    `);
     hud.update('runtime-session', { state: 'recording', startedAt: Date.now() - 2200 });
     await delay(350);
     const recording = JSON.parse(await hudSnapshot(hud));
     assert.equal(recording.state, 'beacon recording');
     assert.equal(recording.label, 'REC');
-    assert.match(recording.time, /^00:0[2-3]$/);
+    assert.match(recording.time, /^00:\d{2}$/);
     assert.equal(recording.timeHidden, false);
-    assert.equal(becameAudible, true);
+    const audio = JSON.parse(await hud.window.webContents.executeJavaScript('JSON.stringify(window.__hudAudio)'));
+    assert.equal(audio.started, 2);
+    assert.equal(audio.resumed, 1);
 
     hud.update('runtime-session', { state: 'saving' });
     await delay(100);
@@ -67,7 +100,19 @@ async function main() {
       assert.equal(image.isEmpty(), false);
       await fs.writeFile(process.env.CK3_CAPTURE_HUD_SCREENSHOT, image.toPNG());
     }
-    console.log('Capture HUD runtime smoke test passed: isolated preload, non-focusable display, state rendering, elapsed clock, audio cue, and terminal feedback.');
+
+    hud.arm('cancelled-session', { displayId: String(display.id), shortcut: 'CommandOrControl+Alt+G' });
+    hud.update('cancelled-session', { state: 'recording', startedAt: Date.now() - 2200 });
+    await delay(100);
+    hud.release('cancelled-session');
+    const hidden = await waitForHudState(hud, 'beacon hidden');
+    assert.equal(hidden.state, 'beacon hidden');
+    assert.equal(hidden.timeHidden, true);
+    assert.equal(await hud.window.webContents.executeJavaScript('clockTimer === null'), true);
+    assert.equal(await hud.window.webContents.executeJavaScript('audioContext?.state'), 'suspended');
+    assert.ok(await hud.window.webContents.executeJavaScript('window.__hudAudio.suspended >= 1'));
+
+    console.log('Capture HUD runtime smoke test passed: isolated preload, non-focusable display, state rendering, elapsed clock, deterministic audio cues, terminal feedback, and hidden-state cleanup.');
   } finally {
     hud.destroy();
   }

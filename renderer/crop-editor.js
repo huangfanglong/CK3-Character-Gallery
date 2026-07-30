@@ -1,6 +1,10 @@
 function showCropModal(source) {
   state.pendingPortraitSource = null;
+  const characterId = source.targetCharacterId || getActiveCharacter()?.id || null;
+  const galleryName = source.targetGalleryName || state.activeGallery;
   state.cropSession = {
+    characterId,
+    galleryName,
     dataUrl: source.dataUrl,
     sourceId: source.sourceId || null,
     format: source.format || null,
@@ -107,10 +111,21 @@ function applyCropTransform() {
 }
 
 async function saveCroppedPortrait() {
-  const character = getActiveCharacter();
   const session = state.cropSession;
-  if (!character || !session) return;
+  if (!session || session.saving) return;
+  const character = state.galleries.find((gallery) => gallery.name === session.galleryName)?.characters.find((item) => item.id === session.characterId);
+  if (!character) {
+    releaseCropSource();
+    state.cropSession = null;
+    state.modal = null;
+    render('modal');
+    return showToast('The selected character is no longer available.', 'info');
+  }
   const scale = session.baseScale * session.zoom;
+  const modal = state.modal;
+  const saveButton = document.querySelector('[data-action="save-crop"]');
+  session.saving = true;
+  if (saveButton) { saveButton.disabled = true; saveButton.textContent = 'Processing portrait'; }
   try {
     const selected = await desktop.saveCroppedImage(character.id, {
       dataUrl: session.dataUrl,
@@ -119,10 +134,22 @@ async function saveCroppedPortrait() {
       y: -session.offsetY / scale,
       size: session.viewport / scale,
     });
+    if (state.cropSession !== session || state.modal !== modal) {
+      if (state.cropSession === session) state.cropSession = null;
+      await desktop.deleteImage(selected.path).catch(() => {});
+      return;
+    }
     state.modal = null;
     state.cropSession = null;
     await appendPortrait(character, selected, 'Clipboard portrait added.', true);
-  } catch (error) { showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info'); }
+  } catch (error) {
+    if (state.cropSession === session && state.modal === modal) showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info');
+  } finally {
+    if (state.cropSession === session && state.modal === modal) {
+      session.saving = false;
+      if (saveButton?.isConnected) { saveButton.disabled = false; saveButton.innerHTML = `Use portrait ${icon('check')}`; }
+    }
+  }
 }
 
 function releaseCropSource(source = null) {

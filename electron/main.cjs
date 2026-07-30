@@ -1,11 +1,15 @@
 const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
 const crypto = require('node:crypto');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
-const { MAX_PORTRAIT_BYTES, inspectPortraitSource, processPortraitCrop } = require('./portrait-processor.cjs');
+const { MAX_PORTRAIT_BYTES } = require('./portrait-processor.cjs');
+const { PortraitSourceManager } = require('./portrait-source-manager.cjs');
+const { PortraitWorkerClient } = require('./portrait-worker-client.cjs');
 const { saveCaptureVideo } = require('./capture-video.cjs');
 const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 const { CaptureSessionManager } = require('./capture-session-manager.cjs');
@@ -22,7 +26,9 @@ const windowIconPath = isDev
 const testDataDirectory = isDev ? process.env.CK3_GALLERY_TEST_DATA_DIRECTORY : '';
 let lastExportParent = null;
 let archiveRecoveryWarning = null;
-const portraitSources = new Map();
+const portraitWorker = new PortraitWorkerClient({ workerPath: path.join(__dirname, 'portrait-worker-thread.cjs') });
+const portraitSources = new PortraitSourceManager({ worker: portraitWorker, createId: crypto.randomUUID });
+const portraitPreviewFiles = new Map();
 const captureSources = new Map();
 const captureSessions = new CaptureSessionManager(globalShortcut, crypto.randomUUID);
 let captureHud = null;
@@ -61,26 +67,56 @@ function readClipboardImage() {
   const gifFormat = clipboard.availableFormats().find((format) => /^(image\/gif|gif)$/i.test(format));
   if (gifFormat) {
     const gif = clipboard.readBuffer(gifFormat);
+    if (gif.length > MAX_PORTRAIT_BYTES) return { error: 'Animated portrait exceeds the 50 MB file-size limit.' };
     if (gif.length) return { gif };
   }
   const image = clipboard.readImage();
   return image.isEmpty() ? null : { image };
 }
 
-async function prepareGifSource(input, previewUrl) {
-  const info = await inspectPortraitSource(input);
-  if (info.format !== 'gif') throw new Error('The selected file is not a valid GIF image.');
-  const sourceId = crypto.randomUUID();
-  portraitSources.set(sourceId, input);
-  return {
-    sourceId,
-    dataUrl: previewUrl,
-    format: info.format,
-    animated: info.animated,
-    width: info.width,
-    height: info.height,
-    frames: info.frames,
-  };
+function removePortraitPreviewFiles(sourceIds) {
+  for (const sourceId of sourceIds) {
+    const previewPath = portraitPreviewFiles.get(sourceId);
+    if (!previewPath) continue;
+    portraitPreviewFiles.delete(sourceId);
+    try { fsSync.rmSync(previewPath, { force: true }); }
+    catch (error) { console.error('Failed to remove staged portrait preview:', error); }
+  }
+}
+
+async function releasePortraitSource(ownerWebContentsId, sourceId) {
+  const released = await portraitSources.release(ownerWebContentsId, sourceId);
+  if (released) removePortraitPreviewFiles([sourceId]);
+  return released;
+}
+
+async function releasePortraitSourcesByOwner(ownerWebContentsId) {
+  const sourceIds = portraitSources.sourceIdsForOwner(ownerWebContentsId);
+  await portraitSources.releaseByOwner(ownerWebContentsId);
+  removePortraitPreviewFiles(sourceIds);
+}
+
+async function prepareGifSource(ownerWebContentsId, input) {
+  await releasePortraitSourcesByOwner(ownerWebContentsId);
+  const info = await portraitSources.prepare(ownerWebContentsId, input);
+  try {
+    if (info.format !== 'gif') throw new Error('The selected file is not a valid GIF image.');
+    const previewPath = path.join(os.tmpdir(), `ck3-character-gallery-${process.pid}-${info.sourceId}.gif`);
+    await fs.writeFile(previewPath, portraitSources.inputFor(ownerWebContentsId, info.sourceId), { flag: 'wx' });
+    portraitPreviewFiles.set(info.sourceId, previewPath);
+    return {
+      sourceId: info.sourceId,
+      dataUrl: pathToFileURL(previewPath).toString(),
+      format: info.format,
+      animated: info.animated,
+      width: info.width,
+      height: info.height,
+      frames: info.frames,
+    };
+  } catch (error) {
+    await releasePortraitSource(ownerWebContentsId, info.sourceId).catch(() => {});
+    throw error;
+  }
 }
 
 function bufferFromDataUrl(value) {
@@ -124,11 +160,12 @@ async function createWindow() {
   });
   mainWindowWebContentsId = window.webContents.id;
   const releaseOwnedCaptures = () => releaseCaptureSessionsByOwner(window.webContents.id);
+  const releaseOwnedPortraitSources = () => { void releasePortraitSourcesByOwner(window.webContents.id).catch(() => {}); };
   window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) releaseOwnedCaptures();
+    if (isMainFrame && !isInPlace) { releaseOwnedCaptures(); releaseOwnedPortraitSources(); }
   });
-  window.webContents.on('render-process-gone', releaseOwnedCaptures);
-  window.webContents.once('destroyed', releaseOwnedCaptures);
+  window.webContents.on('render-process-gone', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
+  window.webContents.once('destroyed', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.once('closed', () => {
@@ -200,7 +237,7 @@ ipcMain.handle('library:save', async (_event, galleries) => {
   return saveArchive(dataDirectory(), galleries);
 });
 
-ipcMain.handle('library:choose-image', async (_event, characterId) => {
+ipcMain.handle('library:choose-image', async (event, characterId) => {
   const directory = imageDirectory(dataDirectory(), characterId);
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
@@ -209,21 +246,22 @@ ipcMain.handle('library:choose-image', async (_event, characterId) => {
   if (result.canceled) return null;
   const source = result.filePaths[0];
   const extension = path.extname(source).toLowerCase() || '.png';
-  if (extension === '.gif') return prepareGifSource(source, pathToFileURL(source).toString());
+  if (extension === '.gif') return prepareGifSource(event.sender.id, source);
   await fs.mkdir(directory, { recursive: true });
   const destination = path.join(directory, `${Date.now()}${extension}`);
   await fs.copyFile(source, destination);
   return { path: destination, url: pathToFileURL(destination).toString() };
 });
 
-ipcMain.handle('library:read-clipboard-image', async () => {
+ipcMain.handle('library:read-clipboard-image', async (event) => {
   const source = readClipboardImage();
   if (!source) return null;
+  if (source.error) throw new Error(source.error);
   if (source.filePath && path.extname(source.filePath).toLowerCase() === '.gif') {
-    return prepareGifSource(source.filePath, pathToFileURL(source.filePath).toString());
+    return prepareGifSource(event.sender.id, source.filePath);
   }
   if (source.gif) {
-    return prepareGifSource(source.gif, `data:image/gif;base64,${source.gif.toString('base64')}`);
+    return prepareGifSource(event.sender.id, source.gif);
   }
   const image = source.image || nativeImage.createFromPath(source.filePath);
   if (image.isEmpty()) return null;
@@ -231,7 +269,7 @@ ipcMain.handle('library:read-clipboard-image', async () => {
   return { dataUrl: image.toDataURL(), width: size.width, height: size.height, animated: false };
 });
 
-ipcMain.handle('library:read-image-path', (_event, value) => {
+ipcMain.handle('library:read-image-path', (event, value) => {
   if (typeof value !== 'string' || !value.trim()) return null;
   const firstValue = value.split(/\r?\n/).find((line) => line && !line.startsWith('#'))?.trim();
   if (!firstValue) return null;
@@ -243,7 +281,7 @@ ipcMain.handle('library:read-image-path', (_event, value) => {
   }
   if (!IMAGE_FILE_PATTERN.test(imagePath)) return null;
   if (path.extname(imagePath).toLowerCase() === '.gif') {
-    return prepareGifSource(imagePath, pathToFileURL(imagePath).toString());
+    return prepareGifSource(event.sender.id, imagePath);
   }
   const image = nativeImage.createFromPath(imagePath);
   if (image.isEmpty()) return null;
@@ -251,20 +289,27 @@ ipcMain.handle('library:read-image-path', (_event, value) => {
   return { dataUrl: image.toDataURL(), width: size.width, height: size.height };
 });
 
-ipcMain.handle('library:prepare-image-data', async (_event, dataUrl) => {
+ipcMain.handle('library:prepare-image-data', async (event, dataUrl) => {
   const input = bufferFromDataUrl(dataUrl);
-  return prepareGifSource(input, dataUrl);
+  return prepareGifSource(event.sender.id, input);
 });
 
-ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload) => {
+ipcMain.handle('library:save-cropped-image', async (event, characterId, payload) => {
   const directory = imageDirectory(dataDirectory(), characterId);
-  if (typeof payload.sourceId === 'string' && portraitSources.has(payload.sourceId)) {
-    const input = portraitSources.get(payload.sourceId);
-    const processed = await processPortraitCrop(input, payload);
-    await fs.mkdir(directory, { recursive: true });
+  if (payload?.sourceId !== null && payload?.sourceId !== undefined && payload.sourceId !== '') {
+    if (typeof payload.sourceId !== 'string') throw new Error('The animated portrait source is invalid.');
+    const processed = await portraitSources.process(event.sender.id, payload.sourceId, payload);
     const destination = path.join(directory, `${Date.now()}${processed.extension}`);
-    await fs.writeFile(destination, processed.data);
-    portraitSources.delete(payload.sourceId);
+    const persisted = await portraitSources.persist(event.sender.id, payload.sourceId, async () => {
+      await fs.mkdir(directory, { recursive: true });
+      await fs.writeFile(destination, processed.data);
+      return destination;
+    });
+    if (persisted.cancelled) {
+      await fs.rm(destination, { force: true }).catch(() => {});
+      throw new Error('Animated portrait processing was cancelled.');
+    }
+    await releasePortraitSource(event.sender.id, payload.sourceId);
     return { path: destination, url: pathToFileURL(destination).toString() };
   }
   const image = nativeImage.createFromDataURL(payload.dataUrl);
@@ -284,7 +329,10 @@ ipcMain.handle('library:save-cropped-image', async (_event, characterId, payload
   return { path: destination, url: pathToFileURL(destination).toString() };
 });
 
-ipcMain.handle('library:release-image-source', (_event, sourceId) => portraitSources.delete(sourceId));
+ipcMain.handle('library:release-image-source', (event, sourceId) => {
+  if (typeof sourceId !== 'string' || !sourceId) return false;
+  return releasePortraitSource(event.sender.id, sourceId);
+});
 
 ipcMain.handle('capture:list-sources', async (event) => {
   requireTrustedCaptureSender(event);
@@ -474,6 +522,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  removePortraitPreviewFiles([...portraitPreviewFiles.keys()]);
+  void portraitWorker.destroy().catch(() => {});
   captureHud?.destroy();
   captureHud = null;
   globalShortcut.unregisterAll();

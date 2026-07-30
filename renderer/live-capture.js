@@ -12,7 +12,7 @@ async function showLiveCaptureModal() {
   const gallery = getGallery();
   if (!character || !gallery || state.preview || state.captureSession) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { characterId: character.id, galleryName: gallery.name, sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, recordingCrop: null, canvas: null, encoder: null, recordingError: null, drawMode: false };
+  state.captureSession = { characterId: character.id, galleryName: gallery.name, sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, recordingCrop: null, canvas: null, outputCanvas: null, outputFrameRequest: null, previewResizeObserver: null, previewResizeListener: null, previewResources: null, encoder: null, recordingError: null, drawMode: false };
   const capture = state.captureSession;
   renderLiveCaptureModal();
   try {
@@ -273,9 +273,13 @@ function initializeLiveCapturePreview() {
   const selection = document.querySelector('#capture-selection');
   const output = document.querySelector('#capture-output');
   if (!capture || !video || !preview || !selection || !output || video.dataset.bound) return;
+  cleanupLiveCapturePreview(capture);
   video.dataset.bound = 'true';
   video.srcObject = capture.stream;
   capture.video = video;
+  capture.outputCanvas = output;
+  const previewResources = { video, outputFrameRequest: null, resizeObserver: null, resizeListener: null };
+  capture.previewResources = previewResources;
   const displayGeometry = () => {
     const videoRect = video.getBoundingClientRect();
     return { videoRect, display: displayRectForVideo(videoRect.width, videoRect.height, video.videoWidth, video.videoHeight) };
@@ -303,7 +307,9 @@ function initializeLiveCapturePreview() {
   else video.addEventListener('loadedmetadata', loadCrop, { once: true });
   const resizeObserver = new ResizeObserver(apply);
   resizeObserver.observe(video);
-  video.addEventListener('resize', () => {
+  previewResources.resizeObserver = resizeObserver;
+  capture.previewResizeObserver = resizeObserver;
+  const resizeListener = () => {
     if (!video.videoWidth || !video.videoHeight) return;
     if (capture.phase === 'recording' || capture.phase === 'finishing' || capture.phase === 'completing') {
       void cancelLiveCapture('CK3 capture resolution changed.');
@@ -316,22 +322,29 @@ function initializeLiveCapturePreview() {
     capture.sourceWidth = video.videoWidth;
     capture.sourceHeight = video.videoHeight;
     apply();
-  });
+  };
+  previewResources.resizeListener = resizeListener;
+  capture.previewResizeListener = resizeListener;
+  video.addEventListener('resize', resizeListener);
 
   const outputContext = output.getContext('2d');
   outputContext.imageSmoothingEnabled = true;
   outputContext.imageSmoothingQuality = 'high';
   let lastOutputPaint = 0;
   const paintOutput = (now) => {
-    if (!video.isConnected || state.captureSession !== capture) { resizeObserver.disconnect(); return; }
+    previewResources.outputFrameRequest = null;
+    if (capture.previewResources === previewResources) capture.outputFrameRequest = null;
+    if (!video.isConnected || state.captureSession !== capture) { cleanupLiveCapturePreview(capture, previewResources); return; }
     if (capture.crop && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && now - lastOutputPaint >= 1000 / LIVE_CAPTURE_FPS) {
       const crop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
       outputContext.drawImage(video, crop.x, crop.y, crop.size, crop.size, 0, 0, 450, 450);
       lastOutputPaint = now;
     }
-    requestAnimationFrame(paintOutput);
+    previewResources.outputFrameRequest = requestAnimationFrame(paintOutput);
+    if (capture.previewResources === previewResources) capture.outputFrameRequest = previewResources.outputFrameRequest;
   };
-  requestAnimationFrame(paintOutput);
+  previewResources.outputFrameRequest = requestAnimationFrame(paintOutput);
+  capture.outputFrameRequest = previewResources.outputFrameRequest;
 
   const displayPoint = (event) => {
     const { display, videoRect } = displayGeometry();
@@ -412,11 +425,40 @@ function drawLiveCaptureFrame(capture) {
   return true;
 }
 
+function stopLiveCaptureOutputPreview(capture) {
+  const frame = capture?.previewResources?.outputFrameRequest ?? capture?.outputFrameRequest;
+  if (frame !== null && frame !== undefined) cancelAnimationFrame(frame);
+  if (capture?.previewResources) capture.previewResources.outputFrameRequest = null;
+  if (capture) capture.outputFrameRequest = null;
+}
+
+function cleanupLiveCapturePreview(capture, previewResources = capture?.previewResources) {
+  if (!capture) return;
+  if (!previewResources) {
+    stopLiveCaptureOutputPreview(capture);
+    capture.previewResizeObserver?.disconnect();
+    capture.video?.removeEventListener?.('resize', capture.previewResizeListener);
+    capture.previewResizeObserver = null;
+    capture.previewResizeListener = null;
+    return;
+  }
+  if (previewResources.outputFrameRequest !== null && previewResources.outputFrameRequest !== undefined) cancelAnimationFrame(previewResources.outputFrameRequest);
+  previewResources.outputFrameRequest = null;
+  previewResources.resizeObserver?.disconnect();
+  previewResources.video?.removeEventListener?.('resize', previewResources.resizeListener);
+  if (capture.previewResources !== previewResources) return;
+  capture.previewResources = null;
+  capture.outputFrameRequest = null;
+  capture.previewResizeObserver = null;
+  capture.previewResizeListener = null;
+}
+
 async function startLiveCaptureRecording(capture) {
-  capture.canvas = document.createElement('canvas');
+  capture.canvas = capture.outputCanvas || document.querySelector('#capture-output') || document.createElement('canvas');
   capture.canvas.width = 450;
   capture.canvas.height = 450;
   capture.encoder = await createLiveCaptureEncoder();
+  stopLiveCaptureOutputPreview(capture);
   capture.recordingError = null;
   const video = capture.video || document.querySelector('#capture-video');
   if (video?.videoWidth && video.videoHeight && capture.crop) capture.recordingCrop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
@@ -598,7 +640,13 @@ async function finishLiveCapture(reason = '') {
   }
 }
 
-function stopLiveCaptureStream(capture) { if (capture?.timer) clearInterval(capture.timer); if (capture?.durationTimer) clearTimeout(capture.durationTimer); if (capture) { capture.timer = null; capture.durationTimer = null; } capture?.stream?.getTracks().forEach((track) => track.stop()); }
+function stopLiveCaptureStream(capture) {
+  if (capture?.timer) clearInterval(capture.timer);
+  if (capture?.durationTimer) clearTimeout(capture.durationTimer);
+  if (capture) { capture.timer = null; capture.durationTimer = null; }
+  cleanupLiveCapturePreview(capture);
+  capture?.stream?.getTracks().forEach((track) => track.stop());
+}
 async function releaseLiveCapture(failureMessage = '') {
   const capture = state.captureSession;
   if (!capture) return;

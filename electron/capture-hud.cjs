@@ -1,6 +1,7 @@
 const CAPTURE_HUD_WIDTH = 304;
 const CAPTURE_HUD_HEIGHT = 72;
 const CAPTURE_HUD_MARGIN = 24;
+const HIDDEN_CAPTURE_HUD_STATUS = Object.freeze({ state: 'hidden', label: '', detail: '', startedAt: 0, sound: '', hideAfter: 0 });
 
 const CAPTURE_HUD_STATES = {
   armed: { label: 'READY', detail: (shortcut) => `${shortcut} to record`, sound: '', hideAfter: 0 },
@@ -214,8 +215,12 @@ class CaptureHud {
 
   hideNow() {
     this.cancelHide();
+    const hadStatus = Boolean(this.status);
     this.status = null;
-    if (this.window && !this.window.isDestroyed()) this.window.hide();
+    if (this.window && !this.window.isDestroyed()) {
+      if (hadStatus && this.loaded) this.window.webContents.send('capture-hud:state', HIDDEN_CAPTURE_HUD_STATUS);
+      this.window.hide();
+    }
   }
 
   destroy() {

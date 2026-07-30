@@ -7,6 +7,8 @@ let clockTimer = null;
 let audioContext = null;
 let previousState = '';
 let cueGeneration = 0;
+let audioOperation = Promise.resolve();
+const activeOscillators = new Set();
 
 function elapsedLabel(startedAt) {
   const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
@@ -36,6 +38,8 @@ function tone(frequency, start, duration, context) {
   gain.gain.exponentialRampToValueAtTime(.12, start + .012);
   gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
   oscillator.connect(gain).connect(context.destination);
+  activeOscillators.add(oscillator);
+  oscillator.addEventListener('ended', () => activeOscillators.delete(oscillator), { once: true });
   oscillator.start(start);
   oscillator.stop(start + duration + .02);
 }
@@ -50,17 +54,41 @@ function playCue(name, generation) {
   if (!patterns[name]) return;
   try {
     audioContext ||= new AudioContext();
-    const schedule = () => {
-      if (generation !== cueGeneration) return;
+    const context = audioContext;
+    audioOperation = audioOperation.catch(() => {}).then(async () => {
+      if (generation !== cueGeneration || context.state === 'closed') return;
+      if (context.state === 'suspended') await context.resume();
+      if (generation !== cueGeneration || context.state === 'closed') return;
       const start = audioContext.currentTime + .01;
-      patterns[name].forEach(([frequency, offset, duration]) => tone(frequency, start + offset, duration, audioContext));
-    };
-    if (audioContext.state === 'suspended') audioContext.resume().then(schedule).catch(() => {});
-    else schedule();
+      patterns[name].forEach(([frequency, offset, duration]) => tone(frequency, start + offset, duration, context));
+    }).catch(() => {});
   } catch { /* Visual feedback remains available if audio initialization fails. */ }
 }
 
+function suspendAudio() {
+  for (const oscillator of activeOscillators) {
+    try { oscillator.stop(); } catch { /* The oscillator may already have ended. */ }
+  }
+  activeOscillators.clear();
+  const context = audioContext;
+  if (!context || context.state === 'closed') return;
+  audioOperation = audioOperation.catch(() => {}).then(async () => {
+    if (context.state === 'running') await context.suspend();
+  }).catch(() => {});
+}
+
+function hideCaptureHud() {
+  cueGeneration += 1;
+  stopClock();
+  suspendAudio();
+  beacon.className = 'beacon hidden';
+  label.textContent = '';
+  detail.textContent = '';
+  previousState = '';
+}
+
 function updateCaptureHud(status) {
+  if (status?.state === 'hidden') { hideCaptureHud(); return; }
   if (!captureHudStates.has(status?.state) || typeof status.label !== 'string' || typeof status.detail !== 'string') return;
   beacon.className = `beacon ${status.state}`;
   label.textContent = status.label;

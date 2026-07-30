@@ -17,8 +17,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run licenses:check
-      - run: npm run lint
-      - run: npm run test:smoke
-      - run: npm run test:archive
-      - run: npm run test:transfer
-      - run: npm run test:renderer
+      - run: npm test
+      - run: npm run test:capture-hud-runtime
+      - run: npm run test:capture-ui-runtime
+      - run: npm run package:win:dir
+      - run: npm run test:package-portrait-worker

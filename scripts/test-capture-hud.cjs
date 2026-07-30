@@ -94,10 +94,29 @@ function main() {
   assert.equal(window.webContents.messages.at(-1).payload.state, 'saved');
   assert.equal(timers.at(-1).delay, 2200);
   timers.at(-1).callback();
+  assert.equal(window.webContents.messages.at(-1).payload.state, 'hidden');
   assert.deepEqual(window.calls.at(-1), ['hide']);
 
   hud.destroy();
   assert.deepEqual(window.calls.at(-1), ['destroy']);
+
+  const cancelledHud = new CaptureHud({
+    BrowserWindow: FakeWindow,
+    screen,
+    htmlPath: 'capture-hud.html',
+    preloadPath: 'capture-hud-preload.cjs',
+    platform: 'win32',
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  });
+  cancelledHud.arm('cancelled-session', { shortcut: 'CommandOrControl+Alt+G' });
+  cancelledHud.update('cancelled-session', { state: 'recording', startedAt: 1234 });
+  const cancelledWindow = FakeWindow.instances.at(-1);
+  cancelledWindow.webContents.emit('ipc-message', {}, 'capture-hud:ready');
+  cancelledHud.release('cancelled-session');
+  assert.equal(cancelledWindow.webContents.messages.at(-1).payload.state, 'hidden');
+  assert.deepEqual(cancelledWindow.calls.at(-1), ['hide']);
+  cancelledHud.destroy();
 
   const retryHud = new CaptureHud({
     BrowserWindow: FakeWindow,
