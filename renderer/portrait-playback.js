@@ -44,7 +44,9 @@ function isPortraitInViewport(video) {
 
 const portraitObserver = new IntersectionObserver((entries) => {
   for (const entry of entries) {
-    portraitVisibility.set(entry.target, entry.isIntersecting && entry.intersectionRatio > 0);
+    if (!portraitVideos.has(entry.target) || entry.target.dataset.portraitPlayback !== 'viewport') continue;
+    const visible = entry.isIntersecting && entry.intersectionRatio > 0 && isPortraitInViewport(entry.target);
+    portraitVisibility.set(entry.target, visible);
     applyPortraitPlayback(entry.target);
   }
 }, { threshold: 0.01 });

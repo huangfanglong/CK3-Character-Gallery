@@ -16,6 +16,7 @@ class FakeIntersectionObserver {
 }
 
 function video({ connected = true, playback = 'viewport', bounds = { top: 0, right: 100, bottom: 100, left: 0, width: 100, height: 100 }, parentElement = null } = {}) {
+  let currentBounds = bounds;
   return {
     isConnected: connected,
     parentElement,
@@ -23,7 +24,8 @@ function video({ connected = true, playback = 'viewport', bounds = { top: 0, rig
     dataset: { portraitPlayback: playback },
     pauseCalls: 0,
     playCalls: 0,
-    getBoundingClientRect() { return bounds; },
+    getBoundingClientRect() { return currentBounds; },
+    setBounds(nextBounds) { currentBounds = nextBounds; },
     pause() { this.pauseCalls += 1; this.paused = true; },
     play() { this.playCalls += 1; this.paused = false; return Promise.resolve(); },
   };
@@ -62,9 +64,13 @@ function main() {
   portraitObserver.callback([{ target: visible, isIntersecting: false, intersectionRatio: 0 }]);
   assert.equal(visible.paused, true, 'Offscreen cards should pause playback.');
 
-  portraitVideos.delete(visible);
-  portraitVideos.delete(offscreen);
-  portraitVideos.delete(clipped);
+  const staleEntry = video();
+  syncPortraitPlayback(root([staleEntry]));
+  staleEntry.setBounds({ top: 1200, right: 100, bottom: 1300, left: 0, width: 100, height: 100 });
+  portraitObserver.callback([{ target: staleEntry, isIntersecting: true, intersectionRatio: 1 }]);
+  assert.equal(staleEntry.paused, true, 'A stale visible observer entry must not restart an offscreen card.');
+
+  portraitVideos.delete(staleEntry);
   const detached = video({ connected: false });
   detached.paused = false;
   portraitVideos.add(detached);

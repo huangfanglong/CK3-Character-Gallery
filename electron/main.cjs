@@ -536,6 +536,9 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (portraitPreviewDrainInProgress) return;
   portraitPreviewDrainInProgress = true;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.destroy();
+  }
   void portraitPreviews.drain()
     .catch((error) => console.error('Failed to drain staged portrait previews:', error))
     .finally(() => {
