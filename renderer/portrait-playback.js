@@ -18,6 +18,30 @@ function applyPortraitPlayback(video) {
   else video.pause();
 }
 
+function isPortraitInViewport(video) {
+  const rect = video.getBoundingClientRect();
+  let top = Math.max(rect.top, 0);
+  let right = Math.min(rect.right, window.innerWidth);
+  let bottom = Math.min(rect.bottom, window.innerHeight);
+  let left = Math.max(rect.left, 0);
+  for (let ancestor = video.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    const style = getComputedStyle(ancestor);
+    const clipsHorizontally = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowX);
+    const clipsVertically = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowY);
+    if (!clipsHorizontally && !clipsVertically) continue;
+    const clip = ancestor.getBoundingClientRect();
+    if (clipsHorizontally) {
+      left = Math.max(left, clip.left);
+      right = Math.min(right, clip.right);
+    }
+    if (clipsVertically) {
+      top = Math.max(top, clip.top);
+      bottom = Math.min(bottom, clip.bottom);
+    }
+  }
+  return rect.width > 0 && rect.height > 0 && right > left && bottom > top;
+}
+
 const portraitObserver = new IntersectionObserver((entries) => {
   for (const entry of entries) {
     portraitVisibility.set(entry.target, entry.isIntersecting && entry.intersectionRatio > 0);
@@ -46,11 +70,15 @@ function syncPortraitPlayback(root = document, blocked = false) {
   for (const video of portraitVideos) {
     if (current.has(video) && video.isConnected) continue;
     portraitObserver.unobserve(video);
+    video.pause();
     portraitVideos.delete(video);
   }
   for (const video of current) {
     portraitVideos.add(video);
-    if (video.dataset.portraitPlayback === 'viewport') portraitObserver.observe(video);
+    if (video.dataset.portraitPlayback === 'viewport') {
+      portraitVisibility.set(video, isPortraitInViewport(video));
+      portraitObserver.observe(video);
+    }
     else {
       portraitObserver.unobserve(video);
       const thumb = video.closest('.variant-thumb');

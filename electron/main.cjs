@@ -1,13 +1,12 @@
 const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
 const crypto = require('node:crypto');
-const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 const { ensureArchive, saveArchive } = require('./archive-store.cjs');
 const { duplicateCharacterInArchive, duplicateGalleryInArchive, exportGalleryToFolder, exportPathFor, importGalleryFromFolder, readGalleryInfo } = require('./gallery-transfer.cjs');
 const { MAX_PORTRAIT_BYTES } = require('./portrait-processor.cjs');
+const { PortraitPreviewStore } = require('./portrait-preview-store.cjs');
 const { PortraitSourceManager } = require('./portrait-source-manager.cjs');
 const { PortraitWorkerClient } = require('./portrait-worker-client.cjs');
 const { saveCaptureVideo } = require('./capture-video.cjs');
@@ -28,7 +27,9 @@ let lastExportParent = null;
 let archiveRecoveryWarning = null;
 const portraitWorker = new PortraitWorkerClient({ workerPath: path.join(__dirname, 'portrait-worker-thread.cjs') });
 const portraitSources = new PortraitSourceManager({ worker: portraitWorker, createId: crypto.randomUUID });
-const portraitPreviewFiles = new Map();
+const portraitPreviews = new PortraitPreviewStore();
+let portraitPreviewDrainInProgress = false;
+let portraitPreviewDrainComplete = false;
 const captureSources = new Map();
 const captureSessions = new CaptureSessionManager(globalShortcut, crypto.randomUUID);
 let captureHud = null;
@@ -75,25 +76,25 @@ function readClipboardImage() {
 }
 
 function removePortraitPreviewFiles(sourceIds) {
-  for (const sourceId of sourceIds) {
-    const previewPath = portraitPreviewFiles.get(sourceId);
-    if (!previewPath) continue;
-    portraitPreviewFiles.delete(sourceId);
-    try { fsSync.rmSync(previewPath, { force: true }); }
-    catch (error) { console.error('Failed to remove staged portrait preview:', error); }
-  }
+  portraitPreviews.remove(sourceIds);
 }
 
 async function releasePortraitSource(ownerWebContentsId, sourceId) {
-  const released = await portraitSources.release(ownerWebContentsId, sourceId);
-  if (released) removePortraitPreviewFiles([sourceId]);
-  return released;
+  const ownedSource = portraitSources.sourceIdsForOwner(ownerWebContentsId).includes(sourceId);
+  try {
+    return await portraitSources.release(ownerWebContentsId, sourceId);
+  } finally {
+    if (ownedSource) removePortraitPreviewFiles([sourceId]);
+  }
 }
 
 async function releasePortraitSourcesByOwner(ownerWebContentsId) {
   const sourceIds = portraitSources.sourceIdsForOwner(ownerWebContentsId);
-  await portraitSources.releaseByOwner(ownerWebContentsId);
-  removePortraitPreviewFiles(sourceIds);
+  try {
+    await portraitSources.releaseByOwner(ownerWebContentsId);
+  } finally {
+    removePortraitPreviewFiles(sourceIds);
+  }
 }
 
 async function prepareGifSource(ownerWebContentsId, input) {
@@ -101,12 +102,21 @@ async function prepareGifSource(ownerWebContentsId, input) {
   const info = await portraitSources.prepare(ownerWebContentsId, input);
   try {
     if (info.format !== 'gif') throw new Error('The selected file is not a valid GIF image.');
-    const previewPath = path.join(os.tmpdir(), `ck3-character-gallery-${process.pid}-${info.sourceId}.gif`);
-    await fs.writeFile(previewPath, portraitSources.inputFor(ownerWebContentsId, info.sourceId), { flag: 'wx' });
-    portraitPreviewFiles.set(info.sourceId, previewPath);
+    const previewUrl = await portraitPreviews.stage(
+      info.sourceId,
+      portraitSources.inputFor(ownerWebContentsId, info.sourceId),
+      () => {
+        try {
+          portraitSources.inputFor(ownerWebContentsId, info.sourceId);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    );
     return {
       sourceId: info.sourceId,
-      dataUrl: pathToFileURL(previewPath).toString(),
+      dataUrl: previewUrl,
       format: info.format,
       animated: info.animated,
       width: info.width,
@@ -521,8 +531,21 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', (event) => {
+  if (portraitPreviewDrainComplete) return;
+  event.preventDefault();
+  if (portraitPreviewDrainInProgress) return;
+  portraitPreviewDrainInProgress = true;
+  void portraitPreviews.drain()
+    .catch((error) => console.error('Failed to drain staged portrait previews:', error))
+    .finally(() => {
+      portraitPreviewDrainComplete = true;
+      app.quit();
+    });
+});
+
 app.on('will-quit', () => {
-  removePortraitPreviewFiles([...portraitPreviewFiles.keys()]);
+  portraitPreviews.removeAll();
   void portraitWorker.destroy().catch(() => {});
   captureHud?.destroy();
   captureHud = null;
