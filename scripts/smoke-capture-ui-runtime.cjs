@@ -127,7 +127,8 @@ async function main() {
       const committedSize = state.captureSession.crop.size;
       const beforeX = state.captureSession.crop.x;
       document.querySelector('#capture-selection').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true }));
-      const restored = savedLiveCaptureCrop(1920, 1080);
+       const restored = savedLiveCaptureCrop(1920, 1080);
+        const afterKeyboardX = state.captureSession.crop.x;
         const loopSearch = document.querySelector('#capture-loop-search-seconds');
         loopSearch.value = '10';
         loopSearch.dispatchEvent(new Event('input', { bubbles: true }));
@@ -135,30 +136,56 @@ async function main() {
         const shortcut = document.querySelector('#capture-shortcut');
         const seconds = document.querySelector('.capture-loop-search-unit');
         const shortcutRect = shortcut.getBoundingClientRect();
-        const loopRect = loopSearch.getBoundingClientRect();
+        const loopRect = loopSearch.closest('.capture-number-control').getBoundingClientRect();
         const secondsRect = seconds.getBoundingClientRect();
         const numberStyles = [loopSearch, size].map((input) => {
           const rect = input.getBoundingClientRect();
-          return { height: rect.height, colorScheme: getComputedStyle(input).colorScheme };
+          return { height: rect.height, controlHeight: input.closest('.capture-number-control').getBoundingClientRect().height, colorScheme: getComputedStyle(input).colorScheme, appearance: getComputedStyle(input).appearance };
         });
-        return { displayedSize: size.value, committedSize, beforeX, afterX: state.captureSession.crop.x, restored, crop: state.captureSession.crop, loopSearch: { value: loopSearch.value, min: loopSearch.min, max: loopSearch.max, stored: state.captureSession.loopSearchSeconds }, controls: { shortcutRight: shortcutRect.right, loopRight: loopRect.right, secondsLeft: secondsRect.left, secondsRight: secondsRect.right, numberStyles } };
+        document.querySelector('.capture-precision').open = true;
+        const stepButtons = [...document.querySelectorAll('[data-capture-number-step]')];
+        const labels = stepButtons.map((button) => button.getAttribute('aria-label'));
+        const loopIncrease = document.querySelector('[data-capture-number-step="1"][data-capture-number-target="capture-loop-search-seconds"]');
+        loopIncrease.click();
+        const steppedLoopSearch = { value: loopSearch.value, stored: state.captureSession.loopSearchSeconds, focused: document.activeElement === loopSearch };
+        const x = document.querySelector('[data-capture-coordinate="x"]');
+        const beforeSteppedX = state.captureSession.crop.x;
+        document.querySelector('[data-capture-number-step="1"][data-capture-number-target="x"]').click();
+        const steppedX = { value: x.value, crop: state.captureSession.crop.x, focused: document.activeElement === x };
+        setLiveCaptureFramingDisabled(true);
+        const precisionButtonsDisabled = [...document.querySelectorAll('.capture-precision [data-capture-number-step]')].every((button) => button.disabled);
+        setLiveCaptureFramingDisabled(false);
+        return { displayedSize: size.value, committedSize, beforeX, afterKeyboardX, restored, crop: state.captureSession.crop, loopSearch: { value: loopSearch.value, min: loopSearch.min, max: loopSearch.max, stored: state.captureSession.loopSearchSeconds }, controls: { shortcutRight: shortcutRect.right, loopRight: loopRect.right, secondsLeft: secondsRect.left, secondsRight: secondsRect.right, numberStyles, stepButtons: { count: stepButtons.length, labels, steppedLoopSearch, beforeSteppedX, steppedX, precisionButtonsDisabled } } };
       })())`));
     assert.equal(interaction.displayedSize, String(interaction.committedSize));
-    assert.equal(interaction.afterX, interaction.beforeX + 10);
-    assert.deepEqual(interaction.restored, interaction.crop);
-    assert.deepEqual(interaction.loopSearch, { value: '10', min: '1', max: '', stored: 10 });
+    assert.equal(interaction.afterKeyboardX, interaction.beforeX + 10);
+    assert.deepEqual(interaction.restored, { ...interaction.crop, x: interaction.controls.stepButtons.beforeSteppedX });
+    assert.deepEqual(interaction.loopSearch, { value: '11', min: '1', max: '', stored: 11 });
     assert.ok(Math.abs(interaction.controls.secondsRight - interaction.controls.shortcutRight) < 1, JSON.stringify(interaction.controls));
     assert.ok(Math.abs((interaction.controls.secondsLeft - interaction.controls.loopRight) - 8) < 1, JSON.stringify(interaction.controls));
     interaction.controls.numberStyles.forEach((style) => {
-      assert.ok(style.height >= 36, JSON.stringify(style));
+      assert.ok(style.height >= 34, JSON.stringify(style));
+      assert.ok(style.controlHeight >= 36, JSON.stringify(style));
       assert.equal(style.colorScheme, 'dark');
+      assert.equal(style.appearance, 'textfield');
     });
+    assert.equal(interaction.controls.stepButtons.count, 8);
+    assert.deepEqual(interaction.controls.stepButtons.labels, [
+      'Increase smooth loop search', 'Decrease smooth loop search',
+      'Increase X', 'Decrease X', 'Increase Y', 'Decrease Y', 'Increase size', 'Decrease size',
+    ]);
+    assert.deepEqual(interaction.controls.stepButtons.steppedLoopSearch, { value: '11', stored: 11, focused: true });
+    assert.deepEqual(interaction.controls.stepButtons.steppedX, { value: String(interaction.controls.stepButtons.beforeSteppedX + 1), crop: interaction.controls.stepButtons.beforeSteppedX + 1, focused: true });
+    assert.equal(interaction.controls.stepButtons.precisionButtonsDisabled, true);
     const guardedUi = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
       const capture = state.captureSession;
       const cancel = document.querySelector('.capture-footer [data-action="close-modal"]');
       cancel.focus();
       cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
       const trappedFocus = document.activeElement?.classList.contains('modal-close');
+      updateLiveCaptureRecordingUi(capture);
+      const loopSearch = document.querySelector('#capture-loop-search-seconds');
+      const loopSearchDisabled = loopSearch.disabled && [...document.querySelectorAll('[data-capture-number-target="capture-loop-search-seconds"]')].every((button) => button.disabled);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true }));
       localStorage.setItem('ck3-live-capture-crops-v1', 'null');
       rememberLiveCaptureCrop(capture.crop, 1920, 1080);
@@ -166,11 +193,12 @@ async function main() {
       localStorage.setItem('ck3-live-capture-crops-v1', '{bad');
       rememberLiveCaptureCrop(capture.crop, 1920, 1080);
       const repairedMalformed = savedLiveCaptureCrop(1920, 1080);
-      return { sameCapture: state.captureSession === capture, captureModal: Boolean(document.querySelector('.capture-modal')), trappedFocus, repaired, repairedMalformed };
+      return { sameCapture: state.captureSession === capture, captureModal: Boolean(document.querySelector('.capture-modal')), trappedFocus, loopSearchDisabled, repaired, repairedMalformed };
     })())`));
     assert.equal(guardedUi.sameCapture, true);
     assert.equal(guardedUi.captureModal, true);
     assert.equal(guardedUi.trappedFocus, true);
+    assert.equal(guardedUi.loopSearchDisabled, true);
     assert.deepEqual(guardedUi.repaired, interaction.crop);
     assert.deepEqual(guardedUi.repairedMalformed, interaction.crop);
     if (process.env.CK3_CAPTURE_UI_SCREENSHOT) {

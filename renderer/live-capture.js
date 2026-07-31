@@ -87,6 +87,10 @@ function reportLiveCaptureStatus(capture, status) {
   return desktop.setCaptureStatus(capture.sessionId, status).catch(() => false);
 }
 
+function liveCaptureNumberControl(input, target, label, disabled = '') {
+  return `<span class="capture-number-control">${input}<span class="capture-number-buttons"><button type="button" class="capture-number-step-up" data-capture-number-step="1" data-capture-number-target="${target}" aria-label="Increase ${label}" title="Increase ${label}"${disabled}>${icon('chevron')}</button><button type="button" data-capture-number-step="-1" data-capture-number-target="${target}" aria-label="Decrease ${label}" title="Decrease ${label}"${disabled}>${icon('chevron')}</button></span></span>`;
+}
+
 function renderLiveCaptureModal() {
   const capture = state.captureSession;
   if (!capture) return;
@@ -106,13 +110,14 @@ function renderLiveCaptureModal() {
           : capture.phase === 'ready' ? `Frame the portrait, then press ${liveCaptureShortcutLabel(capture.shortcut)} in CK3 to start recording.`
             : capture.error || 'Choose the visible Crusader Kings III window to capture.';
   const framingDisabled = canFrame ? '' : ' disabled';
+  const precisionControls = `<details class="capture-precision"><summary>Precision controls</summary><div><label>X ${liveCaptureNumberControl(`<input data-capture-coordinate="x" type="number" min="0" step="1"${framingDisabled}/>`, 'x', 'X', framingDisabled)}</label><label>Y ${liveCaptureNumberControl(`<input data-capture-coordinate="y" type="number" min="0" step="1"${framingDisabled}/>`, 'y', 'Y', framingDisabled)}</label><label>Size ${liveCaptureNumberControl(`<input data-capture-coordinate="size" type="number" min="1" step="1"${framingDisabled}/>`, 'size', 'size', framingDisabled)}</label><span>Arrow keys: 1 px · Shift: 10 px · +/-: resize</span></div></details>`;
   const preview = ['starting', 'ready', 'starting-recording', 'recording', 'matching', 'finishing', 'completing'].includes(capture.phase)
-    ? `<div class="capture-workspace"><div><div class="capture-preview" id="capture-preview"><video id="capture-video" autoplay muted playsinline></video><div class="capture-selection" id="capture-selection" role="group" tabindex="0" aria-label="Portrait recording frame. Drag to move, use corner handles to resize, or use arrow keys to nudge."><div class="capture-selection-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="capture-handle north-west" data-capture-handle="north-west" aria-hidden="true"></span><span class="capture-handle north-east" data-capture-handle="north-east" aria-hidden="true"></span><span class="capture-handle south-east" data-capture-handle="south-east" aria-hidden="true"></span><span class="capture-handle south-west" data-capture-handle="south-west" aria-hidden="true"></span></div></div><div class="capture-frame-tools"><button class="outline-button" data-action="capture-draw" aria-pressed="false"${framingDisabled}>Draw new frame</button><button class="outline-button" data-action="capture-center"${framingDisabled}>Center</button><button class="outline-button" data-action="capture-reset"${framingDisabled}>Reset</button><span>Drag frame to move · corners to resize</span></div></div><aside class="capture-output-panel"><p class="eyebrow">RECORDED OUTPUT</p><canvas id="capture-output" width="450" height="450" role="img" aria-label="Live preview of the 450 by 450 recorded portrait"></canvas><span>450 × 450 WebM</span></aside></div><details class="capture-precision"><summary>Precision controls</summary><div><label>X <input data-capture-coordinate="x" type="number" min="0" step="1"${framingDisabled}/></label><label>Y <input data-capture-coordinate="y" type="number" min="0" step="1"${framingDisabled}/></label><label>Size <input data-capture-coordinate="size" type="number" min="1" step="1"${framingDisabled}/></label><span>Arrow keys: 1 px · Shift: 10 px · +/-: resize</span></div></details>`
+    ? `<div class="capture-workspace"><div><div class="capture-preview" id="capture-preview"><video id="capture-video" autoplay muted playsinline></video><div class="capture-selection" id="capture-selection" role="group" tabindex="0" aria-label="Portrait recording frame. Drag to move, use corner handles to resize, or use arrow keys to nudge."><div class="capture-selection-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="capture-handle north-west" data-capture-handle="north-west" aria-hidden="true"></span><span class="capture-handle north-east" data-capture-handle="north-east" aria-hidden="true"></span><span class="capture-handle south-east" data-capture-handle="south-east" aria-hidden="true"></span><span class="capture-handle south-west" data-capture-handle="south-west" aria-hidden="true"></span></div></div><div class="capture-frame-tools"><button class="outline-button" data-action="capture-draw" aria-pressed="false"${framingDisabled}>Draw new frame</button><button class="outline-button" data-action="capture-center"${framingDisabled}>Center</button><button class="outline-button" data-action="capture-reset"${framingDisabled}>Reset</button><span>Drag frame to move · corners to resize</span></div></div><aside class="capture-output-panel"><p class="eyebrow">RECORDED OUTPUT</p><canvas id="capture-output" width="450" height="450" role="img" aria-label="Live preview of the 450 by 450 recorded portrait"></canvas><span>450 × 450 WebM</span></aside></div>${precisionControls}`
     : `<div class="capture-sources">${sources || '<p class="variant-empty">No CK3 window available.</p>'}</div>`;
   const primary = capture.phase === 'empty' ? '<button class="outline-button" data-action="capture-refresh">Refresh</button>'
     : capture.phase === 'recording' ? '<button class="danger-button" data-action="capture-stop">Stop recording</button>'
       : capture.phase === 'matching' ? '<button class="danger-button" data-action="capture-stop">Finish now</button>' : '';
-  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal" role="dialog" aria-modal="true" aria-labelledby="capture-title"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2 id="capture-title">Capture ${escapeHtml(liveCaptureCharacter(capture)?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal" aria-label="Close live capture">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p><label class="capture-shortcut">Recording hotkey<select id="capture-shortcut"${shortcutLocked ? ' disabled' : ''}>${shortcutOptions}</select></label><label class="capture-shortcut">Smooth loop search<span class="capture-loop-search-control"><input id="capture-loop-search-seconds" type="number" min="1" step="1" value="${capture.loopSearchSeconds}"${loopSearchLocked ? ' disabled' : ''} aria-label="Seconds to search for a smooth loop" /><span class="capture-loop-search-unit">seconds</span></span></label>${preview}<div class="capture-footer"><span id="capture-status" aria-live="polite">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
+  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal" role="dialog" aria-modal="true" aria-labelledby="capture-title"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2 id="capture-title">Capture ${escapeHtml(liveCaptureCharacter(capture)?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal" aria-label="Close live capture">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p><label class="capture-shortcut">Recording hotkey<select id="capture-shortcut"${shortcutLocked ? ' disabled' : ''}>${shortcutOptions}</select></label><label class="capture-shortcut">Smooth loop search<span class="capture-loop-search-control">${liveCaptureNumberControl(`<input id="capture-loop-search-seconds" type="number" min="1" step="1" value="${capture.loopSearchSeconds}"${loopSearchLocked ? ' disabled' : ''} aria-label="Seconds to search for a smooth loop" />`, 'capture-loop-search-seconds', 'smooth loop search', loopSearchLocked ? ' disabled' : '')}<span class="capture-loop-search-unit">seconds</span></span></label>${preview}<div class="capture-footer"><span id="capture-status" aria-live="polite">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
   render('modal');
   if (capture.stream) initializeLiveCapturePreview();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => {
@@ -604,7 +609,7 @@ function requestLiveCaptureStop(capture = state.captureSession) {
 }
 
 function setLiveCaptureFramingDisabled(disabled) {
-  document.querySelectorAll('[data-action="capture-draw"], [data-action="capture-center"], [data-action="capture-reset"], [data-capture-coordinate]').forEach((control) => { control.disabled = disabled; });
+  document.querySelectorAll('[data-action="capture-draw"], [data-action="capture-center"], [data-action="capture-reset"], [data-capture-coordinate], .capture-precision [data-capture-number-step]').forEach((control) => { control.disabled = disabled; });
   const selection = document.querySelector('#capture-selection');
   if (selection) {
     selection.tabIndex = disabled ? -1 : 0;
@@ -612,11 +617,16 @@ function setLiveCaptureFramingDisabled(disabled) {
   }
 }
 
+function setLiveCaptureLoopSearchDisabled(disabled) {
+  document.querySelectorAll('#capture-loop-search-seconds, [data-capture-number-target="capture-loop-search-seconds"]').forEach((control) => { control.disabled = disabled; });
+}
+
 function updateLiveCaptureStartingUi(capture) {
   const status = document.querySelector('#capture-status');
   const shortcut = document.querySelector('#capture-shortcut');
   if (status) status.textContent = 'Starting the high-quality video encoder.';
   if (shortcut) shortcut.disabled = true;
+  setLiveCaptureLoopSearchDisabled(true);
   setLiveCaptureDrawMode(false);
   setLiveCaptureFramingDisabled(true);
 }
@@ -636,6 +646,7 @@ function updateLiveCaptureRecordingUi(capture) {
   if (status) status.setAttribute('aria-live', 'off');
   updateLiveCaptureRecordingStatus(capture, true);
   if (shortcut) shortcut.disabled = true;
+  setLiveCaptureLoopSearchDisabled(true);
   setLiveCaptureFramingDisabled(true);
   if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="capture-stop">Stop recording</button>';
 }
@@ -644,6 +655,7 @@ function updateLiveCaptureMatchingUi(capture) {
   const status = document.querySelector('#capture-status');
   const controls = document.querySelector('.capture-footer > div');
   if (status) { status.setAttribute('aria-live', 'polite'); status.textContent = liveCaptureMatchingStatus(capture); }
+  setLiveCaptureLoopSearchDisabled(true);
   setLiveCaptureFramingDisabled(true);
   if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="capture-stop">Finish now</button>';
 }
@@ -657,6 +669,7 @@ function updateLiveCaptureFinishingUi() {
   const status = document.querySelector('#capture-status');
   const controls = document.querySelector('.capture-footer > div');
   if (status) { status.setAttribute('aria-live', 'polite'); status.textContent = 'Encoding and saving the live portrait.'; }
+  setLiveCaptureLoopSearchDisabled(true);
   setLiveCaptureFramingDisabled(true);
   if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button>';
 }

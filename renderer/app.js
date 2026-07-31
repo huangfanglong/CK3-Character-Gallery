@@ -405,6 +405,19 @@ function handleDelegatedClick(event) {
       appearanceSwatch.dataset.appearanceColor,
     );
   }
+  const captureNumberStep = event.target.closest('[data-capture-number-step]');
+  if (captureNumberStep) {
+    const target = captureNumberStep.dataset.captureNumberTarget;
+    const input = target === 'capture-loop-search-seconds'
+      ? document.querySelector(`#${target}`)
+      : document.querySelector(`[data-capture-coordinate="${target}"]`);
+    if (!input || input.disabled) return;
+    if (captureNumberStep.dataset.captureNumberStep === '1') input.stepUp(); else input.stepDown();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus({ preventScroll: true });
+    return;
+  }
   const actionButton = event.target.closest('[data-action]');
   if (actionButton) return action(actionButton.dataset.action);
   const characterElement = event.target.closest('[data-character-id]');

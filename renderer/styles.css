@@ -425,9 +425,21 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .capture-shortcut select { min-width: 174px; border: 1px solid #405046; background: #101612; color: var(--paper); padding: 7px 9px; font: 10px var(--mono); }
 .capture-shortcut input { width: 84px; border: 1px solid #405046; background: #101612; color: var(--paper); padding: 7px 9px; font: 10px var(--mono); }
 .capture-loop-search-control { display: flex; align-items: center; gap: 8px; }
-.capture-shortcut input[type="number"], .capture-precision input[type="number"] { height: 36px; color-scheme: dark; padding: 0 8px; }
+.capture-number-control { display: inline-flex; align-items: stretch; height: 36px; border: 1px solid #405046; background: #101612; }
+.capture-loop-search-control .capture-number-control { width: 84px; }
+.capture-precision .capture-number-control { width: 100%; }
+.capture-number-control input[type="number"] { min-width: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: var(--paper); color-scheme: dark; padding: 0 8px; font: 10px var(--mono); appearance: textfield; -moz-appearance: textfield; }
+.capture-number-control input[type="number"]::-webkit-inner-spin-button, .capture-number-control input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.capture-number-control:focus-within { border-color: var(--copper); }
+.capture-number-buttons { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); width: 22px; flex: 0 0 auto; border-left: 1px solid #405046; }
+.capture-number-buttons button { display: grid; place-items: center; min-width: 0; min-height: 0; border: 0; background: transparent; color: #9faa9f; padding: 0; }
+.capture-number-buttons button + button { border-top: 1px solid #405046; }
+.capture-number-buttons button:hover:not(:disabled), .capture-number-buttons button:focus-visible { background: #26322c; color: var(--paper); }
+.capture-number-buttons button:disabled { color: #59645d; }
+.capture-number-buttons .icon { width: 11px; height: 11px; }
+.capture-number-step-up .icon { transform: rotate(180deg); }
 .capture-shortcut select:focus { border-color: var(--copper); outline: 0; }
-.capture-shortcut input:focus { border-color: var(--copper); outline: 0; }
+.capture-shortcut input:focus { outline: 0; }
 .capture-shortcut select:disabled { opacity: .62; }
 .capture-shortcut input:disabled { opacity: .62; }
 .capture-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 18px; align-items: start; }
@@ -467,7 +479,7 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .capture-precision > div { display: grid; grid-template-columns: repeat(3, minmax(90px, 130px)) 1fr; align-items: end; gap: 10px; padding: 0 0 11px; }
 .capture-precision label { display: grid; gap: 5px; }
 .capture-precision input { min-width: 0; width: 100%; border: 1px solid #405046; outline: 0; background: #101612; color: var(--paper); padding: 7px 8px; font: 10px var(--mono); }
-.capture-precision input:focus { border-color: var(--copper); }
+.capture-precision input:focus { outline: 0; }
 .capture-precision > div > span { align-self: center; color: #6f7a72; font-size: 8px; text-align: right; }
 .capture-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; color: #89958d; font: 9px/1.5 var(--mono); text-transform: uppercase; }
 .capture-footer > div { display: flex; flex: 0 0 auto; gap: 8px; }
