@@ -225,7 +225,7 @@ function render(scope = 'all') {
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
   syncCharacterAppearance(app);
-  syncPortraitPlayback(app, Boolean(state.modal));
+  syncPortraitPlayback(app, Boolean(state.modal), true);
   syncGalleryBatchSelection();
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
@@ -281,7 +281,7 @@ function renderModal() {
   const current = app.querySelector('.modal-backdrop');
   const next = morphAppRegion(current, state.modal || '');
   if (!current && next) app.insertBefore(next, app.querySelector('.context-menu'));
-  syncPortraitPlayback(app, Boolean(state.modal));
+  syncPortraitPlayback(app, Boolean(state.modal), !state.modal);
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
 }
 

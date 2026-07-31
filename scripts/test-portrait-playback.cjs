@@ -4,6 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const observers = [];
+const geometry = { rectReads: 0, styleReads: 0 };
 class FakeIntersectionObserver {
   constructor(callback) {
     this.callback = callback;
@@ -24,7 +25,7 @@ function video({ connected = true, playback = 'viewport', bounds = { top: 0, rig
     dataset: { portraitPlayback: playback },
     pauseCalls: 0,
     playCalls: 0,
-    getBoundingClientRect() { return currentBounds; },
+    getBoundingClientRect() { geometry.rectReads += 1; return currentBounds; },
     setBounds(nextBounds) { currentBounds = nextBounds; },
     pause() { this.pauseCalls += 1; this.paused = true; },
     play() { this.playCalls += 1; this.paused = false; return Promise.resolve(); },
@@ -40,7 +41,10 @@ function main() {
   const context = vm.createContext({
     IntersectionObserver: FakeIntersectionObserver,
     document: { hidden: false, addEventListener() {} },
-    getComputedStyle: (element) => ({ overflow: element.overflow || 'visible', overflowX: element.overflowX || element.overflow || 'visible', overflowY: element.overflowY || element.overflow || 'visible' }),
+    getComputedStyle: (element) => {
+      geometry.styleReads += 1;
+      return { overflow: element.overflow || 'visible', overflowX: element.overflowX || element.overflow || 'visible', overflowY: element.overflowY || element.overflow || 'visible' };
+    },
     window: { innerWidth: 1000, innerHeight: 1000 },
     console,
   });
@@ -63,6 +67,26 @@ function main() {
   assert.equal(visible.paused, false, 'Visible cards should start playback immediately.');
   portraitObserver.callback([{ target: visible, isIntersecting: false, intersectionRatio: 0 }]);
   assert.equal(visible.paused, true, 'Offscreen cards should pause playback.');
+
+  const retainedGeometry = { ...geometry };
+  syncPortraitPlayback(root([visible, offscreen, clipped]));
+  assert.deepEqual(geometry, retainedGeometry, 'Retained cards should not remeasure viewport geometry during a scoped render.');
+
+  const newlyTracked = video();
+  syncPortraitPlayback(root([visible, offscreen, clipped, newlyTracked]));
+  assert.ok(geometry.rectReads > retainedGeometry.rectReads, 'Newly tracked cards should receive an immediate geometry check.');
+  assert.equal(newlyTracked.paused, false, 'Newly tracked visible cards should still start immediately.');
+
+  const blockedGeometry = { ...geometry };
+  syncPortraitPlayback(root([visible, offscreen, clipped, newlyTracked]), true);
+  assert.deepEqual(geometry, blockedGeometry, 'Blocked playback should pause cards without performing viewport geometry work.');
+  assert.equal(newlyTracked.paused, true, 'Blocked playback should pause visible cards.');
+  portraitObserver.callback([{ target: newlyTracked, isIntersecting: true, intersectionRatio: 1 }]);
+  assert.deepEqual(geometry, blockedGeometry, 'Observer entries should not measure viewport geometry while playback is blocked.');
+
+  syncPortraitPlayback(root([visible, offscreen, clipped, newlyTracked]), false, true);
+  assert.ok(geometry.rectReads > blockedGeometry.rectReads, 'Full renders should refresh retained card geometry before playback resumes.');
+  assert.equal(newlyTracked.paused, false, 'A full refresh should resume visible cards after playback unblocks.');
 
   const staleEntry = video();
   syncPortraitPlayback(root([staleEntry]));

@@ -4,6 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+const DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
+
 class PortraitPreviewStore {
   constructor(options = {}) {
     this.tempDirectory = options.tempDirectory || os.tmpdir;
@@ -14,7 +16,8 @@ class PortraitPreviewStore {
     this.removeFileSync = options.removeFileSync || fs.rmSync;
     this.setTimeout = options.setTimeout || global.setTimeout;
     this.clearTimeout = options.clearTimeout || global.clearTimeout;
-    this.wait = options.wait || ((delay) => new Promise((resolve) => global.setTimeout(resolve, delay)));
+    this.now = options.now || Date.now;
+    this.drainTimeoutMs = options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
     this.logger = options.logger || console;
     this.files = new Map();
     this.stages = new Map();
@@ -23,7 +26,11 @@ class PortraitPreviewStore {
     this.draining = false;
   }
 
-  get size() { return new Set([...this.files.values(), ...[...this.stages.values()].map((stage) => stage.previewPath), ...this.pendingRemovals]).size; }
+  previewPaths() {
+    return [...new Set([...this.files.values(), ...[...this.stages.values()].map((stage) => stage.previewPath), ...this.pendingRemovals])];
+  }
+
+  get size() { return this.previewPaths().length; }
 
   isActive(isSourceActive) {
     try { return Boolean(isSourceActive()); }
@@ -36,6 +43,10 @@ class PortraitPreviewStore {
     this.retryTimers.delete(previewPath);
   }
 
+  cancelAllRemovalRetries() {
+    for (const previewPath of [...this.retryTimers.keys()]) this.cancelRemovalRetry(previewPath);
+  }
+
   forgetPreviewPath(previewPath) {
     this.cancelRemovalRetry(previewPath);
     this.pendingRemovals.delete(previewPath);
@@ -45,9 +56,10 @@ class PortraitPreviewStore {
   }
 
   scheduleRemovalRetry(previewPath, retryCount) {
-    if (this.retryTimers.has(previewPath)) return;
+    if (this.draining || this.retryTimers.has(previewPath)) return;
     const timer = this.setTimeout(() => {
       this.retryTimers.delete(previewPath);
+      if (this.draining) return;
       void this.removeFileAfterFailedStaging(previewPath, retryCount + 1);
     }, Math.min(5_000, 100 * 2 ** Math.min(retryCount, 5)));
     timer?.unref?.();
@@ -62,7 +74,7 @@ class PortraitPreviewStore {
       return true;
     } catch (error) {
       this.logger.error('Failed to remove staged portrait preview:', error);
-      this.scheduleRemovalRetry(previewPath, retryCount);
+      if (!this.draining && this.pendingRemovals.has(previewPath)) this.scheduleRemovalRetry(previewPath, retryCount);
       return false;
     }
   }
@@ -102,16 +114,28 @@ class PortraitPreviewStore {
       const stage = this.stages.get(sourceId);
       if (stage) {
         stage.cancelled = true;
-        this.removePreviewPath(stage.previewPath);
+        this.requestPreviewRemoval(stage.previewPath);
       }
       const previewPath = this.files.get(sourceId);
       if (!previewPath) continue;
       if (this.pendingRemovals.has(previewPath)) continue;
-      this.removePreviewPath(previewPath);
+      this.requestPreviewRemoval(previewPath);
     }
   }
 
+  requestPreviewRemoval(previewPath) {
+    if (this.draining) {
+      this.pendingRemovals.add(previewPath);
+      return;
+    }
+    this.removePreviewPath(previewPath);
+  }
+
   removePreviewPath(previewPath) {
+    if (this.draining) {
+      this.pendingRemovals.add(previewPath);
+      return;
+    }
     try {
       this.removeFileSync(previewPath, { force: true });
       this.forgetPreviewPath(previewPath);
@@ -123,34 +147,100 @@ class PortraitPreviewStore {
 
   removeAll() {
     this.remove([...new Set([...this.files.keys(), ...this.stages.keys()])]);
-    for (const previewPath of [...this.pendingRemovals]) this.removePreviewPath(previewPath);
+    for (const previewPath of [...this.pendingRemovals]) this.requestPreviewRemoval(previewPath);
   }
 
-  async drainPendingRemoval(previewPath) {
+  waitForDrainRetry(delay, drainState) {
+    const remaining = drainState.deadlineAt - this.now();
+    if (remaining <= 1) {
+      drainState.timedOut = true;
+      return Promise.resolve(false);
+    }
+    const retryDelay = Math.min(delay, Math.max(1, Math.floor(remaining / 2)));
+    return new Promise((resolve) => {
+      let timer;
+      let settled = false;
+      const finish = () => {
+        settled = true;
+        if (timer !== undefined) drainState.waitTimers.delete(timer);
+        resolve(true);
+      };
+      timer = this.setTimeout(finish, retryDelay);
+      if (!settled) drainState.waitTimers.add(timer);
+    });
+  }
+
+  createDrainDeadline(drainState) {
+    let timer;
+    drainState.deadlineAt = this.now() + this.drainTimeoutMs;
+    const promise = new Promise((resolve) => {
+      timer = this.setTimeout(() => {
+        drainState.timedOut = true;
+        resolve();
+      }, this.drainTimeoutMs);
+    });
+    return {
+      promise,
+      cancel: () => {
+        if (timer !== undefined) this.clearTimeout(timer);
+      },
+    };
+  }
+
+  stopDrain(drainState) {
+    drainState.stopped = true;
+    for (const timer of drainState.waitTimers) this.clearTimeout(timer);
+    drainState.waitTimers.clear();
+    this.cancelAllRemovalRetries();
+  }
+
+  async drainPendingRemoval(previewPath, drainState) {
     let retryCount = 0;
     this.cancelRemovalRetry(previewPath);
-    while (this.pendingRemovals.has(previewPath)) {
+    while (!drainState.stopped && this.pendingRemovals.has(previewPath)) {
       try {
         await this.removeFile(previewPath, { force: true });
+        if (drainState.stopped) break;
         this.forgetPreviewPath(previewPath);
       } catch (error) {
         this.logger.error('Failed to remove staged portrait preview:', error);
-        if (!this.pendingRemovals.has(previewPath)) break;
+        if (drainState.stopped || !this.pendingRemovals.has(previewPath)) break;
         retryCount += 1;
-        await this.wait(Math.min(5_000, 100 * 2 ** Math.min(retryCount, 5)));
+        if (!await this.waitForDrainRetry(Math.min(5_000, 100 * 2 ** Math.min(retryCount, 5)), drainState)) break;
       }
+    }
+  }
+
+  async drainPendingRemovals(drainState) {
+    while (!drainState.stopped && !drainState.timedOut && this.pendingRemovals.size) {
+      await Promise.all([...this.pendingRemovals].map((previewPath) => this.drainPendingRemoval(previewPath, drainState)));
     }
   }
 
   async drain() {
     this.draining = true;
+    this.cancelAllRemovalRetries();
+    const drainState = { stopped: false, timedOut: false, waitTimers: new Set() };
     this.removeAll();
-    const writes = [...this.stages.values()].map((stage) => stage.writePromise).filter(Boolean);
-    await Promise.allSettled(writes);
-    this.removeAll();
-    while (this.pendingRemovals.size) {
-      await Promise.all([...this.pendingRemovals].map((previewPath) => this.drainPendingRemoval(previewPath)));
+    const deadline = this.createDrainDeadline(drainState);
+    const completed = (async () => {
+      const writes = [...this.stages.values()].map((stage) => stage.writePromise).filter(Boolean);
+      const pendingRemovals = this.drainPendingRemovals(drainState);
+      await Promise.allSettled(writes);
+      if (drainState.stopped) return;
+      this.removeAll();
+      await pendingRemovals;
+      await this.drainPendingRemovals(drainState);
+    })();
+    const timedOut = await Promise.race([completed.then(() => false), deadline.promise.then(() => true)]);
+    deadline.cancel();
+    this.stopDrain(drainState);
+    if (timedOut || drainState.timedOut) {
+      const paths = this.previewPaths();
+      if (paths.length) this.logger.warn?.('Timed out draining staged portrait previews:', { paths, timeoutMs: this.drainTimeoutMs });
+      return paths;
     }
+    return [];
   }
 }
 

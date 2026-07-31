@@ -1,4 +1,5 @@
 const portraitVideos = new Set();
+const viewportPortraitVideos = new Set();
 const portraitVisibility = new WeakMap();
 const activePortraitVideos = new WeakSet();
 const primedPortraitSources = new WeakMap();
@@ -45,7 +46,7 @@ function isPortraitInViewport(video) {
 const portraitObserver = new IntersectionObserver((entries) => {
   for (const entry of entries) {
     if (!portraitVideos.has(entry.target) || entry.target.dataset.portraitPlayback !== 'viewport') continue;
-    const visible = entry.isIntersecting && entry.intersectionRatio > 0 && isPortraitInViewport(entry.target);
+    const visible = !portraitPlaybackBlocked && entry.isIntersecting && entry.intersectionRatio > 0 && isPortraitInViewport(entry.target);
     portraitVisibility.set(entry.target, visible);
     applyPortraitPlayback(entry.target);
   }
@@ -66,7 +67,7 @@ function primePortraitVideo(video) {
   } else void playing.catch(() => {});
 }
 
-function syncPortraitPlayback(root = document, blocked = false) {
+function syncPortraitPlayback(root = document, blocked = false, refreshViewport = false) {
   portraitPlaybackBlocked = Boolean(blocked);
   const current = new Set(root.querySelectorAll('.portrait-video'));
   for (const video of portraitVideos) {
@@ -74,15 +75,24 @@ function syncPortraitPlayback(root = document, blocked = false) {
     portraitObserver.unobserve(video);
     video.pause();
     portraitVideos.delete(video);
+    viewportPortraitVideos.delete(video);
+    portraitVisibility.delete(video);
   }
   for (const video of current) {
+    const wasViewport = viewportPortraitVideos.has(video);
     portraitVideos.add(video);
     if (video.dataset.portraitPlayback === 'viewport') {
-      portraitVisibility.set(video, isPortraitInViewport(video));
-      portraitObserver.observe(video);
+      viewportPortraitVideos.add(video);
+      if (portraitPlaybackBlocked) portraitVisibility.set(video, false);
+      else if (!wasViewport || refreshViewport) portraitVisibility.set(video, isPortraitInViewport(video));
+      if (!wasViewport) portraitObserver.observe(video);
     }
     else {
-      portraitObserver.unobserve(video);
+      if (wasViewport) {
+        portraitObserver.unobserve(video);
+        viewportPortraitVideos.delete(video);
+        portraitVisibility.delete(video);
+      }
       const thumb = video.closest('.variant-thumb');
       const active = thumb
         ? thumb.matches(':hover') || thumb.contains(document.activeElement)
