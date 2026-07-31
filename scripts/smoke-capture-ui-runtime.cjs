@@ -66,7 +66,7 @@ async function main() {
       state.captureSession = {
         characterId: 'runtime-character', galleryName: 'Runtime',
         sources: [], selectedSourceId: 'runtime-source', stream, phase: 'ready', frames: 0, encodedFrames: 0,
-        droppedFrames: 0, timer: null, durationTimer: null, sessionId: 'runtime-session', shortcut: 'CommandOrControl+Alt+G',
+        droppedFrames: 0, timer: null, durationTimer: null, matchingTimer: null, sessionId: 'runtime-session', shortcut: 'CommandOrControl+Alt+G', loopSearchSeconds: 2,
         crop: { x: 720, y: 170, size: 800 }, canvas: null, encoder: null, recordingError: null, drawMode: false
       };
       renderLiveCaptureModal();
@@ -119,7 +119,7 @@ async function main() {
     })())`));
     resizedAlignment.actual.forEach((value, index) => assert.ok(Math.abs(value - resizedAlignment.expected[index]) < .5));
 
-    const interaction = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
+      const interaction = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
       const size = document.querySelector('[data-capture-coordinate="size"]');
       size.value = '99999';
       size.dispatchEvent(new Event('input', { bubbles: true }));
@@ -128,11 +128,16 @@ async function main() {
       const beforeX = state.captureSession.crop.x;
       document.querySelector('#capture-selection').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true }));
       const restored = savedLiveCaptureCrop(1920, 1080);
-      return { displayedSize: size.value, committedSize, beforeX, afterX: state.captureSession.crop.x, restored, crop: state.captureSession.crop };
-    })())`));
+        const loopSearch = document.querySelector('#capture-loop-search-seconds');
+        loopSearch.value = '10';
+        loopSearch.dispatchEvent(new Event('input', { bubbles: true }));
+        loopSearch.dispatchEvent(new Event('change', { bubbles: true }));
+        return { displayedSize: size.value, committedSize, beforeX, afterX: state.captureSession.crop.x, restored, crop: state.captureSession.crop, loopSearch: { value: loopSearch.value, min: loopSearch.min, max: loopSearch.max, stored: state.captureSession.loopSearchSeconds } };
+      })())`));
     assert.equal(interaction.displayedSize, String(interaction.committedSize));
     assert.equal(interaction.afterX, interaction.beforeX + 10);
     assert.deepEqual(interaction.restored, interaction.crop);
+    assert.deepEqual(interaction.loopSearch, { value: '10', min: '1', max: '', stored: 10 });
     const guardedUi = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
       const capture = state.captureSession;
       const cancel = document.querySelector('.capture-footer [data-action="close-modal"]');
@@ -158,7 +163,7 @@ async function main() {
       assert.equal(image.isEmpty(), false);
       await fs.writeFile(process.env.CK3_CAPTURE_UI_SCREENSHOT, image.toPNG());
     }
-    console.log('Capture UI runtime smoke test passed: precision controls, square geometry, live output pixels, and viewport containment.');
+    console.log('Capture UI runtime smoke test passed: precision controls, smooth-loop search preference, square geometry, live output pixels, and viewport containment.');
   } finally {
     await window.webContents.executeJavaScript("window.__captureStream?.getTracks().forEach((track) => track.stop())").catch(() => {});
     window.destroy();

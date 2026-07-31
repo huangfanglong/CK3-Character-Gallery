@@ -26,6 +26,7 @@ function createHarness() {
   const finishCalls = [];
   const releases = [];
   const intervals = [];
+  const timeouts = [];
   const statuses = [];
   const characters = [
     { id: 'character-1', name: 'Test' },
@@ -47,6 +48,8 @@ function createHarness() {
     LIVE_CAPTURE_FPS: 30,
     LIVE_CAPTURE_MAX_DURATION_MS: 25_000,
     LIVE_CAPTURE_MAX_FRAMES: 750,
+    LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT: 2,
+    LIVE_CAPTURE_LOOP_MATCH_AFTER_FRAMES: 3,
     LIVE_CAPTURE_SHORTCUTS: [['CommandOrControl+Alt+G', 'Ctrl + Alt + G']],
     MAX_PORTRAIT_VARIANTS: 5,
     clampCaptureCrop: (crop) => ({ ...crop }),
@@ -61,22 +64,38 @@ function createHarness() {
     appendPortrait: async () => true,
     showToast() {},
     createLiveCaptureEncoder: () => Promise.reject(new Error('not configured')),
+    createLiveCaptureLoopProcessor: ({ encoder }) => {
+      let acceptedFrames = 0;
+      return {
+        get acceptedFrames() { return acceptedFrames; },
+        get decision() { return null; },
+        get isReady() { return true; },
+        push(canvas, { sourceTimestamp }) { encoder.encode(canvas, sourceTimestamp, acceptedFrames); acceptedFrames += 1; return null; },
+        beginSearch() { return true; },
+        completeSearch() { return 'fallback'; },
+        forceFallback() {},
+        finalize: () => encoder.finalize(),
+        close() {},
+      };
+    },
+    normalizeLiveCaptureLoopSearchSeconds: (value) => Number.isFinite(Number(value)) && Number(value) >= 1 ? Math.floor(Number(value)) : 2,
+    localStorage: { getItem: () => null, setItem() {} },
     clearInterval(timer) { clearedIntervals.push(timer); },
     cancelAnimationFrame(frame) { cancelledAnimationFrames.push(frame); },
     clearTimeout() {},
     setInterval(callback) { intervals.push(callback); return intervals.length; },
-    setTimeout() { return 1; },
+    setTimeout(callback, delay) { timeouts.push({ callback, delay }); return timeouts.length; },
     performance,
     console,
   };
   vm.createContext(context);
   const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'live-capture.js'), 'utf8');
-  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview;`, context);
-  return { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses };
+  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview;`, context);
+  return { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses, timeouts };
 }
 
 async function main() {
-  const { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses } = createHarness();
+  const { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses, timeouts } = createHarness();
   const sourceListing = deferred();
   context.desktop.listCaptureSources = () => sourceListing.promise;
   const listing = context.showLiveCaptureModalForTest();
@@ -125,6 +144,7 @@ async function main() {
   recording.crop = { x: 120, y: 75, size: 400 };
   recording.video = { videoWidth: 1920, videoHeight: 1080 };
   recording.outputCanvas = { id: 'capture-output' };
+  recording.loopSearchSeconds = 10;
   recording.outputFrameRequest = 77;
   let previewObserverDisconnected = false;
   recording.previewResizeObserver = { disconnect() { previewObserverDisconnected = true; } };
@@ -157,6 +177,11 @@ async function main() {
   assert.equal(recording.droppedFrames, 1);
   assert.equal(recordingDraws, 2);
   await context.finishLiveCaptureForTest();
+  assert.equal(recording.phase, 'matching');
+  assert.equal(statuses.at(-1).status.state, 'matching');
+  assert.equal(timeouts.at(-1).delay, 10_100);
+  timeouts.at(-1).callback();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(recordingDraws, 2);
   assert.equal(previewObserverDisconnected, true);
   assert.equal(statuses.at(-1).status.state, 'saving');
@@ -205,9 +230,19 @@ async function main() {
   pinnedTarget.encoder = { finalize: async () => new ArrayBuffer(16), close() {} };
   context.state.activeId = 'character-2';
   context.state.captureSession = pinnedTarget;
-  await context.finishLiveCaptureForTest();
+  await context.completeLiveCaptureDecisionForTest(pinnedTarget, 'fallback');
   assert.equal(finishCalls.at(-1).characterId, 'character-1');
   context.state.activeId = 'character-1';
+
+  const shortMatching = captureSession();
+  shortMatching.phase = 'matching';
+  shortMatching.sessionId = 'short-matching';
+  shortMatching.loopProcessor = { get isReady() { return false; } };
+  context.state.captureSession = shortMatching;
+  await context.toggleLiveCaptureForTest('short-matching');
+  assert.equal(context.state.captureSession, shortMatching);
+  assert.equal(shortMatching.phase, 'matching');
+  assert.equal(shortMatching.finishRequested, true);
 
   const finalizing = deferred();
   const staleFinish = captureSession();
@@ -216,12 +251,29 @@ async function main() {
   staleFinish.encodedFrames = 1;
   staleFinish.encoder = { finalize: () => finalizing.promise, close() {} };
   context.state.captureSession = staleFinish;
-  const finishing = context.finishLiveCaptureForTest();
+  const finishing = context.completeLiveCaptureDecisionForTest(staleFinish, 'fallback');
   assert.equal(staleFinish.phase, 'finishing');
   context.state.captureSession = replacement;
   finalizing.resolve(new ArrayBuffer(16));
   await finishing;
   assert.equal(context.state.captureSession, replacement);
+
+  const matchingFailure = captureSession();
+  matchingFailure.phase = 'starting-recording';
+  matchingFailure.sessionId = 'matching-failure';
+  matchingFailure.crop = { x: 0, y: 0, size: 450 };
+  matchingFailure.video = { videoWidth: 450, videoHeight: 450 };
+  matchingFailure.outputCanvas = { id: 'capture-output' };
+  const matchingEncoder = { hasCapacity: true, encode() {}, close() {}, finalize: async () => new ArrayBuffer(16) };
+  context.createLiveCaptureEncoder = () => Promise.resolve(matchingEncoder);
+  context.state.captureSession = matchingFailure;
+  await context.startLiveCaptureRecordingForTest(matchingFailure);
+  matchingFailure.phase = 'matching';
+  matchingEncoder.encode = () => { throw new Error('encoder failed during matching'); };
+  intervals.at(-1)();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(context.state.captureSession, null);
+  assert.ok(releases.includes('matching-failure'));
 
   let oldObserverDisconnected = false;
   let newObserverDisconnected = false;

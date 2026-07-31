@@ -6,13 +6,14 @@ const LIVE_CAPTURE_SHORTCUTS = [
   ['CommandOrControl+Shift+R', `${LIVE_CAPTURE_COMMAND_LABEL} + Shift + R`],
 ];
 const LIVE_CAPTURE_CROP_STORAGE_KEY = 'ck3-live-capture-crops-v1';
+const LIVE_CAPTURE_LOOP_SEARCH_STORAGE_KEY = 'ck3-live-capture-loop-search-seconds-v1';
 
 async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   const gallery = getGallery();
   if (!character || !gallery || state.preview || state.captureSession) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { characterId: character.id, galleryName: gallery.name, sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null, durationTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], crop: null, recordingCrop: null, canvas: null, outputCanvas: null, outputFrameRequest: null, previewResizeObserver: null, previewResizeListener: null, previewResources: null, encoder: null, recordingError: null, drawMode: false };
+  state.captureSession = { characterId: character.id, galleryName: gallery.name, sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null, durationTimer: null, matchingTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], loopSearchSeconds: savedLiveCaptureLoopSearchSeconds(), loopDeadline: 0, crop: null, recordingCrop: null, canvas: null, outputCanvas: null, outputFrameRequest: null, previewResizeObserver: null, previewResizeListener: null, previewResources: null, encoder: null, loopProcessor: null, recordingError: null, drawMode: false };
   const capture = state.captureSession;
   renderLiveCaptureModal();
   try {
@@ -52,10 +53,29 @@ function liveCaptureDuration(elapsedMs) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+function savedLiveCaptureLoopSearchSeconds() {
+  try { return normalizeLiveCaptureLoopSearchSeconds(localStorage.getItem(LIVE_CAPTURE_LOOP_SEARCH_STORAGE_KEY)); }
+  catch { return LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT; }
+}
+
+function setLiveCaptureLoopSearchSeconds(value) {
+  const capture = state.captureSession;
+  if (!capture || !['loading', 'select-source', 'empty', 'error', 'starting', 'ready'].includes(capture.phase)) return capture?.loopSearchSeconds ?? LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT;
+  const seconds = normalizeLiveCaptureLoopSearchSeconds(value);
+  capture.loopSearchSeconds = seconds;
+  try { localStorage.setItem(LIVE_CAPTURE_LOOP_SEARCH_STORAGE_KEY, String(seconds)); } catch { /* Storage can be unavailable in hardened renderer sessions. */ }
+  return seconds;
+}
+
 function liveCaptureRecordingStatus(capture) {
   const elapsed = capture.startedAt ? Math.min(LIVE_CAPTURE_MAX_DURATION_MS, performance.now() - capture.startedAt) : 0;
   const dropped = capture.droppedFrames ? ` · ${capture.droppedFrames} dropped` : '';
   return `Recording ${liveCaptureDuration(elapsed)} / ${liveCaptureDuration(LIVE_CAPTURE_MAX_DURATION_MS)} · ${capture.encodedFrames} frames${dropped}. Press ${liveCaptureShortcutLabel(capture.shortcut)} in CK3 to stop.`;
+}
+
+function liveCaptureMatchingStatus(capture) {
+  const seconds = capture.loopSearchSeconds;
+  return `Finding a smooth loop... up to ${seconds} second${seconds === 1 ? '' : 's'}. Press ${liveCaptureShortcutLabel(capture.shortcut)} again to finish now.`;
 }
 
 function liveCaptureCharacter(capture) {
@@ -74,22 +94,25 @@ function renderLiveCaptureModal() {
   const shortcutOptions = LIVE_CAPTURE_SHORTCUTS.map(([value, label]) => `<option value="${value}"${capture.shortcut === value ? ' selected' : ''}>${label}</option>`).join('');
   const canFrame = capture.phase === 'ready';
   const shortcutLocked = !['loading', 'select-source', 'empty', 'error'].includes(capture.phase);
+  const loopSearchLocked = !['loading', 'select-source', 'empty', 'error', 'starting', 'ready'].includes(capture.phase);
   const status = capture.phase === 'loading' ? 'Looking for an open Crusader Kings III window.'
     : capture.phase === 'empty' ? 'No visible Crusader Kings III window was found. Start CK3 in borderless or windowed mode, then refresh.'
       : capture.phase === 'error' ? capture.error
         : capture.phase === 'starting' ? 'Opening the selected CK3 window.'
         : capture.phase === 'starting-recording' ? 'Starting the high-quality video encoder.'
+          : capture.phase === 'matching' ? liveCaptureMatchingStatus(capture)
           : capture.phase === 'finishing' ? 'Encoding and saving the live portrait.'
           : capture.phase === 'recording' ? liveCaptureRecordingStatus(capture)
           : capture.phase === 'ready' ? `Frame the portrait, then press ${liveCaptureShortcutLabel(capture.shortcut)} in CK3 to start recording.`
             : capture.error || 'Choose the visible Crusader Kings III window to capture.';
   const framingDisabled = canFrame ? '' : ' disabled';
-  const preview = ['starting', 'ready', 'starting-recording', 'recording', 'finishing', 'completing'].includes(capture.phase)
+  const preview = ['starting', 'ready', 'starting-recording', 'recording', 'matching', 'finishing', 'completing'].includes(capture.phase)
     ? `<div class="capture-workspace"><div><div class="capture-preview" id="capture-preview"><video id="capture-video" autoplay muted playsinline></video><div class="capture-selection" id="capture-selection" role="group" tabindex="0" aria-label="Portrait recording frame. Drag to move, use corner handles to resize, or use arrow keys to nudge."><div class="capture-selection-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="capture-handle north-west" data-capture-handle="north-west" aria-hidden="true"></span><span class="capture-handle north-east" data-capture-handle="north-east" aria-hidden="true"></span><span class="capture-handle south-east" data-capture-handle="south-east" aria-hidden="true"></span><span class="capture-handle south-west" data-capture-handle="south-west" aria-hidden="true"></span></div></div><div class="capture-frame-tools"><button class="outline-button" data-action="capture-draw" aria-pressed="false"${framingDisabled}>Draw new frame</button><button class="outline-button" data-action="capture-center"${framingDisabled}>Center</button><button class="outline-button" data-action="capture-reset"${framingDisabled}>Reset</button><span>Drag frame to move · corners to resize</span></div></div><aside class="capture-output-panel"><p class="eyebrow">RECORDED OUTPUT</p><canvas id="capture-output" width="450" height="450" role="img" aria-label="Live preview of the 450 by 450 recorded portrait"></canvas><span>450 × 450 WebM</span></aside></div><details class="capture-precision"><summary>Precision controls</summary><div><label>X <input data-capture-coordinate="x" type="number" min="0" step="1"${framingDisabled}/></label><label>Y <input data-capture-coordinate="y" type="number" min="0" step="1"${framingDisabled}/></label><label>Size <input data-capture-coordinate="size" type="number" min="1" step="1"${framingDisabled}/></label><span>Arrow keys: 1 px · Shift: 10 px · +/-: resize</span></div></details>`
     : `<div class="capture-sources">${sources || '<p class="variant-empty">No CK3 window available.</p>'}</div>`;
   const primary = capture.phase === 'empty' ? '<button class="outline-button" data-action="capture-refresh">Refresh</button>'
-    : capture.phase === 'recording' ? '<button class="danger-button" data-action="capture-stop">Stop recording</button>' : '';
-  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal" role="dialog" aria-modal="true" aria-labelledby="capture-title"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2 id="capture-title">Capture ${escapeHtml(liveCaptureCharacter(capture)?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal" aria-label="Close live capture">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p><label class="capture-shortcut">Recording hotkey<select id="capture-shortcut"${shortcutLocked ? ' disabled' : ''}>${shortcutOptions}</select></label>${preview}<div class="capture-footer"><span id="capture-status" aria-live="polite">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
+    : capture.phase === 'recording' ? '<button class="danger-button" data-action="capture-stop">Stop recording</button>'
+      : capture.phase === 'matching' ? '<button class="danger-button" data-action="capture-stop">Finish now</button>' : '';
+  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('capture')}><div class="capture-modal" role="dialog" aria-modal="true" aria-labelledby="capture-title"><div class="modal-head"><div><p class="eyebrow">LIVE CK3 PORTRAIT</p><h2 id="capture-title">Capture ${escapeHtml(liveCaptureCharacter(capture)?.name || 'portrait')}</h2></div><button class="modal-close" data-action="close-modal" aria-label="Close live capture">${icon('close')}</button></div><p class="modal-copy">Capture the visible CK3 window. Keep it unobscured; borderless or windowed mode is recommended.</p><label class="capture-shortcut">Recording hotkey<select id="capture-shortcut"${shortcutLocked ? ' disabled' : ''}>${shortcutOptions}</select></label><label class="capture-shortcut">Smooth loop search<input id="capture-loop-search-seconds" type="number" min="1" step="1" value="${capture.loopSearchSeconds}"${loopSearchLocked ? ' disabled' : ''} aria-label="Seconds to search for a smooth loop" /><span>seconds</span></label>${preview}<div class="capture-footer"><span id="capture-status" aria-live="polite">${escapeHtml(status)}</span><div><button class="outline-button" data-action="close-modal">Cancel</button>${primary}</div></div></div></div>`;
   render('modal');
   if (capture.stream) initializeLiveCapturePreview();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => {
@@ -145,7 +168,7 @@ async function selectLiveCaptureSource(sourceId) {
     }
     capture.stream = stream;
     stream.getVideoTracks()[0].addEventListener('ended', () => {
-      if (state.captureSession === capture && ['starting', 'ready', 'starting-recording', 'recording'].includes(capture.phase)) void cancelLiveCapture('CK3 window capture ended.');
+      if (state.captureSession === capture && ['starting', 'ready', 'starting-recording', 'recording', 'matching'].includes(capture.phase)) void cancelLiveCapture('CK3 window capture ended.');
     }, { once: true });
     renderLiveCaptureModal();
     await waitForLiveCapturePreview(capture);
@@ -311,7 +334,7 @@ function initializeLiveCapturePreview() {
   capture.previewResizeObserver = resizeObserver;
   const resizeListener = () => {
     if (!video.videoWidth || !video.videoHeight) return;
-    if (capture.phase === 'recording' || capture.phase === 'finishing' || capture.phase === 'completing') {
+    if (capture.phase === 'recording' || capture.phase === 'matching' || capture.phase === 'finishing' || capture.phase === 'completing') {
       void cancelLiveCapture('CK3 capture resolution changed.');
       return;
     }
@@ -457,17 +480,20 @@ async function startLiveCaptureRecording(capture) {
   capture.canvas = capture.outputCanvas || document.querySelector('#capture-output') || document.createElement('canvas');
   capture.canvas.width = 450;
   capture.canvas.height = 450;
-  capture.encoder = await createLiveCaptureEncoder();
+  capture.encoder = await createLiveCaptureEncoder({ bufferOnly: true });
+  capture.loopProcessor = createLiveCaptureLoopProcessor({ encoder: capture.encoder });
   stopLiveCaptureOutputPreview(capture);
   capture.recordingError = null;
   const video = capture.video || document.querySelector('#capture-video');
   if (video?.videoWidth && video.videoHeight && capture.crop) capture.recordingCrop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
   if (!drawLiveCaptureFrame(capture)) {
+    capture.loopProcessor.close();
+    capture.loopProcessor = null;
     capture.encoder.close();
     capture.encoder = null;
     throw new Error('Wait for the CK3 preview to finish loading before recording.');
   }
-  capture.encoder.encode(capture.canvas, 0, 0);
+  capture.loopProcessor.push(capture.canvas, { sourceTimestamp: 0, captureTick: 0 });
   capture.frames = 1;
   capture.encodedFrames = 1;
   capture.droppedFrames = 0;
@@ -482,41 +508,48 @@ async function startLiveCaptureRecording(capture) {
         if (drawLiveCaptureFrame(capture)) {
           const elapsedTimestamp = Math.round((performance.now() - capture.startedAt) * 1_000);
           const timestamp = Math.max(elapsedTimestamp, capture.lastTimestamp + Math.round(1_000_000 / LIVE_CAPTURE_FPS));
-          capture.encoder.encode(capture.canvas, timestamp, capture.encodedFrames);
+          const decision = capture.loopProcessor.push(capture.canvas, { sourceTimestamp: timestamp, captureTick: capture.captureTicks });
           capture.lastTimestamp = timestamp;
           capture.encodedFrames += 1;
           capture.frames = capture.encodedFrames;
+          if (decision) void completeLiveCaptureDecision(capture, decision);
+          else if (capture.phase === 'matching' && capture.finishRequested && capture.loopProcessor.isReady) void completeLiveCaptureDecision(capture, 'fallback');
         } else capture.droppedFrames += 1;
       } catch (error) {
         capture.recordingError = error;
-        if (state.captureSession === capture && capture.phase === 'recording') void cancelLiveCapture('WebM recording failed.');
+        if (state.captureSession === capture && ['recording', 'matching'].includes(capture.phase)) void cancelLiveCapture('WebM recording failed.');
         return;
       }
     } else capture.droppedFrames += 1;
     updateLiveCaptureRecordingStatus(capture);
-    if (capture.phase === 'recording' && capture.captureTicks >= LIVE_CAPTURE_MAX_FRAMES) void finishLiveCapture('Frame limit reached.');
+    if (['recording', 'matching'].includes(capture.phase) && capture.captureTicks >= LIVE_CAPTURE_MAX_FRAMES) void completeLiveCaptureDecision(capture, 'fallback', 'Frame limit reached.');
   }, 1_000 / LIVE_CAPTURE_FPS);
 }
 
 async function stopLiveCaptureRecording(capture) {
   if (capture?.timer) clearInterval(capture.timer);
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
-  if (capture) { capture.timer = null; capture.durationTimer = null; }
+  if (capture?.matchingTimer) clearTimeout(capture.matchingTimer);
+  if (capture) { capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; }
   if (capture?.recordingError) {
+    capture.loopProcessor?.close();
+    capture.loopProcessor = null;
     capture.encoder?.close();
     capture.encoder = null;
     throw capture.recordingError;
   }
-  if (!capture?.encoder || !capture.encodedFrames) return null;
-  try { return await capture.encoder.finalize(); }
-  finally { capture.encoder = null; }
+  if (!capture?.loopProcessor || !capture.encodedFrames) return null;
+  try { return await capture.loopProcessor.finalize(); }
+  finally { capture.loopProcessor = null; capture.encoder = null; }
 }
 
 function discardLiveCaptureRecording(capture) {
   if (capture?.timer) clearInterval(capture.timer);
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
+  if (capture?.matchingTimer) clearTimeout(capture.matchingTimer);
+  capture?.loopProcessor?.close();
   capture?.encoder?.close();
-  if (capture) { capture.encoder = null; capture.timer = null; capture.durationTimer = null; capture.recordingCrop = null; }
+  if (capture) { capture.encoder = null; capture.loopProcessor = null; capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; capture.recordingCrop = null; }
 }
 
 async function toggleLiveCapture(sessionId) {
@@ -546,9 +579,28 @@ async function toggleLiveCapture(sessionId) {
     capture.phase = 'recording';
     updateLiveCaptureRecordingUi(capture);
     await reportLiveCaptureStatus(capture, { state: 'recording', startedAt: Date.now() });
-    capture.durationTimer = setTimeout(() => { if (state.captureSession === capture && capture.phase === 'recording') void finishLiveCapture('Maximum recording duration reached.'); }, LIVE_CAPTURE_MAX_DURATION_MS);
-  } else if (capture.phase === 'recording') void finishLiveCapture();
+    capture.durationTimer = setTimeout(() => {
+      if (state.captureSession === capture && ['recording', 'matching'].includes(capture.phase)) void completeLiveCaptureDecision(capture, 'fallback', 'Maximum recording duration reached.');
+    }, LIVE_CAPTURE_MAX_DURATION_MS);
+  } else if (capture.phase === 'recording') void requestLiveCaptureStop(capture);
+  else if (capture.phase === 'matching') void finishLiveCapture();
   else if (capture.phase === 'starting-recording') void cancelLiveCapture();
+}
+
+function requestLiveCaptureStop(capture = state.captureSession) {
+  if (!capture || capture.phase !== 'recording' || !capture.loopProcessor) return;
+  capture.phase = 'matching';
+  capture.finishRequested = false;
+  const remainingCaptureTime = Math.max(0, LIVE_CAPTURE_MAX_DURATION_MS - (performance.now() - capture.startedAt));
+  const searchDuration = Math.min(capture.loopSearchSeconds * 1_000, remainingCaptureTime);
+  const completionDelay = Math.min(searchDuration + Math.ceil(LIVE_CAPTURE_LOOP_MATCH_AFTER_FRAMES * 1_000 / LIVE_CAPTURE_FPS), remainingCaptureTime);
+  capture.loopDeadline = performance.now() + searchDuration;
+  capture.loopProcessor.beginSearch({ requestedIndex: capture.loopProcessor.acceptedFrames, deadline: capture.loopDeadline });
+  capture.matchingTimer = setTimeout(() => {
+    if (state.captureSession === capture && capture.phase === 'matching') void completeLiveCaptureDecision(capture, capture.loopProcessor.completeSearch());
+  }, completionDelay);
+  updateLiveCaptureMatchingUi(capture);
+  void reportLiveCaptureStatus(capture, { state: 'matching', deadline: Date.now() + completionDelay });
 }
 
 function setLiveCaptureFramingDisabled(disabled) {
@@ -588,6 +640,19 @@ function updateLiveCaptureRecordingUi(capture) {
   if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="capture-stop">Stop recording</button>';
 }
 
+function updateLiveCaptureMatchingUi(capture) {
+  const status = document.querySelector('#capture-status');
+  const controls = document.querySelector('.capture-footer > div');
+  if (status) { status.setAttribute('aria-live', 'polite'); status.textContent = liveCaptureMatchingStatus(capture); }
+  setLiveCaptureFramingDisabled(true);
+  if (controls) controls.innerHTML = '<button class="outline-button" data-action="close-modal">Cancel</button><button class="danger-button" data-action="capture-stop">Finish now</button>';
+}
+
+function updateLiveCapturePreparingUi() {
+  const status = document.querySelector('#capture-status');
+  if (status) { status.setAttribute('aria-live', 'polite'); status.textContent = 'Preparing smooth loop...'; }
+}
+
 function updateLiveCaptureFinishingUi() {
   const status = document.querySelector('#capture-status');
   const controls = document.querySelector('.capture-footer > div');
@@ -597,9 +662,22 @@ function updateLiveCaptureFinishingUi() {
 }
 
 async function finishLiveCapture(reason = '') {
-  const capture = state.captureSession; const character = liveCaptureCharacter(capture);
-  if (!capture || ['finishing', 'completing'].includes(capture.phase)) return;
+  const capture = state.captureSession;
+  if (!capture) return;
+  if (capture.phase === 'recording') return requestLiveCaptureStop(capture);
+  if (capture.phase === 'matching' && !capture.loopProcessor?.isReady) {
+    capture.finishRequested = true;
+    updateLiveCapturePreparingUi();
+    return;
+  }
+  return completeLiveCaptureDecision(capture, capture.loopProcessor?.decision || 'fallback', reason);
+}
+
+async function completeLiveCaptureDecision(capture, decision, reason = '') {
+  const character = liveCaptureCharacter(capture);
+  if (!capture || state.captureSession !== capture || ['finishing', 'completing'].includes(capture.phase)) return;
   if (!character) return cancelLiveCapture('The character selected for capture no longer exists.');
+  if (decision !== 'natural') capture.loopProcessor?.forceFallback();
   capture.phase = 'finishing';
   updateLiveCaptureFinishingUi();
   try {
@@ -643,7 +721,8 @@ async function finishLiveCapture(reason = '') {
 function stopLiveCaptureStream(capture) {
   if (capture?.timer) clearInterval(capture.timer);
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
-  if (capture) { capture.timer = null; capture.durationTimer = null; }
+  if (capture?.matchingTimer) clearTimeout(capture.matchingTimer);
+  if (capture) { capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; }
   cleanupLiveCapturePreview(capture);
   capture?.stream?.getTracks().forEach((track) => track.stop());
 }

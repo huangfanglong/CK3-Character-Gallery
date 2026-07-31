@@ -37,7 +37,10 @@ function main() {
   assert.equal(formatCaptureShortcut('CommandOrControl+Shift+R', 'darwin'), 'Cmd + Shift + R');
   assert.deepEqual(captureHudBounds({ workArea: { x: 1920, y: 0, width: 1920, height: 1040 } }), { x: 3512, y: 24, width: 304, height: 72 });
   assert.deepEqual(normalizeCaptureHudStatus({ state: 'recording', startedAt: 1000 }, 'Ctrl + Alt + G'), {
-    state: 'recording', label: 'REC', detail: 'Ctrl + Alt + G to stop', shortcut: 'Ctrl + Alt + G', startedAt: 1000, sound: 'start', hideAfter: 0,
+    state: 'recording', label: 'REC', detail: 'Ctrl + Alt + G to stop', shortcut: 'Ctrl + Alt + G', startedAt: 1000, deadline: 0, sound: 'start', hideAfter: 0,
+  });
+  assert.deepEqual(normalizeCaptureHudStatus({ state: 'matching', deadline: 5000 }, 'Ctrl + Alt + G'), {
+    state: 'matching', label: 'LOOP', detail: 'Ctrl + Alt + G again to finish now', shortcut: 'Ctrl + Alt + G', startedAt: 0, deadline: 5000, sound: '', hideAfter: 0,
   });
   assert.equal(normalizeCaptureHudStatus({ state: 'failed', message: '  Encoder\n exploded\t ' }, 'Ctrl + Alt + G').detail, 'Encoder exploded');
   assert.throws(() => normalizeCaptureHudStatus({ state: 'unknown' }, 'Ctrl + Alt + G'), /status is invalid/);
@@ -83,7 +86,7 @@ function main() {
   window.webContents.emit('ipc-message', {}, 'capture-hud:ready');
   assert.deepEqual(window.webContents.messages.at(-1), {
     channel: 'capture-hud:state',
-    payload: { state: 'armed', label: 'READY', detail: 'Ctrl + Alt + G to record', shortcut: 'Ctrl + Alt + G', startedAt: 0, sound: '', hideAfter: 0 },
+    payload: { state: 'armed', label: 'READY', detail: 'Ctrl + Alt + G to record', shortcut: 'Ctrl + Alt + G', startedAt: 0, deadline: 0, sound: '', hideAfter: 0 },
   });
   assert.ok(window.calls.some((call) => call[0] === 'setBounds' && JSON.stringify(call[1]) === JSON.stringify({ x: 3512, y: 24, width: 304, height: 72 })));
   assert.ok(window.calls.some((call) => call[0] === 'showInactive'));

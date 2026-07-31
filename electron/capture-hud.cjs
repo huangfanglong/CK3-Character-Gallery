@@ -7,6 +7,7 @@ const CAPTURE_HUD_STATES = {
   armed: { label: 'READY', detail: (shortcut) => `${shortcut} to record`, sound: '', hideAfter: 0 },
   starting: { label: 'STARTING', detail: () => 'Preparing video encoder', sound: '', hideAfter: 0 },
   recording: { label: 'REC', detail: (shortcut) => `${shortcut} to stop`, sound: 'start', hideAfter: 0 },
+  matching: { label: 'LOOP', detail: (shortcut) => `${shortcut} again to finish now`, sound: '', hideAfter: 0 },
   saving: { label: 'SAVING', detail: () => 'Encoding live portrait', sound: 'stop', hideAfter: 0 },
   saved: { label: 'SAVED', detail: () => 'Portrait added to gallery', sound: 'success', hideAfter: 2200 },
   failed: { label: 'CAPTURE FAILED', detail: (_shortcut, message) => message || 'The live portrait could not be saved', sound: 'failure', hideAfter: 4500 },
@@ -36,6 +37,7 @@ function normalizeCaptureHudStatus(status, shortcut) {
     detail: definition.detail(safeShortcut, message),
     shortcut: safeShortcut,
     startedAt: status.state === 'recording' && Number.isFinite(status.startedAt) && status.startedAt > 0 ? status.startedAt : 0,
+    deadline: status.state === 'matching' && Number.isFinite(status.deadline) && status.deadline > 0 ? status.deadline : 0,
     sound: definition.sound,
     hideAfter: definition.hideAfter,
   };

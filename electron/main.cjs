@@ -394,11 +394,12 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
 });
 
 ipcMain.handle('capture:status', (event, sessionId, status) => {
-  requireCaptureOwner(event, sessionId);
-  if (!['armed', 'starting', 'recording', 'saving'].includes(status?.state)) throw new Error('Capture status is invalid.');
+  const capture = requireCaptureOwner(event, sessionId);
+  if (!['armed', 'starting', 'recording', 'matching', 'saving'].includes(status?.state)) throw new Error('Capture status is invalid.');
   if (status.state === 'recording' && (!Number.isFinite(status.startedAt) || status.startedAt < Date.now() - 60_000 || status.startedAt > Date.now() + 5_000)) throw new Error('Capture start time is invalid.');
-  captureSessions.transition(sessionId, status.state);
-  try { return ensureCaptureHud().update(sessionId, { state: status.state, startedAt: status.startedAt }); }
+  if (status.state === 'matching' && (!Number.isFinite(capture.startedAt) || !Number.isFinite(status.deadline) || status.deadline < Date.now() - 1_000 || status.deadline > capture.startedAt + 25_000)) throw new Error('Capture loop deadline is invalid.');
+  captureSessions.transition(sessionId, status.state, status);
+  try { return ensureCaptureHud().update(sessionId, { state: status.state, startedAt: status.startedAt, deadline: status.deadline }); }
   catch (error) { console.error('Capture HUD could not update:', error); return false; }
 });
 

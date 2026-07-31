@@ -33,7 +33,10 @@ function main() {
   assert.equal(manager.get(sessionId).ownerWebContentsId, 10);
   assert.equal(manager.get(sessionId).phase, 'arming');
   assert.throws(() => manager.transition(sessionId, 'recording'), /cannot transition/i);
-  ['armed', 'starting', 'recording', 'saving', 'writing', 'written'].forEach((phase) => manager.transition(sessionId, phase));
+  ['armed', 'starting'].forEach((phase) => manager.transition(sessionId, phase));
+  manager.transition(sessionId, 'recording', { startedAt: 1_234 });
+  assert.equal(manager.get(sessionId).startedAt, 1_234);
+  ['matching', 'saving', 'writing', 'written'].forEach((phase) => manager.transition(sessionId, phase));
   assert.equal(manager.get(sessionId).phase, 'written');
   assert.throws(() => manager.transition(sessionId, 'writing'), /cannot transition/i);
   assert.throws(() => manager.transition('missing-session', 'armed'), /has ended/i);

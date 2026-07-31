@@ -20,5 +20,6 @@ jobs:
       - run: npm test
       - run: npm run test:capture-hud-runtime
       - run: npm run test:capture-ui-runtime
+      - run: npm run test:capture-loop-runtime
       - run: npm run package:win:dir
       - run: npm run test:package-portrait-worker

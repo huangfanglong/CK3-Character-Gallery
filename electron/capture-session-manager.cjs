@@ -21,19 +21,21 @@ class CaptureSessionManager {
     return this.sessions.get(sessionId);
   }
 
-  transition(sessionId, phase) {
+  transition(sessionId, phase, details = {}) {
     const capture = this.sessions.get(sessionId);
     if (!capture) throw new Error('The live portrait capture has ended.');
     const allowed = {
       arming: ['armed'],
       armed: ['starting'],
       starting: ['recording'],
-      recording: ['saving'],
+      recording: ['matching', 'saving'],
+      matching: ['saving'],
       saving: ['writing'],
       writing: ['written'],
       written: [],
     };
     if (!allowed[capture.phase]?.includes(phase)) throw new Error(`Capture cannot transition from ${capture.phase} to ${phase}.`);
+    if (phase === 'recording' && Number.isFinite(details.startedAt)) capture.startedAt = details.startedAt;
     capture.phase = phase;
     return capture;
   }

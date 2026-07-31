@@ -506,6 +506,7 @@ function handleDelegatedInput(event) {
     return recordDnaHistory(target.value);
   }
   if (target.matches?.('[data-capture-coordinate]')) return updateLiveCaptureCoordinate(target.dataset.captureCoordinate, target.value);
+  if (target.id === 'capture-loop-search-seconds') return setLiveCaptureLoopSearchSeconds(target.value);
   if (target.id === 'note-input') updateNoteHighlights(target);
 }
 
@@ -518,6 +519,11 @@ function handleDelegatedChange(event) {
     return;
   }
   if (target.id === 'capture-shortcut') return setLiveCaptureShortcut(target.value);
+  if (target.id === 'capture-loop-search-seconds') {
+    const seconds = setLiveCaptureLoopSearchSeconds(target.value);
+    target.value = String(seconds);
+    return;
+  }
   if (target.matches?.('[data-favorite-filter]')) {
     state.filters.favorites = target.checked;
     return render();

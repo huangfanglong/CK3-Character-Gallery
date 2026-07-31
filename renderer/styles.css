@@ -423,8 +423,11 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .capture-source span { overflow: hidden; font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .capture-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; border-block: 1px solid #354139; color: #9faa9f; padding: 10px 0; font: 9px var(--mono); text-transform: uppercase; }
 .capture-shortcut select { min-width: 174px; border: 1px solid #405046; background: #101612; color: var(--paper); padding: 7px 9px; font: 10px var(--mono); }
+.capture-shortcut input { width: 84px; border: 1px solid #405046; background: #101612; color: var(--paper); padding: 7px 9px; font: 10px var(--mono); }
 .capture-shortcut select:focus { border-color: var(--copper); outline: 0; }
+.capture-shortcut input:focus { border-color: var(--copper); outline: 0; }
 .capture-shortcut select:disabled { opacity: .62; }
+.capture-shortcut input:disabled { opacity: .62; }
 .capture-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 18px; align-items: start; }
 .capture-preview { position: relative; width: min(640px, 100%); aspect-ratio: 16 / 9; margin: 0 auto; overflow: hidden; border: 1px solid #637168; background: #080b09; touch-action: none; }
 .capture-preview.drawing { cursor: crosshair; }

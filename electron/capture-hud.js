@@ -2,7 +2,7 @@ const beacon = document.querySelector('#capture-beacon');
 const label = document.querySelector('#capture-label');
 const detail = document.querySelector('#capture-detail');
 const time = document.querySelector('#capture-time');
-const captureHudStates = new Set(['armed', 'starting', 'recording', 'saving', 'saved', 'failed']);
+const captureHudStates = new Set(['armed', 'starting', 'recording', 'matching', 'saving', 'saved', 'failed']);
 let clockTimer = null;
 let audioContext = null;
 let previousState = '';
@@ -24,6 +24,17 @@ function stopClock() {
 function startClock(startedAt) {
   stopClock();
   const update = () => { time.textContent = elapsedLabel(startedAt); };
+  update();
+  time.hidden = false;
+  clockTimer = setInterval(update, 250);
+}
+
+function startCountdown(deadline) {
+  stopClock();
+  const update = () => {
+    const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1_000));
+    time.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  };
   update();
   time.hidden = false;
   clockTimer = setInterval(update, 250);
@@ -94,6 +105,7 @@ function updateCaptureHud(status) {
   label.textContent = status.label;
   detail.textContent = status.detail;
   if (status.state === 'recording' && status.startedAt > 0) startClock(status.startedAt);
+  else if (status.state === 'matching' && status.deadline > 0) startCountdown(status.deadline);
   else stopClock();
   if (status.state !== previousState) {
     cueGeneration += 1;

@@ -87,6 +87,15 @@ async function main() {
     assert.equal(audio.started, 2);
     assert.equal(audio.resumed, 1);
 
+    hud.update('runtime-session', { state: 'matching', deadline: Date.now() + 2200 });
+    await delay(100);
+    const matching = JSON.parse(await hudSnapshot(hud));
+    assert.equal(matching.state, 'beacon matching');
+    assert.equal(matching.label, 'LOOP');
+    assert.match(matching.detail, /again to finish now/);
+    assert.match(matching.time, /^00:0[1-3]$/);
+    assert.equal(matching.timeHidden, false);
+
     hud.update('runtime-session', { state: 'saving' });
     await delay(100);
     assert.equal(JSON.parse(await hudSnapshot(hud)).label, 'SAVING');

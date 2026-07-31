@@ -5,7 +5,13 @@ All notable changes to CK3 Character Gallery will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.1.0] - 2026-07-31
+
+### Added
+- Name colors, title glow customization to character cards.
+- Animated GIF support.
+- Animated WebM support.
+- Live portrait feature that record a user-defined frame in CK3 as animated WebM to use as an animated portrait. Has a smart 'smooth loop' feature that keep passively recording after the recording ends within a user-defined time window, scores candidate frames across that recording window, selects the best one at the end, and remuxes the WebM to that boundary so that the looping animation of the character portrait can appear as smooth as possible without sudden jerks/resets back to first frame.
 
 ## [3.0.2] - 2026-07-22
 
