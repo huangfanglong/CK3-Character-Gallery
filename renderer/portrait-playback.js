@@ -69,6 +69,8 @@ function primePortraitVideo(video) {
 
 function syncPortraitPlayback(root = document, blocked = false, refreshViewport = false) {
   portraitPlaybackBlocked = Boolean(blocked);
+  // A manual geometry refresh replaces queued observer state.
+  if (refreshViewport) portraitObserver.takeRecords();
   const current = new Set(root.querySelectorAll('.portrait-video'));
   for (const video of portraitVideos) {
     if (current.has(video) && video.isConnected) continue;
@@ -116,5 +118,12 @@ function setPortraitPlaybackActive(container, active) {
 }
 
 document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    // Foreground geometry replaces observer state accumulated while hidden.
+    portraitObserver.takeRecords();
+    if (!portraitPlaybackBlocked) {
+      for (const video of viewportPortraitVideos) portraitVisibility.set(video, isPortraitInViewport(video));
+    }
+  }
   for (const video of portraitVideos) applyPortraitPlayback(video);
 });
