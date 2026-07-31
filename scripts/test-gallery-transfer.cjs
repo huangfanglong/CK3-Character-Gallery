@@ -27,6 +27,7 @@ async function main() {
         note: 'Round-trip note',
         color: 'olive',
         nameColor: '#df966d',
+        titleColor: '#a9c18e',
         titleGlowColor: '#8fb8c9',
         images: [firstImage, secondImage],
         dna: 'genes={ hair_color={ 76 255 76 255 } }',
@@ -44,6 +45,7 @@ async function main() {
     assert.notDeepEqual(duplicated.characters[0].images, gallery.characters[0].images);
     assert.equal(duplicated.characters[0].images.length, 2);
     assert.equal(duplicated.characters[0].nameColor, '#df966d');
+    assert.equal(duplicated.characters[0].titleColor, '#a9c18e');
     assert.equal(duplicated.characters[0].titleGlowColor, '#8fb8c9');
     await Promise.all(duplicated.characters[0].images.map((image) => fs.access(image)));
 
@@ -100,6 +102,7 @@ async function main() {
     assert.equal(character.note, 'Round-trip note');
     assert.equal(character.color, 'olive');
     assert.equal(character.nameColor, '#df966d');
+    assert.equal(character.titleColor, '#a9c18e');
     assert.equal(character.titleGlowColor, '#8fb8c9');
     assert.equal(character.dna, gallery.characters[0].dna);
     assert.deepEqual(character.tags, ['english', 'test']);
@@ -115,10 +118,12 @@ async function main() {
       id: 'unsafe-character',
       name: 'Unsafe Appearance',
       nameColor: '#000000',
+      titleColor: '#12345g',
       titleGlowColor: '#12345g',
     }]));
     const unsafeGallery = await importGalleryFromFolder(unsafeImport, 'Unsafe Court', path.join(root, 'unsafe-import-data'));
     assert.equal(unsafeGallery.characters[0].nameColor, '#000000');
+    assert.equal(unsafeGallery.characters[0].titleColor, undefined);
     assert.equal(unsafeGallery.characters[0].titleGlowColor, undefined);
 
     const brokenImport = path.join(root, 'broken-import');

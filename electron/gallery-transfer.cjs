@@ -178,8 +178,10 @@ async function importGalleryFromFolder(folder, galleryName, destinationDataDirec
         if (typeof source[field] === 'string') character[field] = source[field];
       }
       const nameColor = normalizeAppearanceColor(source.nameColor);
+      const titleColor = normalizeAppearanceColor(source.titleColor);
       const titleGlowColor = normalizeAppearanceColor(source.titleGlowColor);
       if (nameColor) character.nameColor = nameColor;
+      if (titleColor) character.titleColor = titleColor;
       if (titleGlowColor) character.titleGlowColor = titleGlowColor;
       importedCharacters.push(character);
     }

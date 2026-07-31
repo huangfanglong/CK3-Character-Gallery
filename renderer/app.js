@@ -97,8 +97,10 @@ function normalizedCharacter(character) {
     color: character.color || colorFor(character.name),
   };
   const nameColor = normalizeAppearanceColor(character.nameColor);
+  const titleColor = normalizeAppearanceColor(character.titleColor);
   const titleGlowColor = normalizeAppearanceColor(character.titleGlowColor);
   if (nameColor) normalized.nameColor = nameColor; else delete normalized.nameColor;
+  if (titleColor) normalized.titleColor = titleColor; else delete normalized.titleColor;
   if (titleGlowColor) normalized.titleGlowColor = titleGlowColor; else delete normalized.titleGlowColor;
   return normalized;
 }

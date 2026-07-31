@@ -132,12 +132,27 @@ async function main() {
         loopSearch.value = '10';
         loopSearch.dispatchEvent(new Event('input', { bubbles: true }));
         loopSearch.dispatchEvent(new Event('change', { bubbles: true }));
-        return { displayedSize: size.value, committedSize, beforeX, afterX: state.captureSession.crop.x, restored, crop: state.captureSession.crop, loopSearch: { value: loopSearch.value, min: loopSearch.min, max: loopSearch.max, stored: state.captureSession.loopSearchSeconds } };
+        const shortcut = document.querySelector('#capture-shortcut');
+        const seconds = document.querySelector('.capture-loop-search-unit');
+        const shortcutRect = shortcut.getBoundingClientRect();
+        const loopRect = loopSearch.getBoundingClientRect();
+        const secondsRect = seconds.getBoundingClientRect();
+        const numberStyles = [loopSearch, size].map((input) => {
+          const rect = input.getBoundingClientRect();
+          return { height: rect.height, colorScheme: getComputedStyle(input).colorScheme };
+        });
+        return { displayedSize: size.value, committedSize, beforeX, afterX: state.captureSession.crop.x, restored, crop: state.captureSession.crop, loopSearch: { value: loopSearch.value, min: loopSearch.min, max: loopSearch.max, stored: state.captureSession.loopSearchSeconds }, controls: { shortcutRight: shortcutRect.right, loopRight: loopRect.right, secondsLeft: secondsRect.left, secondsRight: secondsRect.right, numberStyles } };
       })())`));
     assert.equal(interaction.displayedSize, String(interaction.committedSize));
     assert.equal(interaction.afterX, interaction.beforeX + 10);
     assert.deepEqual(interaction.restored, interaction.crop);
     assert.deepEqual(interaction.loopSearch, { value: '10', min: '1', max: '', stored: 10 });
+    assert.ok(Math.abs(interaction.controls.secondsRight - interaction.controls.shortcutRight) < 1, JSON.stringify(interaction.controls));
+    assert.ok(Math.abs((interaction.controls.secondsLeft - interaction.controls.loopRight) - 8) < 1, JSON.stringify(interaction.controls));
+    interaction.controls.numberStyles.forEach((style) => {
+      assert.ok(style.height >= 36, JSON.stringify(style));
+      assert.equal(style.colorScheme, 'dark');
+    });
     const guardedUi = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
       const capture = state.captureSession;
       const cancel = document.querySelector('.capture-footer [data-action="close-modal"]');

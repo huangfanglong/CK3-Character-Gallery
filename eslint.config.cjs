@@ -4,7 +4,7 @@ const promise = require('eslint-plugin-promise');
 
 const rendererGlobals = Object.fromEntries([
   'MAX_PORTRAIT_VARIANTS', 'state', 'resetSelection', 'hasMaximumPortraits', 'modalPreserveAttribute', 'syncPortraitPlayback', 'setPortraitPlaybackActive',
-  'DEFAULT_CHARACTER_NAME_COLOR', 'DEFAULT_TITLE_GLOW_COLOR', 'CHARACTER_COLOR_PRESETS', 'normalizeAppearanceColor', 'applyCharacterAppearance', 'syncCharacterAppearance', 'showCharacterAppearanceModal', 'trapAppearanceFocus', 'updateAppearanceSelection', 'updateAppearancePreview', 'resetAppearanceEditor', 'saveCharacterAppearance',
+  'DEFAULT_CHARACTER_NAME_COLOR', 'DEFAULT_CHARACTER_TITLE_COLOR', 'DEFAULT_TITLE_GLOW_COLOR', 'CHARACTER_COLOR_PRESETS', 'normalizeAppearanceColor', 'applyCharacterAppearance', 'syncCharacterAppearance', 'showCharacterAppearanceModal', 'trapAppearanceFocus', 'updateAppearanceSelection', 'updateAppearancePreview', 'resetAppearanceEditor', 'saveCharacterAppearance',
   'morphAppContent', 'morphAppRegion',
   'chromeMarkup', 'contextMenuMarkup', 'cardMarkup', 'tableMarkup', 'sidebarMarkup', 'inspectorMarkup', 'mainMarkup', 'sortControlMarkup', 'filterPanelMarkup', 'emptyResultsMarkup',
   'showCropModal', 'initializeCropInteraction', 'resetCropPosition', 'clampCropOffset', 'applyCropTransform', 'saveCroppedPortrait', 'releaseCropSource', 'appendPortrait',
