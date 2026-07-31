@@ -48,6 +48,19 @@ function ensureCaptureHud() {
   return captureHud;
 }
 
+function destroyCaptureHud() {
+  const hud = captureHud;
+  captureHud = null;
+  if (!hud) return true;
+  try {
+    hud.destroy();
+    return true;
+  } catch (error) {
+    console.error('Capture HUD could not be destroyed:', error);
+    return false;
+  }
+}
+
 function readClipboardImagePath() {
   const formats = clipboard.availableFormats();
   const fileFormat = formats.find((format) => /filenamew|filename/i.test(format));
@@ -168,27 +181,28 @@ async function createWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindowWebContentsId = window.webContents.id;
-  const releaseOwnedCaptures = () => releaseCaptureSessionsByOwner(window.webContents.id);
-  const releaseOwnedPortraitSources = () => { void releasePortraitSourcesByOwner(window.webContents.id).catch(() => {}); };
-  window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+  const contents = window.webContents;
+  const ownerWebContentsId = contents.id;
+  mainWindowWebContentsId = ownerWebContentsId;
+  const releaseOwnedCaptures = () => releaseCaptureSessionsByOwner(ownerWebContentsId);
+  const releaseOwnedPortraitSources = () => { void releasePortraitSourcesByOwner(ownerWebContentsId).catch(() => {}); };
+  contents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) { releaseOwnedCaptures(); releaseOwnedPortraitSources(); }
   });
-  window.webContents.on('render-process-gone', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
-  window.webContents.once('destroyed', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
-  window.webContents.on('will-navigate', (event) => event.preventDefault());
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('render-process-gone', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
+  contents.once('destroyed', () => { releaseOwnedCaptures(); releaseOwnedPortraitSources(); });
+  contents.on('will-navigate', (event) => event.preventDefault());
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.once('closed', () => {
-    if (mainWindowWebContentsId === window.webContents.id) mainWindowWebContentsId = null;
-    captureHud?.destroy();
-    captureHud = null;
+    if (mainWindowWebContentsId === ownerWebContentsId) mainWindowWebContentsId = null;
+    if (!destroyCaptureHud()) app.quit();
   });
 
-  window.webContents.on('before-input-event', (event, input) => {
+  contents.on('before-input-event', (event, input) => {
     const command = input.control || input.meta;
     if (input.type === 'keyDown' && command && input.key.toLowerCase() === 'v' && readClipboardImage()) {
       event.preventDefault();
-      window.webContents.send('shortcut:paste-image');
+      contents.send('shortcut:paste-image');
     }
   });
   window.setMenuBarVisibility(false);
@@ -537,7 +551,11 @@ app.on('before-quit', (event) => {
   if (portraitPreviewDrainInProgress) return;
   portraitPreviewDrainInProgress = true;
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.destroy();
+    try {
+      if (!window.isDestroyed()) window.destroy();
+    } catch (error) {
+      console.error('Failed to destroy a window during shutdown:', error);
+    }
   }
   void portraitPreviews.drain()
     .catch((error) => console.error('Failed to drain staged portrait previews:', error))
@@ -550,7 +568,6 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   portraitPreviews.removeAll();
   void portraitWorker.destroy().catch(() => {});
-  captureHud?.destroy();
-  captureHud = null;
+  destroyCaptureHud();
   globalShortcut.unregisterAll();
 });
