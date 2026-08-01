@@ -3,6 +3,7 @@ const LIVE_CAPTURE_MAX_DURATION_MS = 25_000;
 const LIVE_CAPTURE_MAX_FRAMES = LIVE_CAPTURE_FPS * (LIVE_CAPTURE_MAX_DURATION_MS / 1_000);
 const LIVE_CAPTURE_VIDEO_BITRATE = 6_000_000;
 const LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT = 2;
+const LIVE_CAPTURE_LOOP_SEARCH_SECONDS_MAX = Math.floor(LIVE_CAPTURE_MAX_DURATION_MS / 1_000);
 const LIVE_CAPTURE_LOOP_OVERLAP_FRAMES = 6;
 const LIVE_CAPTURE_LOOP_MATCH_BEFORE_FRAMES = 3;
 const LIVE_CAPTURE_LOOP_MATCH_AFTER_FRAMES = 3;
@@ -15,5 +16,7 @@ const LIVE_CAPTURE_LOOP_SCORE_MAX = 0.036;
 
 function normalizeLiveCaptureLoopSearchSeconds(value) {
   const seconds = Math.floor(Number(value));
-  return Number.isFinite(seconds) && seconds >= 1 ? seconds : LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT;
+  return Number.isFinite(seconds) && seconds >= 1
+    ? Math.min(seconds, LIVE_CAPTURE_LOOP_SEARCH_SECONDS_MAX)
+    : LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT;
 }

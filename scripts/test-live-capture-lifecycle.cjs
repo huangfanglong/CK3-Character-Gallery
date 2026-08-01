@@ -49,6 +49,7 @@ function createHarness() {
     LIVE_CAPTURE_MAX_DURATION_MS: 25_000,
     LIVE_CAPTURE_MAX_FRAMES: 750,
     LIVE_CAPTURE_LOOP_SEARCH_SECONDS_DEFAULT: 2,
+    LIVE_CAPTURE_LOOP_SEARCH_SECONDS_MAX: 25,
     LIVE_CAPTURE_LOOP_MATCH_AFTER_FRAMES: 3,
     LIVE_CAPTURE_SHORTCUTS: [['CommandOrControl+Alt+G', 'Ctrl + Alt + G']],
     MAX_PORTRAIT_VARIANTS: 5,
@@ -78,7 +79,7 @@ function createHarness() {
         close() {},
       };
     },
-    normalizeLiveCaptureLoopSearchSeconds: (value) => Number.isFinite(Number(value)) && Number(value) >= 1 ? Math.floor(Number(value)) : 2,
+    normalizeLiveCaptureLoopSearchSeconds: (value) => Number.isFinite(Number(value)) && Number(value) >= 1 ? Math.min(Math.floor(Number(value)), 25) : 2,
     localStorage: { getItem: () => null, setItem() {} },
     clearInterval(timer) { clearedIntervals.push(timer); },
     cancelAnimationFrame(frame) { cancelledAnimationFrames.push(frame); },
@@ -90,7 +91,7 @@ function createHarness() {
   };
   vm.createContext(context);
   const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'live-capture.js'), 'utf8');
-  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview;`, context);
+  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview; globalThis.setLiveCaptureLoopSearchSecondsForTest = setLiveCaptureLoopSearchSeconds; globalThis.liveCaptureMatchingStatusForTest = liveCaptureMatchingStatus;`, context);
   return { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses, timeouts };
 }
 
@@ -152,6 +153,10 @@ async function main() {
   const encoder = { hasCapacity: false, encode() {}, close() {}, finalize: async () => new ArrayBuffer(16) };
   context.createLiveCaptureEncoder = () => Promise.resolve(encoder);
   context.state.captureSession = recording;
+  context.setLiveCaptureLoopSearchSecondsForTest('9999');
+  assert.equal(recording.loopSearchSeconds, 25);
+  assert.match(context.liveCaptureMatchingStatusForTest({ loopSearchSeconds: 25, loopSearchDurationMs: 4_250, shortcut: recording.shortcut }), /up to 4\.3 seconds/);
+  context.setLiveCaptureLoopSearchSecondsForTest('10');
   let recordingDraws = 0;
   context.drawLiveCaptureFrame = () => { recordingDraws += 1; return true; };
   await context.toggleLiveCaptureForTest('recording-progress');

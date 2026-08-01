@@ -477,7 +477,7 @@ h1 em { color: var(--copper-bright); font-style: italic; font-weight: 500; }
 .capture-precision { margin-top: 12px; border-block: 1px solid #354139; color: #89958d; font: 9px var(--mono); text-transform: uppercase; }
 .capture-precision summary { width: max-content; padding: 9px 0; cursor: pointer; }
 .capture-precision > div { display: grid; grid-template-columns: repeat(3, minmax(90px, 130px)) 1fr; align-items: end; gap: 10px; padding: 0 0 11px; }
-.capture-precision label { display: grid; gap: 5px; }
+.capture-precision-field { display: grid; gap: 5px; }
 .capture-precision input { min-width: 0; width: 100%; border: 1px solid #405046; outline: 0; background: #101612; color: var(--paper); padding: 7px 8px; font: 10px var(--mono); }
 .capture-precision input:focus { outline: 0; }
 .capture-precision > div > span { align-self: center; color: #6f7a72; font-size: 8px; text-align: right; }

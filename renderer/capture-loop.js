@@ -6,18 +6,6 @@ function captureLoopBlendWeight(index, count) {
   return 3 * progress ** 2 - 2 * progress ** 3;
 }
 
-function captureLoopOutputPlan(frameCount, overlapFrames) {
-  if (!Number.isInteger(frameCount) || !Number.isInteger(overlapFrames) || overlapFrames < 2 || frameCount < overlapFrames * 2) {
-    throw new Error('A loop requires at least twice the overlap frame count.');
-  }
-  const indexes = (start, end) => Array.from({ length: end - start }, (_unused, index) => start + index);
-  return {
-    body: indexes(overlapFrames, frameCount - overlapFrames),
-    tail: indexes(frameCount - overlapFrames, frameCount),
-    head: indexes(0, overlapFrames),
-  };
-}
-
 function captureLoopAppearanceDistance(reference, candidate) {
   if (!reference || !candidate || reference.length !== candidate.length || !reference.length) throw new Error('Loop descriptors must be non-empty and equal in length.');
   let total = 0;

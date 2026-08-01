@@ -6,7 +6,6 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'capture-loop.js'), 'utf8');
 const loop = vm.runInNewContext(`(() => { ${source}; return {
   captureLoopBlendWeight,
-  captureLoopOutputPlan,
   captureLoopAppearanceDistance,
   captureLoopMatchScore,
   createLiveCaptureLoopProcessor,
@@ -18,16 +17,6 @@ assert.throws(() => loop.captureLoopBlendWeight(0, 1), /at least two/i);
 for (let index = 1; index < 6; index += 1) {
   assert.ok(loop.captureLoopBlendWeight(index, 6) > loop.captureLoopBlendWeight(index - 1, 6));
 }
-
-assert.equal(
-  JSON.stringify(loop.captureLoopOutputPlan(18, 6)),
-  JSON.stringify({ body: [6, 7, 8, 9, 10, 11], tail: [12, 13, 14, 15, 16, 17], head: [0, 1, 2, 3, 4, 5] }),
-);
-assert.equal(
-  JSON.stringify(loop.captureLoopOutputPlan(12, 6)),
-  JSON.stringify({ body: [], tail: [6, 7, 8, 9, 10, 11], head: [0, 1, 2, 3, 4, 5] }),
-);
-assert.throws(() => loop.captureLoopOutputPlan(11, 6), /at least twice/i);
 
 const reference = [new Float32Array([0, 0]), new Float32Array([1, 1]), new Float32Array([2, 2])];
 const sameMotion = [new Float32Array([10, 10]), new Float32Array([11, 11]), new Float32Array([12, 12])];
