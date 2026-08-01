@@ -26,6 +26,9 @@ async function main() {
         title: 'The Test Character',
         note: 'Round-trip note',
         color: 'olive',
+        nameColor: '#df966d',
+        titleColor: '#a9c18e',
+        titleGlowColor: '#8fb8c9',
         images: [firstImage, secondImage],
         dna: 'genes={ hair_color={ 76 255 76 255 } }',
         tags: ['english', 'test'],
@@ -41,6 +44,9 @@ async function main() {
     assert.notEqual(duplicated.characters[0].id, gallery.characters[0].id);
     assert.notDeepEqual(duplicated.characters[0].images, gallery.characters[0].images);
     assert.equal(duplicated.characters[0].images.length, 2);
+    assert.equal(duplicated.characters[0].nameColor, '#df966d');
+    assert.equal(duplicated.characters[0].titleColor, '#a9c18e');
+    assert.equal(duplicated.characters[0].titleGlowColor, '#8fb8c9');
     await Promise.all(duplicated.characters[0].images.map((image) => fs.access(image)));
 
     const duplicatedCharacter = await duplicateCharacterInArchive(gallery.characters[0], 'Aldith Copy', path.join(root, 'duplicate-character-data'));
@@ -95,6 +101,9 @@ async function main() {
     assert.equal(character.title, 'The Test Character');
     assert.equal(character.note, 'Round-trip note');
     assert.equal(character.color, 'olive');
+    assert.equal(character.nameColor, '#df966d');
+    assert.equal(character.titleColor, '#a9c18e');
+    assert.equal(character.titleGlowColor, '#8fb8c9');
     assert.equal(character.dna, gallery.characters[0].dna);
     assert.deepEqual(character.tags, ['english', 'test']);
     assert.equal(character.coverIndex, 1);
@@ -102,6 +111,20 @@ async function main() {
     assert.equal(character.modified, 200);
     assert.equal(character.images.length, 2);
     await Promise.all(character.images.map((image) => fs.access(image)));
+
+    const unsafeImport = path.join(root, 'unsafe-import');
+    await fs.mkdir(unsafeImport, { recursive: true });
+    await fs.writeFile(path.join(unsafeImport, 'characters.json'), JSON.stringify([{
+      id: 'unsafe-character',
+      name: 'Unsafe Appearance',
+      nameColor: '#000000',
+      titleColor: '#12345g',
+      titleGlowColor: '#12345g',
+    }]));
+    const unsafeGallery = await importGalleryFromFolder(unsafeImport, 'Unsafe Court', path.join(root, 'unsafe-import-data'));
+    assert.equal(unsafeGallery.characters[0].nameColor, '#000000');
+    assert.equal(unsafeGallery.characters[0].titleColor, undefined);
+    assert.equal(unsafeGallery.characters[0].titleGlowColor, undefined);
 
     const brokenImport = path.join(root, 'broken-import');
     await fs.mkdir(brokenImport, { recursive: true });

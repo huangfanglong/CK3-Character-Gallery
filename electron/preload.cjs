@@ -6,7 +6,20 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   chooseImage: (characterId) => ipcRenderer.invoke('library:choose-image', characterId),
   readClipboardImage: () => ipcRenderer.invoke('library:read-clipboard-image'),
   readImagePath: (value) => ipcRenderer.invoke('library:read-image-path', value),
+  prepareImageData: (dataUrl) => ipcRenderer.invoke('library:prepare-image-data', dataUrl),
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
+  releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
+  listCaptureSources: () => ipcRenderer.invoke('capture:list-sources'),
+  armCapture: (sourceId, shortcut) => ipcRenderer.invoke('capture:arm', sourceId, shortcut),
+  setCaptureStatus: (sessionId, status) => ipcRenderer.invoke('capture:status', sessionId, status),
+  finishCapture: (sessionId, characterId, video) => ipcRenderer.invoke('capture:finish', sessionId, characterId, video),
+  completeCapture: (sessionId, outcome) => ipcRenderer.invoke('capture:complete', sessionId, outcome),
+  releaseCapture: (sessionId, failureMessage = '') => ipcRenderer.invoke('capture:release', sessionId, failureMessage),
+  onCaptureToggle: (callback) => {
+    const listener = (_event, sessionId) => callback(sessionId);
+    ipcRenderer.on('capture:toggle', listener);
+    return () => ipcRenderer.removeListener('capture:toggle', listener);
+  },
   deleteImage: (imagePath) => ipcRenderer.invoke('library:delete-image', imagePath),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
   onPasteImage: (callback) => {

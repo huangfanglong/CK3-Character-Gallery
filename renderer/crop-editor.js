@@ -1,7 +1,15 @@
 function showCropModal(source) {
   state.pendingPortraitSource = null;
+  const characterId = source.targetCharacterId || getActiveCharacter()?.id || null;
+  const galleryName = source.targetGalleryName || state.activeGallery;
   state.cropSession = {
+    characterId,
+    galleryName,
     dataUrl: source.dataUrl,
+    sourceId: source.sourceId || null,
+    format: source.format || null,
+    animated: Boolean(source.animated),
+    frames: Number(source.frames) || 1,
     sourceWidth: source.width,
     sourceHeight: source.height,
     viewport: 480,
@@ -10,7 +18,10 @@ function showCropModal(source) {
     offsetX: 0,
     offsetY: 0,
   };
-  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('crop')}><div class="crop-modal"><div class="modal-head"><div><p class="eyebrow">ADJUST IMAGE POSITION</p><h2>Compose the portrait</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Drag the image to position it inside the square. Use the slider or mouse wheel to zoom before adding it to the selected character.</p><div class="crop-stage" id="crop-stage"><img id="crop-source" src="${source.dataUrl}" alt="Clipboard portrait preview" draggable="false"/><div class="crop-grid"><span></span><span></span><span></span><span></span></div></div><div class="crop-controls"><button class="outline-button" data-action="crop-reset">Reset</button><label><span>Zoom</span><input id="crop-zoom" type="range" min="100" max="300" value="100"/><output id="crop-zoom-value">100%</output></label></div><div class="crop-footer"><span>Output: 450 × 450 PNG</span><div><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="save-crop">Use portrait ${icon('check')}</button></div></div></div></div>`;
+  const outputLabel = source.animated
+    ? `Output: 450 × 450 animated GIF · ${source.frames} frames`
+    : source.format === 'gif' ? 'Output: 450 × 450 GIF' : 'Output: 450 × 450 PNG';
+  state.modal = `<div class="modal-backdrop" ${modalPreserveAttribute('crop')}><div class="crop-modal"><div class="modal-head"><div><p class="eyebrow">ADJUST IMAGE POSITION</p><h2>Compose the portrait</h2></div><button class="modal-close" data-action="close-modal">${icon('close')}</button></div><p class="modal-copy">Drag the image to position it inside the square. Use the slider or mouse wheel to zoom before adding it to the selected character.</p><div class="crop-stage" id="crop-stage"><img id="crop-source" src="${source.dataUrl}" alt="Portrait crop preview" draggable="false"/><div class="crop-grid"><span></span><span></span><span></span><span></span></div></div><div class="crop-controls"><button class="outline-button" data-action="crop-reset">Reset</button><label><span>Zoom</span><input id="crop-zoom" type="range" min="100" max="300" value="100"/><output id="crop-zoom-value">100%</output></label></div><div class="crop-footer"><span>${outputLabel}</span><div><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="save-crop">Use portrait ${icon('check')}</button></div></div></div></div>`;
   render('modal');
   initializeCropInteraction();
   requestAnimationFrame(initializeCropInteraction);
@@ -100,30 +111,71 @@ function applyCropTransform() {
 }
 
 async function saveCroppedPortrait() {
-  const character = getActiveCharacter();
   const session = state.cropSession;
-  if (!character || !session) return;
+  if (!session || session.saving) return;
+  const character = state.galleries.find((gallery) => gallery.name === session.galleryName)?.characters.find((item) => item.id === session.characterId);
+  if (!character) {
+    releaseCropSource();
+    state.cropSession = null;
+    state.modal = null;
+    render('modal');
+    return showToast('The selected character is no longer available.', 'info');
+  }
   const scale = session.baseScale * session.zoom;
+  const modal = state.modal;
+  const saveButton = document.querySelector('[data-action="save-crop"]');
+  session.saving = true;
+  if (saveButton) { saveButton.disabled = true; saveButton.textContent = 'Processing portrait'; }
   try {
     const selected = await desktop.saveCroppedImage(character.id, {
       dataUrl: session.dataUrl,
+      sourceId: session.sourceId,
       x: -session.offsetX / scale,
       y: -session.offsetY / scale,
       size: session.viewport / scale,
     });
+    if (state.cropSession !== session || state.modal !== modal) {
+      if (state.cropSession === session) state.cropSession = null;
+      await desktop.deleteImage(selected.path).catch(() => {});
+      return;
+    }
     state.modal = null;
     state.cropSession = null;
     await appendPortrait(character, selected, 'Clipboard portrait added.', true);
-  } catch (error) { showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info'); }
+  } catch (error) {
+    if (state.cropSession === session && state.modal === modal) showToast(readableError(error, 'The cropped portrait could not be saved.'), 'info');
+  } finally {
+    if (state.cropSession === session && state.modal === modal) {
+      session.saving = false;
+      if (saveButton?.isConnected) { saveButton.disabled = false; saveButton.innerHTML = `Use portrait ${icon('check')}`; }
+    }
+  }
+}
+
+function releaseCropSource(source = null) {
+  const sourceIds = new Set([
+    source?.sourceId,
+    state.cropSession?.sourceId,
+    state.pendingPortraitSource?.sourceId,
+  ].filter(Boolean));
+  sourceIds.forEach((sourceId) => { void desktop?.releaseImageSource(sourceId).catch(() => {}); });
 }
 
 async function appendPortrait(character, selected, message, makeCover = false) {
-  character.images = character.images || [];
-  const urls = state.imageUrls.get(character.id) || [];
-  const previousImages = [...character.images];
-  const previousUrls = [...urls];
+  const hadImages = Array.isArray(character.images);
+  const hadImageUrls = state.imageUrls.has(character.id);
+  const hadCover = Object.hasOwn(character, 'coverIndex');
+  const hadImageUrl = Object.hasOwn(character, '_imageUrl');
+  const hadModified = Object.hasOwn(character, 'modified');
+  const hadVariants = Object.hasOwn(character, 'variants');
+  const previousImages = [...(character.images || [])];
   const previousCover = character.coverIndex;
   const previousImageUrl = character._imageUrl;
+  const previousModified = character.modified;
+  const previousVariants = character.variants;
+  character.images = character.images || [];
+  const urls = state.imageUrls.get(character.id) || [];
+  const previousUrls = [...urls];
   if (makeCover) character.images.unshift(selected.path);
   else character.images.push(selected.path);
   if (makeCover) urls.unshift(selected.url);
@@ -134,14 +186,17 @@ async function appendPortrait(character, selected, message, makeCover = false) {
   character.modified = Date.now();
   character.variants = character.images.length;
   render();
-  if (await saveLibrary()) showToast(message, 'success');
+  if (await saveLibrary()) { showToast(message, 'success'); return true; }
   else {
-    character.images = previousImages;
-    character.variants = previousImages.length;
-    character.coverIndex = previousCover;
-    character._imageUrl = previousImageUrl;
-    state.imageUrls.set(character.id, previousUrls);
+    if (hadImages) character.images = previousImages; else delete character.images;
+    if (hadVariants) character.variants = previousVariants; else delete character.variants;
+    if (hadCover) character.coverIndex = previousCover; else delete character.coverIndex;
+    if (hadImageUrl) character._imageUrl = previousImageUrl; else delete character._imageUrl;
+    if (hadModified) character.modified = previousModified; else delete character.modified;
+    if (hadImageUrls) state.imageUrls.set(character.id, previousUrls); else state.imageUrls.delete(character.id);
     render();
+    if (hadImageUrls) state.imageUrls.set(character.id, previousUrls); else state.imageUrls.delete(character.id);
     await cleanupUnusedPortraits([selected.path]);
+    return false;
   }
 }

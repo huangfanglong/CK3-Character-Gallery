@@ -4,6 +4,10 @@ const path = require('node:path');
 
 const SORT_MODES = new Set(['recent', 'custom', 'name', 'oldest']);
 
+function normalizeAppearanceColor(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
+}
+
 function safeFolderName(value) {
   const cleaned = String(value || 'Collection')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -173,6 +177,12 @@ async function importGalleryFromFolder(folder, galleryName, destinationDataDirec
       for (const field of ['title', 'note', 'color']) {
         if (typeof source[field] === 'string') character[field] = source[field];
       }
+      const nameColor = normalizeAppearanceColor(source.nameColor);
+      const titleColor = normalizeAppearanceColor(source.titleColor);
+      const titleGlowColor = normalizeAppearanceColor(source.titleGlowColor);
+      if (nameColor) character.nameColor = nameColor;
+      if (titleColor) character.titleColor = titleColor;
+      if (titleGlowColor) character.titleGlowColor = titleGlowColor;
       importedCharacters.push(character);
     }
     return { name: galleryName, sortMode: info.sortMode, characters: importedCharacters };

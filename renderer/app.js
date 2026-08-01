@@ -87,7 +87,7 @@ function gallerySortMode(gallery = getGallery()) {
 }
 
 function normalizedCharacter(character) {
-  return {
+  const normalized = {
     ...character,
     tags: characterTags(character),
     images: Array.isArray(character.images) ? character.images : [],
@@ -96,6 +96,13 @@ function normalizedCharacter(character) {
     variants: character.variants || character.images?.length || 0,
     color: character.color || colorFor(character.name),
   };
+  const nameColor = normalizeAppearanceColor(character.nameColor);
+  const titleColor = normalizeAppearanceColor(character.titleColor);
+  const titleGlowColor = normalizeAppearanceColor(character.titleGlowColor);
+  if (nameColor) normalized.nameColor = nameColor; else delete normalized.nameColor;
+  if (titleColor) normalized.titleColor = titleColor; else delete normalized.titleColor;
+  if (titleGlowColor) normalized.titleGlowColor = titleGlowColor; else delete normalized.titleGlowColor;
+  return normalized;
 }
 
 function colorFor(name = '') {
@@ -147,6 +154,10 @@ function coverVariantIndex(character) {
 
 function portraitMarkup(character, size = 'card', variantIndex = 0) {
   const image = imageUrlFor(character, variantIndex);
+  if (image?.split(/[?#]/, 1)[0].toLowerCase().endsWith('.webm')) {
+    const playback = ['list-preview', 'thumb'].includes(size) ? 'interaction' : 'viewport';
+    return `<video class="portrait-image portrait-video ${size}" src="${escapeHtml(image)}" data-portrait-playback="${playback}" loop muted playsinline preload="metadata" aria-label="${escapeHtml(character.name)} portrait"></video>`;
+  }
   if (image) return `<img class="portrait-image ${size}" src="${escapeHtml(image)}" alt="${escapeHtml(character.name)} portrait" />`;
   return `<div class="portrait-placeholder ${size}" aria-label="No portrait available"><span class="silhouette-head"></span><span class="silhouette-shoulders"></span></div>`;
 }
@@ -167,6 +178,7 @@ function icon(name) {
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>',
     check: '<path d="m5 12 4 4L19 6"></path>',
     edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"></path>',
+    palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h3a6 6 0 0 0 0-12z"></path><circle cx="7.5" cy="10.5" r=".8"></circle><circle cx="9" cy="6.8" r=".8"></circle><circle cx="13" cy="6" r=".8"></circle>',
     trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>',
     warning: '<path d="M12 4 21 20H3z"></path><path d="M12 9v5M12 17h.01"></path>',
     chevron: '<path d="m7 10 5 5 5-5"></path>',
@@ -175,6 +187,37 @@ function icon(name) {
 }
 
 let lastRenderedActiveId = null;
+let portraitSourceRequest = null;
+const MAX_ANIMATED_PORTRAIT_BYTES = 50 * 1024 * 1024;
+
+async function runPortraitSourceRequest(operation) {
+  if (portraitSourceRequest) return undefined;
+  const request = { modal: state.modal, promise: Promise.resolve().then(operation) };
+  portraitSourceRequest = request;
+  try {
+    const source = await request.promise;
+    if (state.modal !== request.modal || state.cropSession || state.captureSession) {
+      if (source?.sourceId) releaseCropSource(source);
+      return undefined;
+    }
+    return source;
+  } catch (error) {
+    if (state.modal !== request.modal || state.cropSession || state.captureSession) return undefined;
+    throw error;
+  }
+  finally { if (portraitSourceRequest === request) portraitSourceRequest = null; }
+}
+
+function activePortraitTarget() {
+  const gallery = getGallery();
+  const character = getActiveCharacter();
+  return gallery && character ? { characterId: character.id, galleryName: gallery.name } : null;
+}
+
+function characterForPortraitTarget(target) {
+  if (!target?.characterId || !target.galleryName) return null;
+  return state.galleries.find((gallery) => gallery.name === target.galleryName)?.characters.find((character) => character.id === target.characterId) || null;
+}
 
 function render(scope = 'all') {
   if (scope === 'selection') return renderSelection();
@@ -183,6 +226,8 @@ function render(scope = 'all') {
   if (scope === 'chrome') return renderChrome();
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
+  syncCharacterAppearance(app);
+  syncPortraitPlayback(app, Boolean(state.modal), true);
   syncGalleryBatchSelection();
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
@@ -216,7 +261,8 @@ function renderSelection() {
     lastRenderedActiveId = state.activeId;
   }
   const inspector = app.querySelector('.inspector');
-  if (inspector) morphAppRegion(inspector, inspectorMarkup(getActiveCharacter()));
+  if (inspector) syncCharacterAppearance(morphAppRegion(inspector, inspectorMarkup(getActiveCharacter())));
+  syncPortraitPlayback(app, Boolean(state.modal));
 }
 
 function renderChrome() {
@@ -237,6 +283,7 @@ function renderModal() {
   const current = app.querySelector('.modal-backdrop');
   const next = morphAppRegion(current, state.modal || '');
   if (!current && next) app.insertBefore(next, app.querySelector('.context-menu'));
+  syncPortraitPlayback(app, Boolean(state.modal), !state.modal);
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
 }
 
@@ -251,6 +298,19 @@ function installEventDelegation() {
   app.addEventListener('change', handleDelegatedChange);
   app.addEventListener('focusin', (event) => {
     if (event.target.closest?.('.dna-modal') && event.target.dataset?.action !== 'save-dna') state.focusDnaSave = false;
+    setPortraitPlaybackActive(event.target.closest?.('.variant-thumb'), true);
+  });
+  app.addEventListener('focusout', (event) => {
+    const thumb = event.target.closest?.('.variant-thumb');
+    if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
+  });
+  app.addEventListener('mouseover', (event) => {
+    const thumb = event.target.closest?.('.variant-thumb');
+    if (thumb && !thumb.contains(event.relatedTarget)) setPortraitPlaybackActive(thumb, true);
+  });
+  app.addEventListener('mouseout', (event) => {
+    const thumb = event.target.closest?.('.variant-thumb');
+    if (thumb && !thumb.contains(event.relatedTarget) && !thumb.contains(document.activeElement)) setPortraitPlaybackActive(thumb, false);
   });
   /* scroll and mouseenter/mouseleave do not bubble, but capture-phase listeners still see them. */
   app.addEventListener('scroll', (event) => {
@@ -274,6 +334,8 @@ function handleDelegatedClick(event) {
     if (state.batchMode) return;
     return toggleFavorite(favoriteButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
   }
+  const captureSource = event.target.closest('[data-capture-source]');
+  if (captureSource) return void selectLiveCaptureSource(captureSource.dataset.captureSource);
   const cycleButton = event.target.closest('[data-cycle-portrait]');
   if (cycleButton) {
     event.stopPropagation();
@@ -335,6 +397,26 @@ function handleDelegatedClick(event) {
   if (viewButton) {
     state.view = viewButton.dataset.view;
     return render();
+  }
+  const appearanceSwatch = event.target.closest('[data-appearance-color]');
+  if (appearanceSwatch) {
+    return updateAppearanceSelection(
+      appearanceSwatch.closest('[data-appearance-field]')?.dataset.appearanceField,
+      appearanceSwatch.dataset.appearanceColor,
+    );
+  }
+  const captureNumberStep = event.target.closest('[data-capture-number-step]');
+  if (captureNumberStep) {
+    const target = captureNumberStep.dataset.captureNumberTarget;
+    const input = target === 'capture-loop-search-seconds'
+      ? document.querySelector(`#${target}`)
+      : document.querySelector(`[data-capture-coordinate="${target}"]`);
+    if (!input || input.disabled) return;
+    if (captureNumberStep.dataset.captureNumberStep === '1') input.stepUp(); else input.stepDown();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.focus({ preventScroll: true });
+    return;
   }
   const actionButton = event.target.closest('[data-action]');
   if (actionButton) return action(actionButton.dataset.action);
@@ -401,6 +483,8 @@ function handleDelegatedContextMenu(event) {
 
 function handleDelegatedKeydown(event) {
   if (!(event.target instanceof Element)) return;
+  if (trapAppearanceFocus(event)) return;
+  if (trapLiveCaptureFocus(event)) return;
   const sortButton = event.target.closest('[data-sort]');
   if (sortButton) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -425,6 +509,9 @@ function handleDelegatedKeydown(event) {
 
 function handleDelegatedInput(event) {
   const target = event.target;
+  if (target.matches?.('[data-appearance-custom]')) {
+    return updateAppearanceSelection(target.dataset.appearanceCustom, target.value);
+  }
   if (target.id === 'search-input') {
     state.query = target.value;
     return render();
@@ -433,12 +520,25 @@ function handleDelegatedInput(event) {
     updateDnaCount();
     return recordDnaHistory(target.value);
   }
+  if (target.matches?.('[data-capture-coordinate]')) return updateLiveCaptureCoordinate(target.dataset.captureCoordinate, target.value);
+  if (target.id === 'capture-loop-search-seconds') return setLiveCaptureLoopSearchSeconds(target.value);
   if (target.id === 'note-input') updateNoteHighlights(target);
 }
 
 function handleDelegatedChange(event) {
   const target = event.target;
   if (target.id === 'character-title') return void saveCharacterTitle(target.value);
+  if (target.matches?.('[data-capture-coordinate]')) {
+    const committed = updateLiveCaptureCoordinate(target.dataset.captureCoordinate, target.value);
+    if (committed !== null) target.value = String(committed);
+    return;
+  }
+  if (target.id === 'capture-shortcut') return setLiveCaptureShortcut(target.value);
+  if (target.id === 'capture-loop-search-seconds') {
+    const seconds = setLiveCaptureLoopSearchSeconds(target.value);
+    target.value = String(seconds);
+    return;
+  }
   if (target.matches?.('[data-favorite-filter]')) {
     state.filters.favorites = target.checked;
     return render();
@@ -457,7 +557,7 @@ function openContextMenu(event, target) {
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 342))),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 378))),
   };
   if (target.type === 'character' && !hadSortMenu) {
     render('selection');
@@ -480,11 +580,14 @@ function showTablePortraitPreview(event) {
   preview.style.left = `${left}px`;
   preview.style.top = `${top}px`;
   preview.classList.add('visible');
+  setPortraitPlaybackActive(preview, true);
 }
 
 function hideTablePortraitPreview(event) {
   if (!(event.target instanceof Element) || !event.target.matches('.table-avatar')) return;
-  event.target.querySelector('.table-portrait-preview')?.classList.remove('visible');
+  const preview = event.target.querySelector('.table-portrait-preview');
+  preview?.classList.remove('visible');
+  setPortraitPlaybackActive(preview, false);
 }
 
 async function handleContextAction(actionName) {
@@ -508,6 +611,7 @@ async function handleContextAction(actionName) {
     state.focusContext = 'character';
     state.selectedVariantIndex = null;
     if (actionName === 'manage') return showManageModal();
+    if (actionName === 'customize-appearance') return showCharacterAppearanceModal();
     if (actionName === 'favorite') return toggleFavorite(menu.id);
     if (actionName === 'copy-dna') return copyDna();
     if (actionName === 'paste-dna') return pasteDnaFromClipboard();
@@ -807,6 +911,7 @@ function action(name) {
   if (name === 'exit') return desktop?.quit();
   if (name === 'duplicate-shortcut') return duplicateSelectedCharacter();
   if (name === 'add-variant') return chooseImage();
+  if (name === 'capture-live-portrait') return showLiveCaptureModal();
   if (name === 'import') return importCollection();
   if (name === 'export') return exportCollection();
   if (name === 'filters') { state.sortMenuOpen = false; state.filterPanelOpen = !state.filterPanelOpen; return render(); }
@@ -837,30 +942,41 @@ async function chooseImage() {
   if (!desktop || !getActiveCharacter()) return showToast('Choose a character first.', 'info');
   if (state.preview) return showToast('Start an empty gallery before adding your own portraits.', 'info');
   const character = getActiveCharacter();
+  const target = activePortraitTarget();
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
   try {
-    const selected = await desktop.chooseImage(character.id); if (!selected) return;
-    await appendPortrait(character, selected, 'Portrait variant added.');
+    const selected = await runPortraitSourceRequest(() => desktop.chooseImage(character.id)); if (!selected) return;
+    const currentTarget = characterForPortraitTarget(target);
+    if (!currentTarget) {
+      if (selected.sourceId) releaseCropSource(selected);
+      return showToast('The selected character is no longer available.', 'info');
+    }
+    if (selected.sourceId) return showCropModal({ ...selected, targetCharacterId: currentTarget.id, targetGalleryName: target.galleryName });
+    await appendPortrait(currentTarget, selected, 'Portrait variant added.');
   } catch (error) { showToast(readableError(error, 'The portrait could not be added.'), 'info'); }
 }
 
 async function pasteClipboardPortrait() {
-  if (state.cropSession) return;
+  if (state.cropSession || state.captureSession) return;
   if (!desktop) return showToast('Clipboard portraits are only available in the desktop app.', 'info');
+  const target = activePortraitTarget();
   try {
-    const source = await desktop.readClipboardImage();
+    const source = await runPortraitSourceRequest(() => desktop.readClipboardImage());
+    if (source === undefined) return;
     if (!source) return showToast('The clipboard does not contain an image.', 'info');
-    openClipboardSource(source);
+    openClipboardSource(source, target);
   } catch (error) {
     showToast(readableError(error, 'The clipboard image could not be read.'), 'info');
   }
 }
 
 async function pasteClipboardContent() {
-  if (state.cropSession || !desktop) return;
+  if (state.cropSession || state.captureSession || !desktop) return;
+  const target = activePortraitTarget();
   try {
-    const source = await desktop.readClipboardImage();
-    if (source) return openClipboardSource(source);
+    const source = await runPortraitSourceRequest(() => desktop.readClipboardImage());
+    if (source === undefined) return;
+    if (source) return openClipboardSource(source, target);
     const clipboardText = await desktop.readClipboardText();
     if (isValidCk3Dna(clipboardText)) openClipboardDna(clipboardText);
   } catch (error) {
@@ -890,6 +1006,8 @@ function installKeyboardShortcuts() {
     const key = event.key.toLowerCase();
     const target = event.target;
     const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
+    const blockedByCapture = state.captureSession && ((command && ['n', 'f', 'd', 'e'].includes(key)) || event.key === 'F2' || (command && key === 'v' && !editingText));
+    if (blockedByCapture) { event.preventDefault(); return; }
 
     if (command && key === 'z' && !event.shiftKey && document.querySelector('#dna-input')) {
       event.preventDefault();
@@ -974,7 +1092,7 @@ function installKeyboardShortcuts() {
       return;
     }
     if (event.key === 'Escape') {
-      if (state.modal) { state.modal = null; state.cropSession = null; state.pendingPortraitSource = null; state.pendingDnaSource = null; state.dnaHistory = null; state.focusDnaSave = false; state.transferCharacterIds = []; render('modal'); restoreSelectionFocus(); }
+      if (state.modal) { event.preventDefault(); runModalAction('close-modal'); }
       else if (state.activeMenu) { state.activeMenu = null; render('chrome'); }
       else if (state.contextMenu) { state.contextMenu = null; render('context'); }
       else if (state.filterPanelOpen) { state.filterPanelOpen = false; render(); }
@@ -987,7 +1105,7 @@ function installKeyboardShortcuts() {
 
 function installClipboardPasteHandler() {
   document.addEventListener('paste', (event) => {
-    if (state.cropSession) return;
+    if (state.cropSession || state.captureSession) return;
     const items = [...(event.clipboardData?.items || [])];
     const files = [...(event.clipboardData?.files || [])];
     const imageItem = items.find((item) => item.kind === 'file' && (item.type.startsWith('image/') || isSupportedImageFile(item.getAsFile()?.name || '')));
@@ -1001,11 +1119,13 @@ function installClipboardPasteHandler() {
     const uriItem = items.find((item) => item.type === 'text/uri-list');
     if (uriItem) {
       event.preventDefault();
+      const target = activePortraitTarget();
       uriItem.getAsString((value) => {
         if (!desktop) return showToast('Clipboard portraits are only available in the desktop app.', 'info');
-        void desktop.readImagePath(value)
+        void runPortraitSourceRequest(() => desktop.readImagePath(value))
           .then((source) => {
-            if (source) openClipboardSource(source);
+            if (source === undefined) return;
+            if (source) openClipboardSource(source, target);
             else showToast('The copied file is not a supported image.', 'info');
           })
           .catch((error) => showToast(readableError(error, 'The copied image path could not be read.'), 'info'));
@@ -1015,27 +1135,41 @@ function installClipboardPasteHandler() {
 }
 
 async function openClipboardFile(file) {
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+  const target = activePortraitTarget();
+  const source = await runPortraitSourceRequest(async () => {
+    const animated = file.type.toLowerCase() === 'image/gif' || /\.gif$/i.test(file.name);
+    if (Number(file.size) > MAX_ANIMATED_PORTRAIT_BYTES) throw new Error('Portrait exceeds the 50 MB file-size limit.');
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    if (animated) {
+      if (!desktop) throw new Error('Animated clipboard portraits are only available in the desktop app.');
+      return desktop.prepareImageData(dataUrl);
+    }
+    const dimensions = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = reject;
+      image.src = dataUrl;
+    });
+    return { dataUrl, ...dimensions };
   });
-  const dimensions = await new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = reject;
-    image.src = dataUrl;
-  });
-  openClipboardSource({ dataUrl, ...dimensions });
+  if (source) openClipboardSource(source, target);
 }
 
-function openClipboardSource(source) {
-  const character = getActiveCharacter();
+function openClipboardSource(source, target = activePortraitTarget()) {
+  const character = characterForPortraitTarget(target);
+  if (target && !character) {
+    releaseCropSource(source);
+    return showToast('The selected character is no longer available.', 'info');
+  }
   if (!character) return showCharacterModal(source);
-  if (state.preview) return showToast('Start an empty gallery before adding your own portraits.', 'info');
-  if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  showCropModal(source);
+  if (state.preview) { releaseCropSource(source); return showToast('Start an empty gallery before adding your own portraits.', 'info'); }
+  if (hasMaximumPortraits(character)) { releaseCropSource(source); return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info'); }
+  showCropModal({ ...source, targetCharacterId: character.id, targetGalleryName: target.galleryName });
 }
 
 async function boot() {
@@ -1044,6 +1178,7 @@ async function boot() {
   installKeyboardShortcuts();
   installClipboardPasteHandler();
   desktop?.onPasteImage(() => { void pasteClipboardPortrait(); });
+  desktop?.onCaptureToggle((sessionId) => toggleLiveCapture(sessionId));
   let loaded = null;
   let loadError = null;
   try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }

@@ -20,6 +20,7 @@ const state = {
   importFolder: null,
   activeMenu: null,
   cropSession: null,
+  captureSession: null,
   pendingPortraitSource: null,
   pendingDnaSource: null,
   dnaHistory: null,
