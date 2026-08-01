@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Name colors, title glow customization, title color picker to character cards.
 - Animated GIF support.
 - Animated WebM support.
-- Live portrait feature that record a user-defined frame in CK3 as animated WebM to use as an animated portrait. Has a smart 'smooth loop' feature that keep passively recording after the recording ends within a user-defined time window, scores candidate frames across that recording window, selects the best one at the end, and remuxes the WebM to that boundary so that the looping animation of the character portrait can appear as smooth as possible without sudden jerks/resets back to first frame.
+- Live portrait feature that record a user-defined frame in CK3 as animated WebM to use as an animated portrait. Uses a smart 'smooth loop' feature that keep passively recording after the recording ends within a user-defined time window, scores candidate frames across that recording window, selects the best one at the end, and remuxes the WebM to that boundary so that the looping animation of the character portrait can appear as smooth as possible without sudden jerks/resets back to first frame.
 
 ## [3.0.2] - 2026-07-22
 

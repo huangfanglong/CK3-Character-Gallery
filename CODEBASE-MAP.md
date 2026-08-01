@@ -1,10 +1,7 @@
 # CK3 Character Gallery Codebase Map
 
 Project: Electron desktop archive for browsing and managing CK3 character portraits  
-Package version: 3.1.0 | Latest changelog release: 3.1.0  
-Branch: `new-feat-july` | Reviewed through: `0431179` (2026-07-31)
-
-This Markdown file is the canonical codebase map. It replaces the duplicate text copy.
+Package version: 3.1.0 | Latest changelog release: 3.1.0
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐

@@ -2,11 +2,27 @@
 
 [![Electron CI](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml/badge.svg)](https://github.com/huangfanglong/CK3-Character-Gallery/actions/workflows/ci.yml)
 
-![alt text](https://i.imgur.com/yU37mdf.png)
+![CK3 Character Gallery live animated portraits](docs/media/live-portraits-demo.gif)
 
 CK3 Character Gallery is a local desktop archive for Crusader Kings III character DNA and portraits. I use it to keep faces, DNA strings, tags, and reference notes together instead of digging through screenshots and text files later.
 
-Version 3 is currently an Electron alpha with a portrait-first archive. The v2 Python/Tkinter application is preserved on the `archive/v2` branch.
+Version 3 is currently an Electron with a portrait-first archive. The v2 Python/Tkinter application is preserved on the `archive/v2` branch.
+
+## What's New in 3.1
+
+### Live CK3 Portraits
+
+Open a character's Manage Record dialog and choose **Capture live portrait** to record a visible Crusader Kings III window directly into that character's portrait variants. Keep CK3 unobscured, borderless or windowed mode might work best but I used fullscreen just fine.
+
+Choose the CK3 window, position the square frame around the portrait, and press the recording hotkey in CK3. The default is `Ctrl+Alt+G`, alternatively several other preset hotkeys can be chosen before recording. Captures are saved as 450 x 450 animated WebM portraits at 30 FPS, with a maximum recording time of 25 seconds.
+
+An overlay will appear inside CK3 along with a sound notification effect to let you know when the recording starts, ends, or is in smooth loop searching mode.
+
+When you stop recording, Smart Loop can keep looking for a smoother point where the animation can return to its first frame so that it doesn't look abrupt or unsightly each time it returns to the 1st frame in a collection/gallery with multiple animated portraits. Set the Smooth Loop Search from 1 to 25 seconds. Press the recording hotkey a second time while it is matching to finish immediately.
+
+Animated GIF portraits can also be imported alongside still images. Animated WebM cards play while they are visible, cards outside the viewport will be paused for optimization sake.
+
+Note: If you are going to use animated portraits for a large collection expect to budget out disk space accordingly.
 
 ## Run v3
 
@@ -42,13 +58,11 @@ Output is written to `release/`.
 4. Easy repositioning by drag-and-drop, or sort it.
 6. Just play around with it. I have tried to make it convenient and intuitive to use as I play the game and use it at the same time.
 
-A character can hold up to five portraits. Selecting a thumbnail in the inspector changes the large preview. The arrows on a character card choose which portrait appears as its cover, and that choice is saved with the record.
-
-Open a character's context menu or Manage Record dialog and choose Customize appearance to set a name color and title glow with preset colors or custom color pickers. Appearance settings carry across card, compact-list, and inspector views and are included when a collection is exported.
-
-Favorites are stored in the Electron profile on the current computer. They are not part of `galleries.json` or exported collection manifests.
-
-Export collection opens a Save dialog with the collection folder name prefilled. Navigate into the destination you want and choose Export; the app creates the collection folder there.
+- A character can hold up to five portraits. Selecting a thumbnail in the inspector changes the large preview. The arrows on a character card choose which portrait appears as its cover, and that choice is saved with the record.
+- Open a character's context menu or Manage Record dialog and choose Customize appearance to set independent name, title, and title-glow colors with preset colors or custom color pickers. Appearance settings carry across card, compact-list, and inspector views and are included when a collection is exported.
+- Favorites are stored in the Electron profile on the current computer. They are not part of `galleries.json` or exported collection manifests.
+- Export collection opens a Save dialog with the collection folder name prefilled. Navigate into the destination you want and choose Export; the app creates the collection folder there.
+- Gallery/collection data are stored at C:\Users\<your-PC-user>\AppData\Roaming\CK3 Character Gallery\character_gallery_data, which contains galleries.json and the images\ subfolders.
 
 ## Shortcuts
 
@@ -114,6 +128,14 @@ Run the Electron renderer smoke test:
 node scripts/smoke-renderer.cjs
 ```
 
+Run the live portrait capture runtime checks:
+
+```bash
+npm run test:capture-hud-runtime
+npm run test:capture-ui-runtime
+npm run test:capture-loop-runtime
+```
+
 Run the isolated collection round-trip test:
 
 ```bash
@@ -126,7 +148,7 @@ Run all Node checks:
 npm test
 ```
 
-The renderer smoke test opens Electron and checks the archive, combinable filters, Ctrl-click selection, list portrait previews, custom card ordering, portrait variants, deletion focus, inspector, notes, menus, shortcuts, search, and viewport sizing. It creates temporary renderer-only character cards/records, so it does not rewrite the development archive.
+The renderer smoke test opens Electron and checks the archive, combinable filters, Ctrl-click selection, animated portrait previews and cropping, custom card ordering, portrait variants, deletion focus, inspector, notes, menus, shortcuts, search, and viewport sizing. It creates temporary renderer-only character cards/records, so it does not rewrite the development archive.
 
 ## Contributing
 
