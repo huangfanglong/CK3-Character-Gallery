@@ -14,6 +14,7 @@ const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`],
 });
 const childStderr = [];
 const DEVTOOLS_TIMEOUT_MS = 5_000;
+const SHUTDOWN_TIMEOUT_MS = 15_000;
 let childError = null;
 child.once('error', (error) => { childError = error; });
 child.stderr?.on('data', (chunk) => childStderr.push(chunk));
@@ -132,12 +133,11 @@ async function main() {
     socket = await connect(await getPage());
     const bridgeReady = await runtimeCommand(socket, 1, "(async()=>{const deadline=Date.now()+5000;while(typeof window.galleryDesktop?.quit !== 'function' && Date.now()<deadline) await new Promise((resolve)=>setTimeout(resolve,25));return typeof window.galleryDesktop?.quit === 'function';})()", true);
     if (!bridgeReady) throw new Error('The production quit bridge was not available.');
-    socket.send(JSON.stringify({
-      id: 2,
-      method: 'Runtime.evaluate',
-      params: { expression: 'window.galleryDesktop.quit().catch(() => {}); true', returnByValue: true },
-    }));
-    const exit = await waitForChildClose(8_000);
+    const quitScheduled = await runtimeCommand(socket, 2, "setTimeout(() => { void window.galleryDesktop.quit().catch(() => {}); }, 100); true");
+    if (!quitScheduled) throw new Error('The production quit request was not scheduled.');
+    socket.close();
+    socket = null;
+    const exit = await waitForChildClose(SHUTDOWN_TIMEOUT_MS);
     const stderr = stderrText();
     if (!exit) throw new Error(`Electron did not exit after the production quit request.${stderr ? `\n${stderr}` : ''}`);
     if (exit.code !== 0) throw new Error(`Electron exited with code ${exit.code} and signal ${exit.signal || 'none'}.${stderr ? `\n${stderr}` : ''}`);
