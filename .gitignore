@@ -15,3 +15,12 @@ Thumbs.db
 
 # Local character archive, portraits, and recovery files
 character_gallery_data/
+
+# Local design prototypes, reference captures, and installed evaluation tools
+.agents/
+.impeccable/
+redesign/
+tools/
+current-app.png
+DESIGN.md
+PRODUCT.md

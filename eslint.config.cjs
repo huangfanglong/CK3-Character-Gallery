@@ -18,7 +18,7 @@ const rendererGlobals = Object.fromEntries([
 
 module.exports = [
   {
-    ignores: ['character_gallery_data/**', 'node_modules/**', 'release/**'],
+    ignores: ['character_gallery_data/**', 'node_modules/**', 'release/**', 'tools/**', 'redesign/**', '.agents/**', '.impeccable/**'],
   },
   js.configs.recommended,
   {
