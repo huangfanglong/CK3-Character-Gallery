@@ -6,6 +6,7 @@ const state = {
   activeId: null,
   focusContext: 'character',
   selectedVariantIndex: null,
+  quickTab: 'overview',
   imageUrls: new Map(),
   query: '',
   galleryQuery: '',
@@ -40,6 +41,7 @@ function resetSelection(activeId = null) {
   state.activeId = activeId;
   state.focusContext = 'character';
   state.selectedVariantIndex = null;
+  state.quickTab = 'overview';
 }
 
 function hasMaximumPortraits(character) {

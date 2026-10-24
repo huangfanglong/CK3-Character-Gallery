@@ -188,6 +188,7 @@ function icon(name) {
 }
 
 let lastRenderedActiveId = null;
+let quickLookReturnId = null;
 let portraitSourceRequest = null;
 const MAX_ANIMATED_PORTRAIT_BYTES = 50 * 1024 * 1024;
 
@@ -261,9 +262,54 @@ function renderSelection() {
     if (state.activeId && !state.batchMode) app.querySelector(`[data-character-id="${CSS.escape(state.activeId)}"]`)?.classList.add('selected');
     lastRenderedActiveId = state.activeId;
   }
-  const inspector = app.querySelector('.inspector');
-  if (inspector) syncCharacterAppearance(morphAppRegion(inspector, inspectorMarkup(getActiveCharacter())));
+  const current = app.querySelector('.quick-overlay') || app.querySelector('.app-shell > .inspector');
+  const next = morphAppRegion(current, inspectorMarkup(getActiveCharacter()));
+  if (next) syncCharacterAppearance(next);
   syncPortraitPlayback(app, Boolean(state.modal));
+}
+
+function closeQuickLook() {
+  const returnId = quickLookReturnId || state.activeId;
+  quickLookReturnId = null;
+  resetSelection();
+  render('selection');
+  focusWithoutScroll(app.querySelector(`[data-character-id="${CSS.escape(returnId || '')}"]`) || app.querySelector('#search-input'));
+}
+
+function navigateQuickLook(direction) {
+  const records = visibleCharacters();
+  const index = records.findIndex((character) => character.id === state.activeId);
+  const next = records[index + direction];
+  if (!next) return;
+  quickLookReturnId ||= state.activeId;
+  resetSelection(next.id);
+  render('selection');
+  focusWithoutScroll(app.querySelector(`[data-action="${direction < 0 ? 'previous' : 'next'}-character"]`));
+}
+
+function trapQuickLookFocus(event) {
+  const sheet = app.querySelector('.quick-sheet');
+  if (!sheet || state.modal || event.key !== 'Tab') return false;
+  const controls = [...sheet.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]')];
+  if (!controls.length) return false;
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    focusWithoutScroll(last);
+    return true;
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    focusWithoutScroll(first);
+    return true;
+  }
+  if (!sheet.contains(document.activeElement)) {
+    event.preventDefault();
+    focusWithoutScroll(first);
+    return true;
+  }
+  return false;
 }
 
 function renderChrome() {
@@ -420,6 +466,13 @@ function handleDelegatedClick(event) {
     input.focus({ preventScroll: true });
     return;
   }
+  const quickTab = event.target.closest('[data-quick-tab]');
+  if (quickTab) {
+    state.quickTab = quickTab.dataset.quickTab;
+    render('selection');
+    return focusWithoutScroll(app.querySelector(`[data-quick-tab="${state.quickTab}"]`));
+  }
+  if (event.target.classList.contains('quick-overlay')) return closeQuickLook();
   const actionButton = event.target.closest('[data-action]');
   if (actionButton) return action(actionButton.dataset.action);
   const characterElement = event.target.closest('[data-character-id]');
@@ -427,17 +480,15 @@ function handleDelegatedClick(event) {
   const blankArchiveSpace = event.target.classList.contains('main-content')
     || event.target.classList.contains('card-grid')
     || event.target.classList.contains('table-view');
-  if (blankArchiveSpace && state.activeId) {
-    resetSelection();
-    render('selection');
-  }
+  if (blankArchiveSpace && state.activeId) closeQuickLook();
 }
 
 function selectCharacterElement(element, event) {
   if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
+  quickLookReturnId = element.dataset.characterId;
   resetSelection(element.dataset.characterId);
   render('selection');
-  restoreSelectionFocus();
+  focusWithoutScroll(app.querySelector('.quick-sheet [data-action="close-inspector"]'));
 }
 
 function activateGallery(name) {
@@ -488,6 +539,7 @@ function handleDelegatedKeydown(event) {
   if (!(event.target instanceof Element)) return;
   if (trapAppearanceFocus(event)) return;
   if (trapLiveCaptureFocus(event)) return;
+  if (trapQuickLookFocus(event)) return;
   const sortButton = event.target.closest('[data-sort]');
   if (sortButton) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -900,7 +952,9 @@ function action(name) {
   if (name === 'cancel-batch') return cancelBatchSelection();
   if (name === 'select-all-visible') return selectAllVisibleCharacters();
   if (name === 'delete-batch') return showBatchDeleteConfirmation();
-  if (name === 'close-inspector') { resetSelection(); return render('selection'); }
+  if (name === 'close-inspector') return closeQuickLook();
+  if (name === 'previous-character') return navigateQuickLook(-1);
+  if (name === 'next-character') return navigateQuickLook(1);
   if (name === 'copy-dna') return copyDna();
   if (name === 'open-dna') return showDnaModal();
   if (name === 'undo-dna') return undoDnaChange();
@@ -1071,6 +1125,11 @@ function installKeyboardShortcuts() {
       exportCollection();
       return;
     }
+    if (!state.modal && state.activeId && !editingText && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault();
+      navigateQuickLook(event.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
     if (event.key === 'F2') {
       event.preventDefault();
       showManageModal();
@@ -1111,6 +1170,7 @@ function installKeyboardShortcuts() {
       else if (state.sortMenuOpen) { state.sortMenuOpen = false; render(); focusWithoutScroll(document.querySelector('[data-action="sort-menu"]')); }
       else if (state.batchMode) cancelBatchSelection();
       else if (state.galleryBatchMode) cancelGalleryBatchSelection();
+      else if (state.activeId) { event.preventDefault(); closeQuickLook(); }
     }
   });
 }
