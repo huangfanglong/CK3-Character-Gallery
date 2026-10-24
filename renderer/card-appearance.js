@@ -43,7 +43,7 @@ function applyCharacterAppearance(element, character) {
 function syncCharacterAppearance(root = document) {
   const recordElements = root.querySelectorAll('[data-character-id]');
   if (recordElements.length) {
-    const charactersById = new Map(getCharacters().map((character) => [character.id, character]));
+    const charactersById = new Map(getViewCharacters().map((character) => [character.id, character]));
     recordElements.forEach((element) => {
       const character = charactersById.get(element.dataset.characterId);
       const styled = element.style.getPropertyValue('--character-name-color')

@@ -56,7 +56,7 @@ function activeFilterCount() {
 }
 
 function availableTags() {
-  return [...new Set(getCharacters()
+  return [...new Set(getViewCharacters()
     .flatMap(characterTags)
     .map((tag) => String(tag).trim().toLowerCase())
     .filter(Boolean))]
@@ -72,8 +72,24 @@ function getGallery() {
   return state.galleries.find((gallery) => gallery.name === state.activeGallery) || state.galleries[0];
 }
 
+/* Writes always use the owning collection. The flattened source is read-only and is never
+   passed to gallery mutations, which keeps All characters safe across collection boundaries. */
 function getCharacters() {
   return getGallery()?.characters || [];
+}
+
+function getViewCharacters() {
+  return state.allGalleries ? state.galleries.flatMap((gallery) => gallery.characters) : getCharacters();
+}
+
+function galleryForCharacter(characterId) {
+  return state.galleries.find((gallery) => gallery.characters.some((character) => character.id === characterId)) || null;
+}
+
+function bindCharacterGallery(characterId) {
+  const gallery = galleryForCharacter(characterId);
+  if (gallery) state.activeGallery = gallery.name;
+  return gallery;
 }
 
 function getActiveCharacter() {
@@ -111,7 +127,7 @@ function colorFor(name = '') {
 }
 
 function visibleCharacters() {
-  let characters = getCharacters().map(normalizedCharacter);
+  let characters = getViewCharacters().map(normalizedCharacter);
   const query = state.query.trim().toLowerCase();
   if (query) {
     if (query.startsWith('tag:') || query.startsWith('tags:')) {
@@ -243,7 +259,7 @@ function focusWithoutScroll(element) {
 
 async function updateImageUrls() {
   if (!desktop) return;
-  const chars = getCharacters();
+  const chars = getViewCharacters();
   let changed = false;
   for (const character of chars) {
     const paths = (character.images || []).filter(Boolean);
@@ -282,6 +298,7 @@ function navigateQuickLook(direction) {
   const next = records[index + direction];
   if (!next) return;
   quickLookReturnId ||= state.activeId;
+  bindCharacterGallery(next.id);
   resetSelection(next.id);
   render('selection');
   focusWithoutScroll(app.querySelector(`[data-action="${direction < 0 ? 'previous' : 'next'}-character"]`));
@@ -393,7 +410,9 @@ function handleDelegatedClick(event) {
   if (moreButton) {
     event.stopPropagation();
     if (state.batchMode) return;
-    resetSelection(moreButton.closest('[data-character-id]')?.dataset.characterId || state.activeId);
+    const characterId = moreButton.closest('[data-character-id]')?.dataset.characterId || state.activeId;
+    bindCharacterGallery(characterId);
+    resetSelection(characterId);
     render('selection');
     return showManageModal();
   }
@@ -427,7 +446,7 @@ function handleDelegatedClick(event) {
   const filterButton = event.target.closest('[data-filter]');
   if (filterButton) {
     const filter = filterButton.dataset.filter;
-    if (filter === 'all') clearFilters(false);
+    if (filter === 'all') { activateAllCharacters(); return render(); }
     if (filter === 'favorites') state.filters.favorites = !state.filters.favorites;
     if (filter === 'ready' || filter === 'drafts') state.filters.dna = state.filters.dna === filter ? 'all' : filter;
     state.filterPanelOpen = false;
@@ -486,18 +505,31 @@ function handleDelegatedClick(event) {
 function selectCharacterElement(element, event) {
   if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
   quickLookReturnId = element.dataset.characterId;
+  bindCharacterGallery(element.dataset.characterId);
   resetSelection(element.dataset.characterId);
   render('selection');
   focusWithoutScroll(app.querySelector('.quick-sheet [data-action="close-inspector"]'));
 }
 
 function activateGallery(name) {
+  state.allGalleries = false;
   state.activeGallery = name;
   state.visibleLimit = 48;
   resetSelection();
   clearFilters(false);
   state.filterPanelOpen = false;
   state.sort = gallerySortMode();
+  cancelBatchSelection(false);
+  cancelGalleryBatchSelection(false);
+}
+
+function activateAllCharacters() {
+  state.allGalleries = true;
+  state.visibleLimit = 48;
+  resetSelection();
+  clearFilters(false);
+  state.filterPanelOpen = false;
+  state.sort = 'recent';
   cancelBatchSelection(false);
   cancelGalleryBatchSelection(false);
 }
@@ -515,6 +547,7 @@ function handleDelegatedContextMenu(event) {
       }
       return openContextMenu(event, { type: 'batch', ids: [...state.selectedCharacterIds] });
     }
+    bindCharacterGallery(characterElement.dataset.characterId);
     resetSelection(characterElement.dataset.characterId);
     return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId });
   }
@@ -667,6 +700,7 @@ async function handleContextAction(actionName) {
     if (actionName === 'cancel-gallery-batch') return cancelGalleryBatchSelection();
   }
   if (menu.type === 'character') {
+    bindCharacterGallery(menu.id);
     state.activeId = menu.id;
     state.focusContext = 'character';
     state.selectedVariantIndex = null;
@@ -784,14 +818,15 @@ async function saveCollectionOrder(orderedNames) {
 
 async function setSortMode(mode) {
   const gallery = getGallery();
-  state.sort = isSortMode(mode) ? mode : 'recent';
+  state.sort = isSortMode(mode) && (!state.allGalleries || mode !== 'custom') ? mode : 'recent';
   state.sortMenuOpen = false;
-  if (gallery && !state.preview) gallery.sortMode = state.sort;
+  if (!state.allGalleries && gallery && !state.preview) gallery.sortMode = state.sort;
   render();
-  if (!state.preview) await saveLibrary();
+  if (!state.allGalleries && !state.preview) await saveLibrary();
 }
 
 async function saveCustomCardOrder(orderedIds) {
+  if (state.allGalleries) return;
   const gallery = getGallery();
   if (!gallery || orderedIds.length < 2) return;
   const visibleIds = new Set(orderedIds);
@@ -810,6 +845,7 @@ async function saveCustomCardOrder(orderedIds) {
 }
 
 async function cycleCardPortrait(characterId, delta) {
+  bindCharacterGallery(characterId);
   const character = getCharacters().find((item) => item.id === characterId);
   const count = character?.images?.length || 0;
   if (!character || count < 2) return;
@@ -839,7 +875,7 @@ async function saveCharacterTitle(value) {
 }
 
 function startBatchSelection() {
-  if (state.preview || !visibleCharacters().length) return;
+  if (state.allGalleries || state.preview || !visibleCharacters().length) return;
   state.batchMode = true;
   state.selectedCharacterIds.clear();
   cancelGalleryBatchSelection(false);
@@ -905,7 +941,7 @@ function syncGalleryBatchSelection() {
 }
 
 function toggleBatchSelection(id, allowStart = false) {
-  if (!id || state.preview) return;
+  if (!id || state.allGalleries || state.preview) return;
   if (!state.batchMode) {
     if (!allowStart) return;
     const activeId = state.activeId;
@@ -944,6 +980,10 @@ function action(name) {
   const hadActiveMenu = Boolean(state.activeMenu);
   state.activeMenu = null;
   if (hadActiveMenu) render('chrome');
+  if (state.allGalleries && ['new-character', 'rename-gallery', 'delete-gallery', 'export'].includes(name)) {
+    activateGallery(state.activeGallery);
+    render();
+  }
   if (name === 'new-character') return showCharacterModal();
   if (name === 'new-gallery') return showGalleryModal();
   if (name === 'rename-gallery') return showRenameGalleryModal();
@@ -991,7 +1031,7 @@ function action(name) {
   if (name === 'close-filters') { state.filterPanelOpen = false; return render(); }
   if (name === 'clear-filters') return clearFilters();
   if (name === 'clear-search') { state.query = ''; clearFilters(false); state.filterPanelOpen = false; render(); }
-  if (name === 'start-blank') { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; cancelBatchSelection(false); render(); }
+  if (name === 'start-blank') { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; state.allGalleries = false; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; cancelBatchSelection(false); render(); }
 }
 
 function showToast(message, type = 'success') {

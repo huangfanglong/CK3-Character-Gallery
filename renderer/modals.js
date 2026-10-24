@@ -171,7 +171,7 @@ async function handleModalAction(name) {
     const input = document.querySelector('#modal-gallery-name'); const nameValue = input?.value.trim();
     if (!nameValue) return input?.focus();
     if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists.', 'info'); return input.focus(); }
-    state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection created.', 'success');
+    state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; state.allGalleries = false; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection created.', 'success');
   }
   if (name === 'confirm-rename-gallery') {
     const gallery = getGallery(); const input = document.querySelector('#rename-gallery-name'); const value = input?.value.trim();
@@ -249,7 +249,7 @@ async function handleModalAction(name) {
     if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists. Choose a different name to import it as a separate collection.', 'info'); return input.focus(); }
     try {
       const imported = await desktop.importGallery(state.importFolder, nameValue);
-      state.galleries.push(imported); state.activeGallery = imported.name; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(imported); state.modal = null; state.importFolder = null; state.preview = false; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection imported into the archive.', 'success');
+      state.galleries.push(imported); state.activeGallery = imported.name; state.allGalleries = false; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = gallerySortMode(imported); state.modal = null; state.importFolder = null; state.preview = false; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection imported into the archive.', 'success');
     } catch (error) { showToast(readableError(error, 'The collection could not be imported.'), 'info'); }
   }
   if (name === 'save-dna') {
