@@ -8,6 +8,8 @@ const state = {
   selectedVariantIndex: null,
   imageUrls: new Map(),
   query: '',
+  galleryQuery: '',
+  visibleLimit: 48,
   filters: { dna: 'all', favorites: false, tags: new Set() },
   filterPanelOpen: false,
   sortMenuOpen: false,

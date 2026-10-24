@@ -164,6 +164,13 @@ async function main() {
   if (!emptyInspector.sidebarImport.includes('Import collection')) throw new Error('Sidebar retained the inconsistent Import gallery label.');
   await evaluate("(()=>{state.preview=false;state.galleries=[{name:'Smoke Archive',characters:[{id:'smoke-base-a',name:'Smoke Base A',title:'',images:[],dna:'base dna',tags:['base'],created:1,modified:1},{id:'smoke-base-b',name:'Smoke Base B',title:'',images:[],dna:'',tags:['base'],created:2,modified:2}]}];state.activeGallery='Smoke Archive';state.activeId=null;state.focusContext='character';state.selectedVariantIndex=null;state.query='';clearFilters(false);state.filterPanelOpen=false;state.sort='recent';state.view='cards';saveLibrary=async()=>{window.__smokeSaveCount=(window.__smokeSaveCount||0)+1;return true;};render();})()");
   if ((await evaluate("document.querySelector('.archive-heading h1')?.textContent")) !== 'Smoke Archive') throw new Error('Archive heading did not show the active collection name.');
+  if (!(await evaluate("Boolean(document.querySelector('.command-dock #search-input'))"))) throw new Error('Optical command dock did not contain archive search.');
+  await evaluate("state.galleryQuery='no matching collection';render()");
+  if (!(await evaluate("Boolean(document.querySelector('.collection-empty')) && document.querySelectorAll('.collection-item').length===0"))) throw new Error('Collection search did not filter the navigation rail.');
+  await evaluate("state.galleryQuery='';state.view='compact';render()");
+  if (!(await evaluate("Boolean(document.querySelector('.card-grid.compact')) && document.querySelector('[data-view=compact]').classList.contains('active')"))) throw new Error('Compact optical density was not available.');
+  const boundedRenderState = JSON.parse(await evaluate("(()=>{const gallery=getGallery();window.__opticalOriginalCharacters=gallery.characters;gallery.characters=Array.from({length:60},(_,index)=>({id:'optical-'+index,name:'Optical '+index,images:[],dna:'',tags:[],created:index,modified:index}));state.visibleLimit=48;state.view='cards';render();const initial=document.querySelectorAll('.character-card').length;document.querySelector('[data-action=show-more]')?.click();const expanded=document.querySelectorAll('.character-card').length;gallery.characters=window.__opticalOriginalCharacters;state.visibleLimit=48;render();return JSON.stringify({initial,expanded})})()"));
+  if (boundedRenderState.initial !== 48 || boundedRenderState.expanded !== 60) throw new Error(`Large libraries were not rendered in bounded batches (${JSON.stringify(boundedRenderState)}).`);
   await evaluate("window.__retainedSmokeCard=document.querySelector('[data-character-id=smoke-base-b]');document.querySelector('[data-character-id=smoke-base-a]').click()");
   if (!(await evaluate("window.__retainedSmokeCard===document.querySelector('[data-character-id=smoke-base-b]')"))) throw new Error('Selecting a character replaced an unrelated character card instead of reconciling it by ID.');
   const firstName = await evaluate("document.querySelector('.character-card h3').textContent");
@@ -233,6 +240,7 @@ async function main() {
   await evaluate("(()=>{const controls=[...document.querySelectorAll('.appearance-modal button:not(:disabled),.appearance-modal input:not(:disabled)')];controls.at(-1).focus();controls.at(-1).dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));})()");
   if (!(await evaluate("document.activeElement===document.querySelector('.appearance-modal button:not(:disabled)')"))) throw new Error('Appearance dialog did not contain keyboard focus.');
   await evaluate("document.querySelector('[data-appearance-field=nameColor] [data-appearance-color=\"#df966d\"]').click()");
+  await delay(30);
   if ((await evaluate("getComputedStyle(document.querySelector('.appearance-preview strong')).color")) !== 'rgb(223, 150, 109)') throw new Error('Name-color swatch did not update the live appearance preview.');
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   if (await evaluate("'nameColor' in getActiveCharacter() || 'titleColor' in getActiveCharacter() || 'titleGlowColor' in getActiveCharacter()")) throw new Error('Canceling appearance customization changed the character record.');
@@ -244,6 +252,7 @@ async function main() {
   await evaluate("(()=>{const name=document.querySelector('#appearance-name-color');name.value='#7ac7b4';name.dispatchEvent(new Event('input',{bubbles:true}));const title=document.querySelector('#appearance-title-color');title.value='#d99aa5';title.dispatchEvent(new Event('input',{bubbles:true}));const glow=document.querySelector('#appearance-title-glow-color');glow.value='#d795ff';glow.dispatchEvent(new Event('input',{bubbles:true}));})()");
   const preservedAppearanceDraft = JSON.parse(await evaluate("(()=>{window.__appearanceNameInput=document.querySelector('#appearance-name-color');render();return JSON.stringify({same:window.__appearanceNameInput===document.querySelector('#appearance-name-color'),name:document.querySelector('[data-appearance-field=nameColor]').dataset.appearanceValue,title:document.querySelector('[data-appearance-field=titleColor]').dataset.appearanceValue,glow:document.querySelector('[data-appearance-field=titleGlowColor]').dataset.appearanceValue});})()"));
   if (!preservedAppearanceDraft.same || preservedAppearanceDraft.name !== '#7ac7b4' || preservedAppearanceDraft.title !== '#d99aa5' || preservedAppearanceDraft.glow !== '#d795ff') throw new Error(`Full render discarded the appearance draft (${JSON.stringify(preservedAppearanceDraft)}).`);
+  await delay(30);
   const customAppearancePreview = JSON.parse(await evaluate("(()=>{const preview=document.querySelector('.appearance-preview');const title=preview.querySelector('span');return JSON.stringify({name:getComputedStyle(preview.querySelector('strong')).color,title:getComputedStyle(title).color,shadow:getComputedStyle(title).textShadow,nameSelected:preview.style.getPropertyValue('--character-name-color'),titleSelected:preview.style.getPropertyValue('--character-title-color'),glowSelected:preview.style.getPropertyValue('--character-title-glow-color')});})()"));
   if (customAppearancePreview.name !== 'rgb(122, 199, 180)' || customAppearancePreview.title !== 'rgb(217, 154, 165)' || customAppearancePreview.shadow === 'none' || customAppearancePreview.nameSelected !== '#7ac7b4' || customAppearancePreview.titleSelected !== '#d99aa5' || customAppearancePreview.glowSelected !== '#d795ff') throw new Error(`Custom appearance colors did not update the preview (${JSON.stringify(customAppearancePreview)}).`);
   await evaluate("window.__appearanceSaveLibrary=saveLibrary;saveLibrary=async()=>false;document.querySelector('[data-action=save-appearance]').click()");
@@ -260,7 +269,7 @@ async function main() {
   await evaluate("state.view='cards';render();showCharacterAppearanceModal();document.querySelector('[data-action=reset-appearance]').click();document.querySelector('[data-action=save-appearance]').click()");
   await delay(30);
   const resetAppearance = JSON.parse(await evaluate(`(()=>{const character=getActiveCharacter();const card=document.querySelector('[data-character-id="${fixtureId}"]');return JSON.stringify({hasName:'nameColor' in character,hasTitle:'titleColor' in character,hasGlow:'titleGlowColor' in character,name:getComputedStyle(card.querySelector('h3')).color,title:getComputedStyle(card.querySelector('.card-info p')).color,glow:getComputedStyle(card.querySelector('.card-info p')).textShadow});})()`));
-  if (resetAppearance.hasName || resetAppearance.hasTitle || resetAppearance.hasGlow || resetAppearance.name !== 'rgb(235, 231, 220)' || resetAppearance.title !== 'rgb(200, 206, 197)' || resetAppearance.glow !== 'none') throw new Error(`Reset appearance did not restore the default card style (${JSON.stringify(resetAppearance)}).`);
+  if (resetAppearance.hasName || resetAppearance.hasTitle || resetAppearance.hasGlow || resetAppearance.name !== 'rgb(28, 29, 36)' || resetAppearance.title !== 'rgb(139, 140, 151)' || resetAppearance.glow !== 'none') throw new Error(`Reset appearance did not restore the default card style (${JSON.stringify(resetAppearance)}).`);
   const cardFooterText = await evaluate(`document.querySelector('[data-character-id="${fixtureId}"] .card-bottom')?.textContent||''`);
   if (/portraits?/i.test(cardFooterText)) throw new Error('Character card still displayed the redundant portrait count.');
   await evaluate(`document.querySelector('[data-character-id="${fixtureId}"] [data-action="favorite"]').click()`);
@@ -688,10 +697,10 @@ async function main() {
   await command('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1150, deviceScaleFactor: 1, mobile: false });
   const renderBenchmark = JSON.parse(await evaluate(`(async()=>{
     const gallery=getGallery();
-    const original={characters:gallery.characters,query:state.query,filters:state.filters,view:state.view,sort:state.sort,activeId:state.activeId,focusContext:state.focusContext,selectedVariantIndex:state.selectedVariantIndex};
+    const original={characters:gallery.characters,query:state.query,filters:state.filters,view:state.view,sort:state.sort,activeId:state.activeId,focusContext:state.focusContext,selectedVariantIndex:state.selectedVariantIndex,visibleLimit:state.visibleLimit};
     const characters=Array.from({length:750},(_,index)=>({id:\`benchmark-\${index}\`,name:\`Benchmark Character \${index}\`,title:'',images:[],dna:'',note:'',tags:[],created:index,modified:index,coverIndex:0,variants:0}));
     characters.forEach((character)=>state.imageUrls.set(character.id,[]));
-    gallery.characters=characters;state.query='';state.filters={dna:'all',favorites:false,tags:new Set()};state.view='cards';state.sort='custom';state.activeId='benchmark-1';state.focusContext='character';state.selectedVariantIndex=null;
+    gallery.characters=characters;state.query='';state.filters={dna:'all',favorites:false,tags:new Set()};state.view='cards';state.sort='custom';state.activeId='benchmark-1';state.focusContext='character';state.selectedVariantIndex=null;state.visibleLimit=750;
     const start=performance.now();render();const duration=performance.now()-start;
     const count=document.querySelectorAll('.character-card').length;
     const originalFullMorph=morphAppContent;let scopedFullMorphs=0;morphAppContent=(...args)=>{scopedFullMorphs+=1;return originalFullMorph(...args);};
@@ -703,7 +712,7 @@ async function main() {
     const retainedDuringModal=retainedCard===document.querySelector('[data-character-id="benchmark-749"]');
     state.modal=null;render('modal');
     morphAppContent=originalFullMorph;
-    gallery.characters=original.characters;state.query=original.query;state.filters=original.filters;state.view=original.view;state.sort=original.sort;state.activeId=original.activeId;state.focusContext=original.focusContext;state.selectedVariantIndex=original.selectedVariantIndex;
+    gallery.characters=original.characters;state.query=original.query;state.filters=original.filters;state.view=original.view;state.sort=original.sort;state.activeId=original.activeId;state.focusContext=original.focusContext;state.selectedVariantIndex=original.selectedVariantIndex;state.visibleLimit=original.visibleLimit;
     characters.forEach((character)=>state.imageUrls.delete(character.id));render();
     return JSON.stringify({count,duration:Math.round(duration),selectionDuration:Math.round(selectionDuration),modalDuration:Math.round(modalDuration),retained,retainedDuringModal,scopedFullMorphs});
   })()`));

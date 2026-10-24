@@ -169,6 +169,7 @@ function icon(name) {
     close: '<path d="m6 6 12 12M18 6 6 18"></path>',
     sliders: '<path d="M4 6h16M7 12h10M10 18h4"></path>',
     grid: '<rect x="4" y="4" width="6" height="6" rx="1"></rect><rect x="14" y="4" width="6" height="6" rx="1"></rect><rect x="4" y="14" width="6" height="6" rx="1"></rect><rect x="14" y="14" width="6" height="6" rx="1"></rect>',
+    columns: '<rect x="3" y="5" width="5" height="14" rx="1"></rect><rect x="10" y="5" width="5" height="14" rx="1"></rect><rect x="17" y="5" width="4" height="14" rx="1"></rect>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"></path><path d="M4 6h.01M4 12h.01M4 18h.01"></path>',
     copy: '<rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>',
     star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"></path>',
@@ -396,6 +397,7 @@ function handleDelegatedClick(event) {
   const viewButton = event.target.closest('[data-view]');
   if (viewButton) {
     state.view = viewButton.dataset.view;
+    state.visibleLimit = 48;
     return render();
   }
   const appearanceSwatch = event.target.closest('[data-appearance-color]');
@@ -440,6 +442,7 @@ function selectCharacterElement(element, event) {
 
 function activateGallery(name) {
   state.activeGallery = name;
+  state.visibleLimit = 48;
   resetSelection();
   clearFilters(false);
   state.filterPanelOpen = false;
@@ -512,8 +515,13 @@ function handleDelegatedInput(event) {
   if (target.matches?.('[data-appearance-custom]')) {
     return updateAppearanceSelection(target.dataset.appearanceCustom, target.value);
   }
+  if (target.id === 'collection-search-input') {
+    state.galleryQuery = target.value;
+    return render();
+  }
   if (target.id === 'search-input') {
     state.query = target.value;
+    state.visibleLimit = 48;
     return render();
   }
   if (target.id === 'dna-input') {
@@ -827,7 +835,7 @@ function toggleGalleryBatchSelection(name, allowStart = false) {
 }
 
 function syncGalleryBatchSelection() {
-  const label = app.querySelector('.collection-nav .nav-label');
+  const label = app.querySelector('.nav-heading .nav-label');
   let count = label?.querySelector('.collection-batch-count');
   if (state.galleryBatchMode && state.selectedGalleryNames.size) {
     if (!count) {
@@ -902,8 +910,12 @@ function action(name) {
   if (name === 'manage-record') return showManageModal();
   if (name === 'focus-search') { render(); document.querySelector('#search-input')?.focus(); return; }
   if (name === 'help-hint') return render();
-  if (name === 'view-cards') { state.view = 'cards'; return render(); }
-  if (name === 'view-table') { state.view = 'table'; return render(); }
+  if (name === 'view-cards') { state.view = 'cards'; state.visibleLimit = 48; return render(); }
+  if (name === 'view-compact') { state.view = 'compact'; state.visibleLimit = 48; return render(); }
+  if (name === 'view-table') { state.view = 'table'; state.visibleLimit = 48; return render(); }
+  if (name === 'show-more') { state.visibleLimit += 48; return render(); }
+  if (name === 'clear-gallery-search') { state.galleryQuery = ''; render(); document.querySelector('#collection-search-input')?.focus(); return; }
+  if (name === 'toggle-sidebar') { document.querySelector('.sidebar')?.classList.toggle('is-open'); return; }
   if (name === 'open-folder') return desktop?.openFolder(state.dataDirectory);
   if (name === 'save-library') return saveLibrary()
     .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })

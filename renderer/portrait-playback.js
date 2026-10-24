@@ -25,20 +25,24 @@ function isPortraitInViewport(video) {
   let right = Math.min(rect.right, window.innerWidth);
   let bottom = Math.min(rect.bottom, window.innerHeight);
   let left = Math.max(rect.left, 0);
+  let viewportPositioned = getComputedStyle(video).position === 'fixed';
   for (let ancestor = video.parentElement; ancestor; ancestor = ancestor.parentElement) {
     const style = getComputedStyle(ancestor);
+    if (viewportPositioned) continue;
     const clipsHorizontally = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowX);
     const clipsVertically = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowY);
-    if (!clipsHorizontally && !clipsVertically) continue;
-    const clip = ancestor.getBoundingClientRect();
-    if (clipsHorizontally) {
-      left = Math.max(left, clip.left);
-      right = Math.min(right, clip.right);
+    if (clipsHorizontally || clipsVertically) {
+      const clip = ancestor.getBoundingClientRect();
+      if (clipsHorizontally) {
+        left = Math.max(left, clip.left);
+        right = Math.min(right, clip.right);
+      }
+      if (clipsVertically) {
+        top = Math.max(top, clip.top);
+        bottom = Math.min(bottom, clip.bottom);
+      }
     }
-    if (clipsVertically) {
-      top = Math.max(top, clip.top);
-      bottom = Math.min(bottom, clip.bottom);
-    }
+    if (style.position === 'fixed') viewportPositioned = true;
   }
   return rect.width > 0 && rect.height > 0 && right > left && bottom > top;
 }
