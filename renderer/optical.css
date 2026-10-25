@@ -92,12 +92,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .gallery-search input::placeholder { color: #92939f; }
 .gallery-search button { display: grid; place-items: center; padding: 2px; border: 0; background: none; }
 .gallery-search button .icon { width: 11px; }
-.collection-nav { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-height: 0; margin: 0; padding: 0 3px 8px; overflow-x: hidden; overflow-y: auto; }
-.collection-item { display: grid; grid-template-columns: 32px minmax(0,1fr) auto; gap: 8px; min-height: 47px; margin: 0; padding: 5px 8px; border-radius: 12px; color: #62636f; }
+.collection-nav { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-height: 0; margin: 0; padding: 0 3px 8px; overflow-x: hidden; overflow-y: auto; }
+.collection-active-indicator { position: absolute; z-index: 0; top: 0; right: 3px; left: 3px; height: 47px; pointer-events: none; border: 1px solid rgba(255,255,255,.8); border-radius: 12px; background: white; box-shadow: 0 3px 12px rgba(30,30,40,.065); opacity: 0; transition: transform .34s cubic-bezier(.2,.75,.2,1), height .25s, opacity .18s; }
+.collection-active-indicator::before { position: absolute; top: 50%; left: -3px; width: 3px; height: 19px; border-radius: 3px; background: var(--copper); content: ''; transform: translateY(-50%); }
+.collection-item { position: relative; z-index: 1; display: grid; grid-template-columns: 32px minmax(0,1fr) auto; gap: 8px; min-height: 47px; margin: 0; padding: 5px 8px; border-radius: 12px; background: transparent; color: #62636f; }
 .collection-item:hover { background: rgba(255,255,255,.64); color: var(--ink); }
-.collection-item.active { background: white; color: var(--ink); box-shadow: 0 3px 12px rgba(30,30,40,.065); }
-.collection-item.active::before { position: absolute; left: -3px; width: 3px; height: 19px; border-radius: 3px; background: var(--copper); content: ''; }
-.collection-item { position: relative; }
+.collection-item.active { background: transparent; color: var(--ink); box-shadow: none; }
 .collection-item.batch-selected { border: 0; background: #eeebff; color: var(--ink); box-shadow: inset 0 0 0 1px rgba(108,92,231,.25); }
 .collection-glyph { display: grid; place-items: center; width: 32px; height: 35px; border: 1px solid rgba(28,29,36,.055); border-radius: 9px; background: linear-gradient(145deg,#efedf5,#dcd8e8); color: #6d647c; font-size: 9px; font-weight: 750; }
 .collection-item.active .collection-glyph { background: linear-gradient(145deg,#282631,#565065); color: white; }

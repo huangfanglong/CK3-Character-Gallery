@@ -206,6 +206,7 @@ function icon(name) {
 
 let lastRenderedActiveId = null;
 let quickLookReturnId = null;
+let pendingLibraryTransition = null;
 let portraitSourceRequest = null;
 const MAX_ANIMATED_PORTRAIT_BYTES = 50 * 1024 * 1024;
 
@@ -248,6 +249,10 @@ function render(scope = 'all') {
   syncCharacterAppearance(app);
   syncPortraitPlayback(app, Boolean(state.modal), true);
   syncGalleryBatchSelection();
+  syncCollectionIndicator();
+  const libraryTransition = pendingLibraryTransition;
+  pendingLibraryTransition = null;
+  animateLibraryTransition(libraryTransition);
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
@@ -529,6 +534,7 @@ function selectCharacterElement(element, event) {
 }
 
 function activateGallery(name) {
+  if (state.allGalleries || state.activeGallery !== name) pendingLibraryTransition = captureLibraryMotion();
   state.allGalleries = false;
   state.activeGallery = name;
   state.visibleLimit = 48;
@@ -541,6 +547,7 @@ function activateGallery(name) {
 }
 
 function activateAllCharacters() {
+  if (!state.allGalleries) pendingLibraryTransition = captureLibraryMotion();
   state.allGalleries = true;
   state.visibleLimit = 48;
   resetSelection();

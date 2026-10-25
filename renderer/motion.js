@@ -176,3 +176,66 @@ function animateCommandDockMotion(previousRect) {
     { width: `${nextRect.width}px` },
   ], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
 }
+
+const libraryCardAnimations = new WeakMap();
+
+function captureLibraryMotion() {
+  if (prefersReducedMotion()) return null;
+  const cards = [...app.querySelectorAll('.card-grid .character-card')].slice(0, 48);
+  return new Map(cards.map((card) => [card.dataset.characterId, card.getBoundingClientRect()]));
+}
+
+function animateLibraryCard(card, keyframes, options) {
+  libraryCardAnimations.get(card)?.cancel();
+  const animation = card.animate(keyframes, options);
+  libraryCardAnimations.set(card, animation);
+  void animation.finished.catch(() => {}).then(() => {
+    if (libraryCardAnimations.get(card) === animation) libraryCardAnimations.delete(card);
+  });
+  return animation;
+}
+
+function animateLibraryTransition(previousRects) {
+  if (!previousRects || prefersReducedMotion()) return;
+  const cards = [...app.querySelectorAll('.card-grid .character-card')].slice(0, 48);
+  const rowTops = [];
+  for (const card of cards) {
+    const next = card.getBoundingClientRect();
+    const previous = previousRects.get(card.dataset.characterId);
+    if (previous) {
+      const x = previous.left - next.left;
+      const y = previous.top - next.top;
+      if (Math.abs(x) > 1 || Math.abs(y) > 1) {
+        animateLibraryCard(card, [
+          { transform: `translate(${x}px, ${y}px)` },
+          { transform: 'translate(0, 0)' },
+        ], { duration: 380, easing: 'cubic-bezier(.2,.75,.2,1)' });
+      }
+      continue;
+    }
+    let row = rowTops.findIndex((top) => Math.abs(top - next.top) < 4);
+    if (row < 0) { row = rowTops.length; rowTops.push(next.top); }
+    animateLibraryCard(card, [
+      { transform: 'translateY(12px) scale(.985)', opacity: 0 },
+      { transform: 'translateY(0) scale(1)', opacity: 1 },
+    ], { duration: 320, delay: Math.min(row * 24, 120), easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+  }
+}
+
+function syncCollectionIndicator() {
+  const indicator = app.querySelector('.collection-active-indicator');
+  if (!indicator) return;
+  const active = !state.allGalleries && app.querySelector(`.collection-item[data-gallery="${CSS.escape(state.activeGallery)}"]`);
+  const initialized = indicator.dataset.initialized === 'true';
+  if (!initialized) indicator.style.transition = 'none';
+  indicator.dataset.visible = String(Boolean(active));
+  indicator.style.opacity = active ? '1' : '0';
+  if (active) {
+    indicator.style.height = `${active.offsetHeight}px`;
+    indicator.style.transform = `translateY(${active.offsetTop}px)`;
+  }
+  if (!initialized) {
+    indicator.dataset.initialized = 'true';
+    requestAnimationFrame(() => { if (indicator.isConnected) indicator.style.removeProperty('transition'); });
+  }
+}
