@@ -528,6 +528,8 @@ async function main() {
   await evaluate(`document.querySelector('[data-character-id="${batchIds[0]}"]').click()`);
   await evaluate(`document.querySelector('[data-character-id="${batchIds[1]}"]').click()`);
   if ((await evaluate("document.querySelectorAll('.character-card.batch-selected').length")) !== 2 || (await evaluate("state.selectedCharacterIds.size")) !== 2) throw new Error('Batch mode did not retain two character selections.');
+  const dockSelectionState = JSON.parse(await evaluate("JSON.stringify({mode:document.querySelector('.command-dock')?.classList.contains('selection-mode'),legacy:Boolean(document.querySelector('.selection-bar')),browseHidden:document.querySelector('.dock-browse')?.hidden,selectionHidden:document.querySelector('.dock-selection')?.hidden,count:document.querySelector('.selection-summary strong')?.textContent,selectShown:Boolean(document.querySelector('.dock-selection [data-action=select-all-visible]')),density:document.querySelector('.density-switch')?.dataset.activeView})"));
+  if (!dockSelectionState.mode || dockSelectionState.legacy || !dockSelectionState.browseHidden || dockSelectionState.selectionHidden || dockSelectionState.count !== '2' || !dockSelectionState.selectShown || !dockSelectionState.density) throw new Error(`Selection did not morph inside the adaptive command dock (${JSON.stringify(dockSelectionState)}).`);
   await evaluate("document.querySelector('[data-action=delete-batch]').click()");
   if (!(await evaluate("Boolean(document.querySelector('[data-action=confirm-delete-batch]'))"))) throw new Error('Batch delete did not ask for confirmation.');
   await evaluate("document.querySelector('[data-action=confirm-delete-batch]').click()");
@@ -741,6 +743,14 @@ async function main() {
   if (narrowFilterBounds.left < 0 || narrowFilterBounds.right > narrowFilterBounds.width) throw new Error(`Filter panel escaped the narrow viewport (${narrowFilterBounds.left}-${narrowFilterBounds.right} of ${narrowFilterBounds.width}).`);
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   if (await evaluate("Boolean(document.querySelector('#filter-panel'))")) throw new Error('Escape did not close the filter panel.');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: false });
+  await delay(100);
+  const smallDockBounds = JSON.parse(await evaluate("(()=>{const dock=document.querySelector('.command-dock').getBoundingClientRect();const living=document.querySelector('[data-action=toggle-living]').getBoundingClientRect();const search=document.querySelector('.command-search').getBoundingClientRect();const select=document.querySelector('[data-action=batch-select]').getBoundingClientRect();return JSON.stringify({left:dock.left,right:dock.right,livingRight:living.right,selectRight:select.right,searchBottom:search.bottom,controlsTop:living.top,width:innerWidth})})()"));
+  if (smallDockBounds.left < 0 || smallDockBounds.right > smallDockBounds.width || smallDockBounds.livingRight > smallDockBounds.width || smallDockBounds.selectRight > smallDockBounds.width || smallDockBounds.controlsTop < smallDockBounds.searchBottom) throw new Error(`The adaptive dock did not keep every command reachable at 320px (${JSON.stringify(smallDockBounds)}).`);
+  await evaluate("document.querySelector('[data-action=filters]').click()");
+  const smallFilterBounds = JSON.parse(await evaluate("(()=>{const rect=document.querySelector('#filter-panel').getBoundingClientRect();return JSON.stringify({left:rect.left,right:rect.right,width:innerWidth})})()"));
+  if (smallFilterBounds.left < 0 || smallFilterBounds.right > smallFilterBounds.width) throw new Error(`The small-screen filter popover escaped the viewport (${JSON.stringify(smallFilterBounds)}).`);
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   await command('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1150, deviceScaleFactor: 1, mobile: false });
   const renderBenchmark = JSON.parse(await evaluate(`(async()=>{
     const gallery=getGallery();

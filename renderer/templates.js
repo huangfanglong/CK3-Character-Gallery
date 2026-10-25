@@ -95,15 +95,18 @@ function inspectorMarkup(character) {
 
 function commandDockMarkup(characters) {
   const filterCount = activeFilterCount();
-  return `<div class="command-dock" role="toolbar" aria-label="Library commands">
-    <div class="search-box command-search">${icon('search')}<input id="search-input" value="${escapeHtml(state.query)}" placeholder="Search this archive…" aria-label="Search characters" /><kbd>Ctrl F</kbd></div>
-    <span class="dock-divider"></span>
-    <div class="filter-control"><button class="filter-button ${state.filterPanelOpen ? 'active' : ''}" data-action="filters" aria-expanded="${state.filterPanelOpen}" aria-controls="filter-panel">${icon('sliders')}<span>Filter</span>${filterCount ? `<span class="filter-count">${filterCount}</span>` : ''}</button>${state.filterPanelOpen ? filterPanelMarkup(characters.length) : ''}</div>
-    ${sortControlMarkup()}
-    <span class="dock-divider"></span>
-    <div class="view-toggle" aria-label="View density"><button class="${state.view === 'cards' ? 'active' : ''}" data-view="cards" title="Comfortable grid" aria-label="Comfortable grid" aria-pressed="${state.view === 'cards'}">${icon('grid')}</button><button class="${state.view === 'compact' ? 'active' : ''}" data-view="compact" title="Compact grid" aria-label="Compact grid" aria-pressed="${state.view === 'compact'}">${icon('columns')}</button><button class="${state.view === 'table' ? 'active' : ''}" data-view="table" title="Compact list" aria-label="Compact list" aria-pressed="${state.view === 'table'}">${icon('list')}</button><button class="living-toggle ${state.livingContact ? 'active' : ''}" data-action="toggle-living" title="Living contact sheet: animate the focused portrait" aria-label="Living contact sheet" aria-pressed="${state.livingContact}">${icon('motion')}</button></div>
-    ${state.batchMode ? `<button class="batch-start active" data-action="cancel-batch">Done</button>` : `<button class="batch-start" data-action="batch-select"${characters.length && !state.allGalleries && !state.preview ? '' : ' disabled'} title="${state.allGalleries ? 'Select within a collection' : 'Select multiple characters'}">Select</button>`}
-  </div>${state.batchMode ? `<div class="selection-bar"><strong>${state.selectedCharacterIds.size} selected</strong><button data-action="select-all-visible">Select shown</button><button data-action="delete-batch"${state.selectedCharacterIds.size ? '' : ' disabled'}>Delete</button><button data-action="cancel-batch">Cancel</button></div>` : ''}`;
+  return `<div class="command-dock ${state.batchMode ? 'selection-mode' : ''}" role="toolbar" aria-label="${state.batchMode ? 'Selection commands' : 'Library commands'}">
+    <div class="dock-mode dock-browse"${state.batchMode ? ' hidden' : ''}>
+      <div class="search-box command-search">${icon('search')}<input id="search-input" value="${escapeHtml(state.query)}" placeholder="Search this archive…" aria-label="Search characters" /><kbd>Ctrl F</kbd></div>
+      <span class="dock-divider"></span>
+      <div class="filter-control"><button class="filter-button ${state.filterPanelOpen ? 'active' : ''}" data-action="filters" aria-expanded="${state.filterPanelOpen}" aria-controls="filter-panel">${icon('sliders')}<span>Filter</span>${filterCount ? `<span class="filter-count">${filterCount}</span>` : ''}</button>${state.filterPanelOpen ? filterPanelMarkup(characters.length) : ''}</div>
+      ${sortControlMarkup()}
+      <span class="dock-divider"></span>
+      <div class="view-toggle" role="group" aria-label="View and portrait motion"><div class="density-switch" data-active-view="${state.view}"><span class="density-indicator" aria-hidden="true"></span><button class="${state.view === 'cards' ? 'active' : ''}" data-view="cards" title="Comfortable grid" aria-label="Comfortable grid" aria-pressed="${state.view === 'cards'}">${icon('grid')}</button><button class="${state.view === 'compact' ? 'active' : ''}" data-view="compact" title="Compact grid" aria-label="Compact grid" aria-pressed="${state.view === 'compact'}">${icon('columns')}</button><button class="${state.view === 'table' ? 'active' : ''}" data-view="table" title="Compact list" aria-label="Compact list" aria-pressed="${state.view === 'table'}">${icon('list')}</button></div><span class="view-mode-divider" aria-hidden="true"></span><button class="living-toggle ${state.livingContact ? 'active' : ''}" data-action="toggle-living" title="Living contact sheet: animate the focused portrait" aria-label="Living contact sheet" aria-pressed="${state.livingContact}">${icon('motion')}</button></div>
+      <button class="batch-start" data-action="batch-select"${characters.length && !state.allGalleries && !state.preview ? '' : ' disabled'} title="${state.allGalleries ? 'Select within a collection' : 'Select multiple characters'}">Select</button>
+    </div>
+    <div class="dock-mode dock-selection"${state.batchMode ? '' : ' hidden'}><span class="selection-summary" aria-live="polite"><strong>${state.selectedCharacterIds.size}</strong><span>selected</span></span><button data-action="select-all-visible">Select shown</button><button class="selection-delete" data-action="delete-batch"${state.selectedCharacterIds.size ? '' : ' disabled'}>${icon('trash')}<span>Delete</span></button><button class="selection-done" data-action="cancel-batch">Done</button></div>
+  </div>`;
 }
 
 function mainMarkup(characters) {

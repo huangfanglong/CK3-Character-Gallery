@@ -893,19 +893,27 @@ async function saveCharacterTitle(value) {
 
 function startBatchSelection() {
   if (state.allGalleries || state.preview || !visibleCharacters().length) return;
+  const dockMotion = captureCommandDockMotion();
   state.batchMode = true;
   state.selectedCharacterIds.clear();
+  state.filterPanelOpen = false;
+  state.sortMenuOpen = false;
   cancelGalleryBatchSelection(false);
   state.activeId = null;
   state.focusContext = 'character';
   state.selectedVariantIndex = null;
   render();
+  animateCommandDockMotion(dockMotion);
 }
 
 function cancelBatchSelection(shouldRender = true) {
+  const dockMotion = shouldRender ? captureCommandDockMotion() : null;
   state.batchMode = false;
   state.selectedCharacterIds.clear();
-  if (shouldRender) render();
+  if (shouldRender) {
+    render();
+    animateCommandDockMotion(dockMotion);
+  }
 }
 
 function startGalleryBatchSelection(name) {
@@ -959,6 +967,7 @@ function syncGalleryBatchSelection() {
 
 function toggleBatchSelection(id, allowStart = false) {
   if (!id || state.allGalleries || state.preview) return;
+  const dockMotion = captureCommandDockMotion();
   if (!state.batchMode) {
     if (!allowStart) return;
     const activeId = state.activeId;
@@ -972,6 +981,7 @@ function toggleBatchSelection(id, allowStart = false) {
   }
   state.selectedCharacterIds.has(id) ? state.selectedCharacterIds.delete(id) : state.selectedCharacterIds.add(id);
   render();
+  animateCommandDockMotion(dockMotion);
   focusWithoutScroll(document.querySelector(`[data-character-id="${CSS.escape(id)}"]`));
 }
 

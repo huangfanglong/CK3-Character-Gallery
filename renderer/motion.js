@@ -160,3 +160,19 @@ function animateQuickLookNavigation(snapshot, destination, direction) {
   ], { duration: 300, easing: 'cubic-bezier(.2,.75,.2,1)', fill: 'both' }));
   return finishPortraitFlight(flight);
 }
+
+function captureCommandDockMotion() {
+  if (prefersReducedMotion()) return null;
+  return app.querySelector('.command-dock')?.getBoundingClientRect() || null;
+}
+
+function animateCommandDockMotion(previousRect) {
+  const dock = app.querySelector('.command-dock');
+  if (!previousRect || !dock) return;
+  const nextRect = dock.getBoundingClientRect();
+  if (Math.abs(previousRect.width - nextRect.width) < 1) return;
+  dock.animate([
+    { width: `${previousRect.width}px` },
+    { width: `${nextRect.width}px` },
+  ], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+}
