@@ -407,7 +407,27 @@ function installEventDelegation() {
 
 function handleDelegatedClick(event) {
   if (!(event.target instanceof Element)) return;
-  if (state.galleryBatchMode && !event.target.closest('.collection-nav, .context-menu, .modal-backdrop')) {
+  const removeButton = event.target.closest('[data-remove-comparison]');
+  if (removeButton) {
+    event.stopPropagation();
+    return removeComparison(removeButton.dataset.removeComparison);
+  }
+  const comparisonVariant = event.target.closest('[data-compare-variant]');
+  if (comparisonVariant) {
+    event.stopPropagation();
+    return setComparisonVariant(comparisonVariant.dataset.compareVariant, Number(comparisonVariant.dataset.variantIndex));
+  }
+  const comparisonTab = event.target.closest('[data-comparison-tab]');
+  if (comparisonTab) {
+    event.stopPropagation();
+    return setComparisonTab(comparisonTab.dataset.comparisonTab);
+  }
+  const comparisonZoom = event.target.closest('[data-compare-zoom]');
+  if (comparisonZoom) {
+    event.stopPropagation();
+    return changeComparisonZoom(Number(comparisonZoom.dataset.compareZoom));
+  }
+  if (state.galleryBatchMode && !event.target.closest('.collection-nav, .context-menu, .modal-backdrop, .comparison-tray')) {
     cancelGalleryBatchSelection(false);
     syncGalleryBatchSelection();
   }
@@ -571,9 +591,10 @@ function handleDelegatedContextMenu(event) {
       }
       return openContextMenu(event, { type: 'batch', ids: [...state.selectedCharacterIds] });
     }
+    const originGallery = { activeGallery: state.activeGallery, allGalleries: state.allGalleries };
     bindCharacterGallery(characterElement.dataset.characterId);
     resetSelection(characterElement.dataset.characterId);
-    return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId });
+    return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId, originGallery });
   }
   const galleryButton = event.target.closest('[data-gallery]');
   if (galleryButton) {
@@ -674,7 +695,7 @@ function openContextMenu(event, target) {
   state.contextMenu = {
     ...target,
     x: Math.max(8, Math.min(event.clientX, window.innerWidth - 218)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 378))),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 414))),
   };
   if (target.type === 'character' && !hadSortMenu) {
     render('selection');
@@ -724,6 +745,16 @@ async function handleContextAction(actionName) {
     if (actionName === 'cancel-gallery-batch') return cancelGalleryBatchSelection();
   }
   if (menu.type === 'character') {
+    if (actionName === 'compare') {
+      if (menu.originGallery) {
+        state.activeGallery = menu.originGallery.activeGallery;
+        state.allGalleries = menu.originGallery.allGalleries;
+      }
+      if (!getActiveCharacter()) resetSelection();
+      render('selection');
+      toggleComparison(menu.id);
+      return;
+    }
     bindCharacterGallery(menu.id);
     state.activeId = menu.id;
     state.focusContext = 'character';
@@ -1043,6 +1074,15 @@ function action(name) {
   if (name === 'cancel-batch') return cancelBatchSelection();
   if (name === 'select-all-visible') return selectAllVisibleCharacters();
   if (name === 'delete-batch') return showBatchDeleteConfirmation();
+  if (name === 'expand-comparison') {
+    if (comparisonRecords().length < 2) return;
+    state.comparisonExpanded = true;
+    renderComparison();
+    focusWithoutScroll(app.querySelector('[data-action="collapse-comparison"]'));
+    return;
+  }
+  if (name === 'collapse-comparison') return collapseComparison();
+  if (name === 'clear-comparison') return clearComparison();
   if (name === 'close-inspector') return closeQuickLook();
   if (name === 'previous-character') return navigateQuickLook(-1);
   if (name === 'next-character') return navigateQuickLook(1);
@@ -1169,6 +1209,7 @@ function installKeyboardShortcuts() {
     const command = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
     const target = event.target;
+    const inComparisonTray = target instanceof Element && Boolean(target.closest('.comparison-tray'));
     const editingText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
     const blockedByCapture = state.captureSession && ((command && ['n', 'f', 'd', 'e'].includes(key)) || event.key === 'F2' || (command && key === 'v' && !editingText));
     if (blockedByCapture) { event.preventDefault(); return; }
@@ -1223,17 +1264,17 @@ function installKeyboardShortcuts() {
       exportCollection();
       return;
     }
-    if (!state.modal && state.activeId && !editingText && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    if (!state.modal && state.activeId && !editingText && !inComparisonTray && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
       event.preventDefault();
       navigateQuickLook(event.key === 'ArrowLeft' ? -1 : 1);
       return;
     }
-    if (event.key === 'F2') {
+    if (event.key === 'F2' && !inComparisonTray) {
       event.preventDefault();
       showManageModal();
       return;
     }
-    if (event.key === 'Delete' && !editingText && !state.modal) {
+    if (event.key === 'Delete' && !editingText && !state.modal && !inComparisonTray) {
       event.preventDefault();
       if (state.galleryBatchMode) showGalleryBatchDeleteConfirmation();
       else if (state.batchMode) showBatchDeleteConfirmation();
@@ -1268,6 +1309,7 @@ function installKeyboardShortcuts() {
       else if (state.sortMenuOpen) { state.sortMenuOpen = false; render(); focusWithoutScroll(document.querySelector('[data-action="sort-menu"]')); }
       else if (state.batchMode) cancelBatchSelection();
       else if (state.galleryBatchMode) cancelGalleryBatchSelection();
+      else if (inComparisonTray && state.comparisonExpanded) { event.preventDefault(); collapseComparison(); }
       else if (state.activeId) { event.preventDefault(); closeQuickLook(); }
     }
   });

@@ -30,6 +30,7 @@ function morphKey(node) {
   if (node.nodeType !== Node.ELEMENT_NODE) return null;
   return node.id
     || node.getAttribute('data-character-id')
+    || node.getAttribute('data-compare-id')
     || node.getAttribute('data-gallery')
     || node.getAttribute('data-variant');
 }

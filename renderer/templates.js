@@ -23,7 +23,7 @@ function contextMenuMarkup() {
       ? [['delete-selected-galleries', icon('trash'), 'Delete selected', 'danger'], ['divider'], ['cancel-gallery-batch', icon('close'), 'Cancel selection']]
       : batch
         ? [['transfer', icon('arrow'), 'Move / Copy'], ['divider'], ['delete-batch', icon('trash'), 'Delete selected', 'danger']]
-        : [['manage', icon('edit'), 'Manage record'], ['customize-appearance', icon('palette'), 'Customize appearance'], ['favorite', icon('star'), state.favorites.has(menu.id) ? 'Remove favorite' : 'Add favorite'], ['divider'], ['copy-dna', icon('copy'), 'Copy DNA'], ['paste-dna', icon('download'), 'Paste DNA'], ['transfer', icon('arrow'), 'Move / Copy'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']];
+        : [['manage', icon('edit'), 'Manage record'], ['customize-appearance', icon('palette'), 'Customize appearance'], ['favorite', icon('star'), state.favorites.has(menu.id) ? 'Remove favorite' : 'Add favorite'], ['compare', icon('columns'), state.comparisonIds.includes(menu.id) ? 'Remove from comparison' : 'Add to comparison'], ['divider'], ['copy-dna', icon('copy'), 'Copy DNA'], ['paste-dna', icon('download'), 'Paste DNA'], ['transfer', icon('arrow'), 'Move / Copy'], ['duplicate', icon('copy'), 'Duplicate'], ['divider'], ['delete', icon('trash'), 'Delete', 'danger']];
   return `<div class="context-menu" role="menu" style="left:${menu.x}px;top:${menu.y}px"><p>${escapeHtml(heading || '')}</p>${items.map(([actionName, itemIcon, label, className]) => actionName === 'divider' ? '<div class="context-menu-divider"></div>' : `<button class="${className || ''}" data-context-action="${actionName}" role="menuitem">${itemIcon}<span>${label}</span></button>`).join('')}</div>`;
 }
 
@@ -116,7 +116,7 @@ function mainMarkup(characters) {
   const viewLabel = state.filters.favorites ? 'Favorites' : state.filters.dna === 'ready' ? 'DNA ready' : state.filters.dna === 'drafts' ? 'Needs DNA' : 'All faces';
   const galleryLabel = state.allGalleries ? 'All characters' : state.activeGallery;
   const archiveIndex = state.allGalleries ? 'ALL' : String(state.galleries.findIndex((gallery) => gallery.name === state.activeGallery) + 1).padStart(2, '0');
-  return `<main class="main-content"><div class="ambient-aura" aria-hidden="true"></div>
+  return `<main class="main-content ${comparisonRecords().length ? 'has-comparison' : ''}"><div class="ambient-aura" aria-hidden="true"></div>
     <header class="topbar"><div class="breadcrumbs"><button class="icon-button sidebar-open" data-action="toggle-sidebar" aria-label="Open navigation">${icon('list')}</button><span>ARCHIVE</span><i>/</i><strong>${escapeHtml(galleryLabel)}</strong></div><div class="top-actions"><span class="save-state"><i></i>Local archive</span><button class="icon-button" data-action="import" title="Import collection" aria-label="Import collection">${icon('download')}</button><button class="icon-button" data-action="export" title="Export collection" aria-label="Export collection">${icon('arrow')}</button></div></header>
     ${state.startupWarning ? `<div class="archive-warning" role="status">${icon('warning')}<span>${escapeHtml(state.startupWarning)}</span></div>` : ''}
     ${state.preview ? `<div class="preview-banner"><span><b>PREVIEW COLLECTION</b> This is a visual sample of the new archive experience.</span><button data-action="start-blank">Start with an empty gallery ${icon('arrow')}</button></div>` : ''}
@@ -126,6 +126,7 @@ function mainMarkup(characters) {
     ${characters.length > visibleLimit ? `<div class="load-more"><button data-action="show-more">Show 48 more ${icon('chevron')}</button><span>Rendering ${renderedCharacters.length} of ${characters.length} to keep scrolling fluid</span></div>` : ''}
     <footer class="archive-footer"><span><span class="keyboard-dot"></span> Paste an in-game screenshot anywhere to add a portrait</span><span>Bloodline / Optical Archive</span></footer>
     ${commandDockMarkup(characters)}
+    ${comparisonTrayMarkup()}
   </main>`;
 }
 
