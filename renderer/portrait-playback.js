@@ -100,9 +100,12 @@ function syncPortraitPlayback(root = document, blocked = false, refreshViewport 
         portraitVisibility.delete(video);
       }
       const thumb = video.closest('.variant-thumb');
+      const card = video.closest('.character-card');
       const active = thumb
         ? thumb.matches(':hover') || thumb.contains(document.activeElement)
-        : video.closest('.table-portrait-preview')?.classList.contains('visible');
+        : card
+          ? card.matches(':hover') || card.contains(document.activeElement)
+          : video.closest('.table-portrait-preview')?.classList.contains('visible');
       if (active) activePortraitVideos.add(video);
       else activePortraitVideos.delete(video);
       primePortraitVideo(video);

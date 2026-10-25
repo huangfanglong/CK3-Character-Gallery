@@ -17,6 +17,7 @@ const state = {
   sortMenuOpen: false,
   sort: 'recent',
   view: 'cards',
+  livingContact: localStorage.getItem('ck3-living-contact') === 'true',
   preview: false,
   dataDirectory: '',
   startupWarning: '',

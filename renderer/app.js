@@ -171,7 +171,7 @@ function coverVariantIndex(character) {
 function portraitMarkup(character, size = 'card', variantIndex = 0) {
   const image = imageUrlFor(character, variantIndex);
   if (image?.split(/[?#]/, 1)[0].toLowerCase().endsWith('.webm')) {
-    const playback = ['list-preview', 'thumb'].includes(size) ? 'interaction' : 'viewport';
+    const playback = ['list-preview', 'thumb'].includes(size) || (size === 'card' && state.livingContact) ? 'interaction' : 'viewport';
     return `<video class="portrait-image portrait-video ${size}" src="${escapeHtml(image)}" data-portrait-playback="${playback}" loop muted playsinline preload="metadata" aria-label="${escapeHtml(character.name)} portrait"></video>`;
   }
   if (image) return `<img class="portrait-image ${size}" src="${escapeHtml(image)}" alt="${escapeHtml(character.name)} portrait" />`;
@@ -187,6 +187,7 @@ function icon(name) {
     grid: '<rect x="4" y="4" width="6" height="6" rx="1"></rect><rect x="14" y="4" width="6" height="6" rx="1"></rect><rect x="4" y="14" width="6" height="6" rx="1"></rect><rect x="14" y="14" width="6" height="6" rx="1"></rect>',
     columns: '<rect x="3" y="5" width="5" height="14" rx="1"></rect><rect x="10" y="5" width="5" height="14" rx="1"></rect><rect x="17" y="5" width="4" height="14" rx="1"></rect>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"></path><path d="M4 6h.01M4 12h.01M4 18h.01"></path>',
+    motion: '<path d="m9 7 8 5-8 5z"></path><path d="M4 8v8M2 10v4"></path>',
     copy: '<rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>',
     star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"></path>',
     more: '<circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle>',
@@ -363,10 +364,13 @@ function installEventDelegation() {
   app.addEventListener('focusin', (event) => {
     if (event.target.closest?.('.dna-modal') && event.target.dataset?.action !== 'save-dna') state.focusDnaSave = false;
     setPortraitPlaybackActive(event.target.closest?.('.variant-thumb'), true);
+    setPortraitPlaybackActive(event.target.closest?.('.character-card'), true);
   });
   app.addEventListener('focusout', (event) => {
     const thumb = event.target.closest?.('.variant-thumb');
     if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
+    const card = event.target.closest?.('.character-card');
+    if (card && !card.contains(event.relatedTarget) && !card.matches(':hover')) setPortraitPlaybackActive(card, false);
   });
   app.addEventListener('mouseover', (event) => {
     const thumb = event.target.closest?.('.variant-thumb');
@@ -380,8 +384,14 @@ function installEventDelegation() {
   app.addEventListener('scroll', (event) => {
     if (event.target?.id === 'note-input') syncNoteHighlightScroll(event.target);
   }, true);
-  app.addEventListener('mouseenter', showTablePortraitPreview, true);
-  app.addEventListener('mouseleave', hideTablePortraitPreview, true);
+  app.addEventListener('mouseenter', (event) => {
+    showTablePortraitPreview(event);
+    if (event.target instanceof Element && event.target.matches('.character-card')) setPortraitPlaybackActive(event.target, true);
+  }, true);
+  app.addEventListener('mouseleave', (event) => {
+    hideTablePortraitPreview(event);
+    if (event.target instanceof Element && event.target.matches('.character-card') && !event.target.contains(document.activeElement)) setPortraitPlaybackActive(event.target, false);
+  }, true);
   installReorderDelegation();
 }
 
@@ -1007,6 +1017,13 @@ function action(name) {
   if (name === 'view-cards') { state.view = 'cards'; state.visibleLimit = 48; return render(); }
   if (name === 'view-compact') { state.view = 'compact'; state.visibleLimit = 48; return render(); }
   if (name === 'view-table') { state.view = 'table'; state.visibleLimit = 48; return render(); }
+  if (name === 'toggle-living') {
+    state.livingContact = !state.livingContact;
+    localStorage.setItem('ck3-living-contact', String(state.livingContact));
+    render();
+    focusWithoutScroll(app.querySelector('[data-action="toggle-living"]'));
+    return;
+  }
   if (name === 'show-more') { state.visibleLimit += 48; return render(); }
   if (name === 'clear-gallery-search') { state.galleryQuery = ''; render(); document.querySelector('#collection-search-input')?.focus(); return; }
   if (name === 'toggle-sidebar') { document.querySelector('.sidebar')?.classList.toggle('is-open'); return; }

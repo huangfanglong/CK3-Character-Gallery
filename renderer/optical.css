@@ -189,6 +189,13 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .batch-selected .batch-check { border-color: var(--copper); background: var(--copper); }
 .character-card.batch-selected { border: 0; background: transparent; box-shadow: none; }
 .character-card.batch-selected .card-portrait { border-color: var(--copper); box-shadow: 0 0 0 3px rgba(108,92,231,.2); }
+.card-grid.living .character-card { transition: opacity .24s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
+.card-grid.living:hover .character-card:not(:hover):not(:focus-within),
+.card-grid.living:focus-within .character-card:not(:hover):not(:focus-within) { opacity: .97; }
+.card-grid.living .character-card:hover,
+.card-grid.living .character-card:focus-within { position: relative; z-index: 2; }
+.card-grid.living .character-card:focus-visible .card-portrait { border-color: white; box-shadow: 0 0 0 3px rgba(108,92,231,.18), 0 20px 34px rgba(47,40,77,.15); transform: translateY(-3px); }
+.living-toggle.active { box-shadow: inset 0 0 0 1px rgba(108,92,231,.12); }
 
 .table-view { position: relative; z-index: 1; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.4); }
 .table-header, .table-row { grid-template-columns: 48px minmax(140px,1fr) minmax(90px,.7fr) 84px 26px; gap: 10px; }
