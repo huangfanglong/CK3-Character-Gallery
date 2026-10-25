@@ -239,3 +239,34 @@ function syncCollectionIndicator() {
     requestAnimationFrame(() => { if (indicator.isConnected) indicator.style.removeProperty('transition'); });
   }
 }
+
+function captureReorderMotion(container, itemSelector) {
+  if (prefersReducedMotion()) return null;
+  return new Map([...container.querySelectorAll(itemSelector)].map((item) => [item, item.getBoundingClientRect()]));
+}
+
+function animateReorderSiblings(container, dragged, previousRects) {
+  if (!previousRects || prefersReducedMotion()) return;
+  for (const [item, previous] of previousRects) {
+    if (item === dragged || !item.isConnected || item.parentElement !== container) continue;
+    const next = item.getBoundingClientRect();
+    const x = previous.left - next.left;
+    const y = previous.top - next.top;
+    if (Math.abs(x) < 1 && Math.abs(y) < 1) continue;
+    animateLibraryCard(item, [
+      { transform: `translate(${x}px, ${y}px)` },
+      { transform: 'translate(0, 0)' },
+    ], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+}
+
+function animateReorderSettle(item, previousRect = null) {
+  if (!item || prefersReducedMotion()) return;
+  const next = item.getBoundingClientRect();
+  const x = previousRect ? previousRect.left - next.left : 0;
+  const y = previousRect ? previousRect.top - next.top : -7;
+  animateLibraryCard(item, [
+    { transform: `translate(${x}px, ${y}px) scale(1.015)`, opacity: .76 },
+    { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+  ], { duration: 280, easing: 'cubic-bezier(.18,.8,.25,1)' });
+}

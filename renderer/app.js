@@ -803,7 +803,9 @@ function installReorderDelegation() {
     event.dataTransfer.dropEffect = 'move';
     const target = event.target.closest(config.itemSelector);
     if (!target || target === item) return;
+    const previousRects = captureReorderMotion(container, config.itemSelector);
     container.insertBefore(item, config.insertAfter(event, item, target) ? target.nextElementSibling : target);
+    animateReorderSiblings(container, item, previousRects);
   });
 
   app.addEventListener('drop', (event) => {
@@ -811,21 +813,36 @@ function installReorderDelegation() {
     const { config, container, item } = reorderSession;
     if (event.target.closest(config.containerSelector) !== container) return;
     event.preventDefault();
-    if (!event.target.closest(config.itemSelector)) container.appendChild(item);
+    if (!event.target.closest(config.itemSelector)) {
+      const previousRects = captureReorderMotion(container, config.itemSelector);
+      container.appendChild(item);
+      animateReorderSiblings(container, item, previousRects);
+    }
     const order = [...container.querySelectorAll(config.itemSelector)].map(config.key);
     if (order.some((value, index) => value !== reorderSession.initialOrder[index])) {
       reorderSession.committed = true;
+      item.classList.remove('dragging');
+      item.classList.add('settling');
+      animateReorderSettle(item);
       config.commit(order);
-    } else render();
+    }
   });
 
   app.addEventListener('dragend', () => {
     if (!reorderSession) return;
-    const { container, item, committed } = reorderSession;
+    const { config, container, item, committed } = reorderSession;
+    const previousRects = committed ? null : captureReorderMotion(container, config.itemSelector);
     container.classList.remove('is-reordering');
-    item.classList.remove('dragging');
+    item.classList.remove('dragging', 'settling');
     reorderSession = null;
-    if (!committed) render();
+    if (!committed) {
+      const key = config.key(item);
+      render();
+      const nextContainer = app.querySelector(config.containerSelector);
+      const nextItem = [...(nextContainer?.querySelectorAll(config.itemSelector) || [])].find((candidate) => config.key(candidate) === key);
+      animateReorderSiblings(nextContainer, nextItem, previousRects);
+      animateReorderSettle(nextItem, previousRects?.get(item));
+    }
   });
 }
 
