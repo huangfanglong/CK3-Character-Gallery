@@ -287,10 +287,13 @@ function renderSelection() {
 
 function closeQuickLook() {
   const returnId = quickLookReturnId || state.activeId;
+  const origin = capturePortraitMotion(app.querySelector('.quick-sheet .inspector-portrait'));
   quickLookReturnId = null;
   resetSelection();
   render('selection');
-  focusWithoutScroll(app.querySelector(`[data-character-id="${CSS.escape(returnId || '')}"]`) || app.querySelector('#search-input'));
+  const returnTarget = app.querySelector(`[data-character-id="${CSS.escape(returnId || '')}"]`);
+  void animateQuickLookClose(origin, returnTarget);
+  focusWithoutScroll(returnTarget || app.querySelector('#search-input'));
 }
 
 function navigateQuickLook(direction) {
@@ -298,10 +301,12 @@ function navigateQuickLook(direction) {
   const index = records.findIndex((character) => character.id === state.activeId);
   const next = records[index + direction];
   if (!next) return;
+  const origin = capturePortraitMotion(app.querySelector('.quick-sheet .inspector-portrait'));
   quickLookReturnId ||= state.activeId;
   bindCharacterGallery(next.id);
   resetSelection(next.id);
   render('selection');
+  void animateQuickLookNavigation(origin, app.querySelector('.quick-sheet .inspector-portrait'), direction);
   focusWithoutScroll(app.querySelector(`[data-action="${direction < 0 ? 'previous' : 'next'}-character"]`));
 }
 
@@ -514,10 +519,12 @@ function handleDelegatedClick(event) {
 
 function selectCharacterElement(element, event) {
   if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
+  const origin = capturePortraitMotion(element);
   quickLookReturnId = element.dataset.characterId;
   bindCharacterGallery(element.dataset.characterId);
   resetSelection(element.dataset.characterId);
   render('selection');
+  void animateQuickLookOpen(origin, app.querySelector('.quick-sheet .inspector-portrait'));
   focusWithoutScroll(app.querySelector('.quick-sheet [data-action="close-inspector"]'));
 }
 
