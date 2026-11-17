@@ -2,6 +2,7 @@ const portraitVideos = new Set();
 const viewportPortraitVideos = new Set();
 const portraitVisibility = new WeakMap();
 const activePortraitVideos = new WeakSet();
+const restoredFocusPlayback = new WeakSet();
 const primedPortraitSources = new WeakMap();
 let portraitPlaybackBlocked = false;
 
@@ -104,7 +105,7 @@ function syncPortraitPlayback(root = document, blocked = false, refreshViewport 
       const active = thumb
         ? thumb.matches(':hover') || thumb.contains(document.activeElement)
         : card
-          ? card.matches(':hover') || card.contains(document.activeElement)
+          ? card.matches(':hover') || (card.contains(document.activeElement) && !restoredFocusPlayback.has(card))
           : video.closest('.table-portrait-preview')?.classList.contains('visible');
       if (active) activePortraitVideos.add(video);
       else activePortraitVideos.delete(video);
@@ -114,11 +115,21 @@ function syncPortraitPlayback(root = document, blocked = false, refreshViewport 
   }
 }
 
+function suppressPortraitFocusPlayback(container) {
+  if (!container) return;
+  restoredFocusPlayback.add(container);
+  setPortraitPlaybackActive(container, false);
+}
+
+function allowPortraitFocusPlayback(container) {
+  if (container) restoredFocusPlayback.delete(container);
+}
+
 function setPortraitPlaybackActive(container, active) {
   const videos = container?.matches?.('.portrait-video') ? [container] : [...(container?.querySelectorAll?.('.portrait-video') || [])];
   for (const video of videos) {
     if (video.dataset.portraitPlayback !== 'interaction') continue;
-    if (active) activePortraitVideos.add(video);
+    if (active && (!restoredFocusPlayback.has(container) || container.matches?.(':hover'))) activePortraitVideos.add(video);
     else activePortraitVideos.delete(video);
     applyPortraitPlayback(video);
   }

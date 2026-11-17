@@ -299,6 +299,7 @@ function closeQuickLook() {
   const returnTarget = app.querySelector(`[data-character-id="${CSS.escape(returnId || '')}"]`);
   void animateQuickLookClose(origin, returnTarget);
   focusWithoutScroll(returnTarget || app.querySelector('#search-input'));
+  if (returnTarget && !returnTarget.matches(':hover')) suppressPortraitFocusPlayback(returnTarget);
 }
 
 function navigateQuickLook(direction) {
@@ -380,7 +381,10 @@ function installEventDelegation() {
     const thumb = event.target.closest?.('.variant-thumb');
     if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
     const card = event.target.closest?.('.character-card');
-    if (card && !card.contains(event.relatedTarget) && !card.matches(':hover')) setPortraitPlaybackActive(card, false);
+    if (card && !card.contains(event.relatedTarget)) {
+      allowPortraitFocusPlayback(card);
+      if (!card.matches(':hover')) setPortraitPlaybackActive(card, false);
+    }
   });
   app.addEventListener('mouseover', (event) => {
     const thumb = event.target.closest?.('.variant-thumb');
@@ -400,7 +404,7 @@ function installEventDelegation() {
   }, true);
   app.addEventListener('mouseleave', (event) => {
     hideTablePortraitPreview(event);
-    if (event.target instanceof Element && event.target.matches('.character-card') && !event.target.contains(document.activeElement)) setPortraitPlaybackActive(event.target, false);
+    if (event.target instanceof Element && event.target.matches('.character-card') && !event.target.contains(event.relatedTarget)) setPortraitPlaybackActive(event.target, false);
   }, true);
   installReorderDelegation();
 }
@@ -593,7 +597,6 @@ function handleDelegatedContextMenu(event) {
     }
     const originGallery = { activeGallery: state.activeGallery, allGalleries: state.allGalleries };
     bindCharacterGallery(characterElement.dataset.characterId);
-    resetSelection(characterElement.dataset.characterId);
     return openContextMenu(event, { type: 'character', id: characterElement.dataset.characterId, originGallery });
   }
   const galleryButton = event.target.closest('[data-gallery]');
@@ -698,7 +701,6 @@ function openContextMenu(event, target) {
     y: Math.max(8, Math.min(event.clientY, window.innerHeight - (target.type === 'collection' ? 204 : target.type === 'batch' || target.type === 'gallery-batch' ? 112 : 414))),
   };
   if (target.type === 'character' && !hadSortMenu) {
-    render('selection');
     render('chrome');
     render('context');
   } else render();
