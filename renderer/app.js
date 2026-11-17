@@ -565,7 +565,7 @@ function startInlineGalleryRename() {
   render();
   const input = app.querySelector('#gallery-name-input');
   focusWithoutScroll(input);
-  input?.select();
+  input?.setSelectionRange(input.value.length, input.value.length);
 }
 
 async function finishInlineGalleryRename(input) {

@@ -149,8 +149,8 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .gallery-title-button > span { overflow-wrap: anywhere; }
 .gallery-title-button .icon { width: .42em; height: .42em; color: var(--copper); opacity: 0; transition: opacity .18s; }
 .gallery-title-button:hover .icon, .gallery-title-button:focus-visible .icon { opacity: 1; }
-.gallery-title-input { width: 100%; min-width: 0; padding: 0 4px 5px; border: 0; border-bottom: 2px solid var(--copper); border-radius: 0; outline: 0; background: rgba(255,255,255,.35); color: var(--ink); font: inherit; letter-spacing: inherit; }
-.gallery-title-input:focus, .gallery-title-input:focus-visible { outline: 0; box-shadow: 0 5px 14px rgba(108,92,231,.07); }
+.gallery-title-input { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; color: var(--ink); caret-color: var(--copper); cursor: text; font: inherit; letter-spacing: inherit; }
+.gallery-title-input:focus, .gallery-title-input:focus-visible { outline: 0; background: transparent; box-shadow: none; }
 .gallery-rename-hint { color: #6c6d78; }
 .library-toolbar { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; min-height: 43px; margin-bottom: 14px; padding: 0 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .view-label { display: flex; align-items: center; gap: 8px; color: #747581; }
