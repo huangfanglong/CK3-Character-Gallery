@@ -3,6 +3,7 @@ const MAX_PORTRAIT_VARIANTS = 5;
 const state = {
   galleries: [],
   activeGallery: 'Default',
+  galleryRenameSource: null,
   allGalleries: false,
   activeId: null,
   focusContext: 'character',

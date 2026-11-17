@@ -378,6 +378,7 @@ function installEventDelegation() {
     setPortraitPlaybackActive(event.target.closest?.('.character-card'), true);
   });
   app.addEventListener('focusout', (event) => {
+    if (event.target.id === 'gallery-name-input') void finishInlineGalleryRename(event.target);
     const thumb = event.target.closest?.('.variant-thumb');
     if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
     const card = event.target.closest?.('.character-card');
@@ -557,6 +558,56 @@ function selectCharacterElement(element, event) {
   focusWithoutScroll(app.querySelector('.quick-sheet [data-action="close-inspector"]'));
 }
 
+function startInlineGalleryRename() {
+  const gallery = getGallery();
+  if (!gallery || state.preview || state.allGalleries) return;
+  state.galleryRenameSource = gallery.name;
+  render();
+  const input = app.querySelector('#gallery-name-input');
+  focusWithoutScroll(input);
+  input?.select();
+}
+
+async function finishInlineGalleryRename(input) {
+  if (!input || input.dataset.finished === 'true') return;
+  input.dataset.finished = 'true';
+  const sourceName = state.galleryRenameSource;
+  const gallery = state.galleries.find((item) => item.name === sourceName);
+  const restoreFocus = input.dataset.restoreFocus === 'true';
+  const focusTitle = () => { if (restoreFocus) focusWithoutScroll(app.querySelector('[data-action="edit-gallery-title"]')); };
+  if (!gallery) { state.galleryRenameSource = null; render(); return; }
+  const value = input.value.trim();
+  if (input.dataset.cancelled === 'true' || value === gallery.name) {
+    state.galleryRenameSource = null;
+    render();
+    focusTitle();
+    return;
+  }
+  if (!value || state.galleries.some((item) => item !== gallery && item.name.toLowerCase() === value.toLowerCase())) {
+    delete input.dataset.finished;
+    showToast(value ? 'A collection with that name already exists.' : 'Collection name cannot be empty.', 'info');
+    focusWithoutScroll(input);
+    input.select();
+    return;
+  }
+  const previousModified = gallery.modified;
+  gallery.name = value;
+  gallery.modified = Date.now();
+  if (state.activeGallery === sourceName) state.activeGallery = value;
+  state.galleryRenameSource = null;
+  render();
+  if (!(await saveLibrary())) {
+    gallery.name = sourceName;
+    gallery.modified = previousModified;
+    if (state.activeGallery === value) state.activeGallery = sourceName;
+    render();
+    focusTitle();
+    return;
+  }
+  showToast('Collection renamed.', 'success');
+  focusTitle();
+}
+
 function activateGallery(name) {
   if (state.allGalleries || state.activeGallery !== name) pendingLibraryTransition = captureLibraryMotion();
   state.allGalleries = false;
@@ -631,6 +682,15 @@ function handleDelegatedKeydown(event) {
       : event.key === 'End' ? options.length - 1
         : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
     return options[next]?.focus();
+  }
+  if (event.target.id === 'gallery-name-input') {
+    if (!['Enter', 'Escape'].includes(event.key) || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.target.dataset.restoreFocus = 'true';
+    if (event.key === 'Escape') event.target.dataset.cancelled = 'true';
+    event.target.blur();
+    return;
   }
   if (event.target.id === 'character-title') {
     const titleInput = event.target;
@@ -1070,6 +1130,7 @@ function action(name) {
   }
   if (name === 'new-character') return showCharacterModal();
   if (name === 'new-gallery') return showGalleryModal();
+  if (name === 'edit-gallery-title') return startInlineGalleryRename();
   if (name === 'rename-gallery') return showRenameGalleryModal();
   if (name === 'delete-gallery') return showDeleteGalleryConfirmation();
   if (name === 'batch-select') return startBatchSelection();

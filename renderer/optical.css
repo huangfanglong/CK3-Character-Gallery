@@ -24,6 +24,11 @@
   --mono: 'Cascadia Mono', 'Consolas', monospace;
   --sans: 'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --serif: 'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-micro: 10px;
+  --font-caption: 11px;
+  --font-body: 12px;
+  --font-control: 13px;
+  --font-reading: 14px;
   --canvas: #f1f1f5;
   --accent-soft: #eeebff;
   --optical-shadow: 0 18px 60px rgba(37, 33, 61, .1), 0 2px 8px rgba(37, 33, 61, .04);
@@ -139,6 +144,14 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .heading-subtitle { display: flex; align-items: center; gap: 8px; margin-top: 11px; color: #858691; font-size: 10px; }
 .heading-subtitle i { width: 3px; height: 3px; border-radius: 50%; background: #b2b1bc; }
 .heading-new { flex: 0 0 auto; margin-bottom: 1px; }
+.archive-heading > div { min-width: 0; }
+.gallery-title-button { display: flex; align-items: center; gap: 12px; max-width: 100%; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; cursor: text; }
+.gallery-title-button > span { overflow-wrap: anywhere; }
+.gallery-title-button .icon { width: .42em; height: .42em; color: var(--copper); opacity: 0; transition: opacity .18s; }
+.gallery-title-button:hover .icon, .gallery-title-button:focus-visible .icon { opacity: 1; }
+.gallery-title-input { width: 100%; min-width: 0; padding: 0 4px 5px; border: 0; border-bottom: 2px solid var(--copper); border-radius: 0; outline: 0; background: rgba(255,255,255,.35); color: var(--ink); font: inherit; letter-spacing: inherit; }
+.gallery-title-input:focus, .gallery-title-input:focus-visible { outline: 0; box-shadow: 0 5px 14px rgba(108,92,231,.07); }
+.gallery-rename-hint { color: #6c6d78; }
 .library-toolbar { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; min-height: 43px; margin-bottom: 14px; padding: 0 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .view-label { display: flex; align-items: center; gap: 8px; color: #747581; }
 .view-label .icon { width: 14px; }
@@ -307,7 +320,7 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .quick-sheet .inspector-actions button:disabled { opacity: .28; cursor: default; }
 .quick-sheet .inspector-actions [data-action="previous-character"] .icon { transform: rotate(90deg); }
 .quick-sheet .inspector-actions [data-action="next-character"] .icon { transform: rotate(-90deg); }
-.quick-sheet .inspector-portrait { width: 100%; height: min(38vh,350px); margin: 18px 0; overflow: hidden; border: 1px solid rgba(255,255,255,.65); border-radius: 18px; background: #dddde5; box-shadow: 0 12px 30px rgba(40,35,65,.1); aspect-ratio: auto; }
+.quick-sheet .inspector-portrait { width: 100%; height: auto; margin: 18px 0; overflow: hidden; border: 1px solid rgba(255,255,255,.65); border-radius: 18px; background: #dddde5; box-shadow: 0 12px 30px rgba(40,35,65,.1); aspect-ratio: .79; }
 .quick-sheet .inspector-portrait::after { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(28,29,36,.05); content: ''; }
 .quick-sheet .inspector-title h2 { color: var(--character-name-color,var(--ink)); font: 680 27px/1.1 var(--sans); letter-spacing: -.045em; }
 .quick-sheet .inspector-title input { color: var(--character-title-color,#8b8c97); font: 500 11px var(--sans); }
@@ -574,8 +587,8 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
   .archive-footer > span:first-child { max-width: 60%; }
   .quick-overlay { padding: 0; }
   .quick-sheet { width: 100%; border-radius: 0; }
-  .quick-sheet .inspector-portrait { height: min(48vh,460px); }
-  .quick-sheet .inspector-portrait img { object-position: center 25%; }
+  .quick-sheet .inspector-portrait { height: auto; }
+  .quick-sheet .inspector-portrait img { object-position: center; }
   .modal, .dna-modal, .note-modal, .crop-modal, .capture-modal { width: calc(100vw - 24px); max-height: calc(100vh - 48px); padding: 22px; border-radius: 18px; }
   .modal-actions > button, .manage-actions > button { flex: 1 1 auto; }
   .manage-actions .danger-text { flex-basis: 100%; margin-right: 0; text-align: left; }
@@ -617,6 +630,56 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
   .dock-selection button { padding: 0 8px; }
   .selection-summary { min-width: 78px; }
 }
+/* A readable optical type scale: metadata stays compact without falling below 10px,
+   while controls and record content use 12–14px instead of the former 7–11px text. */
+body { font-size: var(--font-reading); }
+.chrome-title, .new-record, .nav-item, .heading-subtitle, .view-label strong,
+.batch-start, .quick-tabs button, .quick-metadata dd, .comparison-label strong,
+.comparison-title strong, .modal-copy, .appearance-entry strong, .capture-source span,
+.toast, .context-menu button { font-size: var(--font-control); }
+.chrome-edition, .brand span, .new-record kbd, .nav-heading .nav-label, .eyebrow,
+.breadcrumbs, .card-topline, .table-header, .command-search kbd, .filter-count,
+.archive-footer, .inspector-id, .portrait-caption, .quick-metadata dt,
+.comparison-label span, .comparison-title .eyebrow, .comparison-zoom output,
+.comparison-variants button > span, .variant-thumb > span, .capture-output-panel > span,
+.capture-frame-tools span, .capture-precision > div > span { font-size: var(--font-micro); }
+.chrome-menu button, .gallery-search input, .collection-copy small, .collection-item b,
+.collection-empty, .breadcrumbs strong, .save-state, .utility-link, .storage-note small,
+.view-hint, .table-name small, .table-status, .view-label > span, .card-info p,
+.command-search input, .filter-button, .sort-select, .sort-select strong, .sort-menu button,
+.dock-selection button, .load-more button, .quick-sheet .variant-heading button,
+.quick-sheet .inspector-title input, .quick-dna, .quick-empty, .quick-sheet .field-note,
+.quick-sheet .inspector-footer .outline-button, .quick-sheet .inspector-footer .primary-button,
+.comparison-chip > span, .comparison-expand, .comparison-tabs button,
+.comparison-card-head p, .comparison-dna-summary, .dna-line, .comparison-empty p,
+.filter-panel-head button, .filter-panel-foot button, .filter-segments button,
+.filter-toggle, .filter-tag-option, .filter-tag-list p, .filter-chip,
+.capture-frame-tools .outline-button { font-size: var(--font-body); }
+.collection-copy strong, .selection-summary span, .modal-label input, .modal-label select,
+.dna-modal textarea, .note-highlight, .note-editor textarea { font-size: var(--font-reading); }
+.nav-item b, .storage-note b, .card-index, .tag, .filter-panel-head, .filter-label,
+.filter-panel-foot, .modal-label, .appearance-default, .appearance-custom,
+.appearance-field h3, .dialog-shortcuts, .dna-footer, .note-footer, .crop-controls label,
+.crop-footer, .capture-shortcut, .capture-shortcut select, .capture-shortcut input,
+.capture-number-control input[type="number"], .capture-precision input, .capture-footer,
+.context-menu > p, .variant-empty, .quick-sheet .variant-heading,
+.quick-sheet .section-heading { font-size: var(--font-caption); }
+.card-info h3 { font-size: 15px; }
+.table-name strong { font-size: var(--font-reading); }
+.appearance-entry small { font-size: var(--font-body); }
+.compact .card-info h3 { font-size: var(--font-body); }
+.compact .card-info p, .compact .card-status { font-size: var(--font-caption); }
+.tag { color: #6f687e; font-weight: 600; }
+.quick-sheet .inspector-tags { min-height: 28px; gap: 6px; }
+.quick-sheet .inspector-title input { font-size: var(--font-reading); }
+.quick-sheet .inspector-tags .tag { padding: 5px 8px; font-size: var(--font-body); }
+.quick-sheet .variant-heading, .quick-sheet .section-heading { font-weight: 650; }
+.quick-tabs button { min-height: 36px; }
+.utility-link { font-size: var(--font-caption); white-space: nowrap; }
+@media (max-width: 700px) {
+  .heading-new { font-size: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
