@@ -26,11 +26,15 @@ function main() {
     sourceId: 'source-1',
     shortcut: 'CommandOrControl+Shift+9',
     ownerWebContentsId: 10,
+    dockDraftId: 'draft-1',
+    gameHwnd: '42',
     onToggle: (id) => toggles.push(id),
   });
 
   assert.equal(sessionId, 'session-1');
   assert.equal(manager.get(sessionId).ownerWebContentsId, 10);
+  assert.equal(manager.get(sessionId).dockDraftId, 'draft-1');
+  assert.equal(manager.get(sessionId).gameHwnd, '42');
   assert.equal(manager.get(sessionId).phase, 'arming');
   assert.throws(() => manager.transition(sessionId, 'recording'), /cannot transition/i);
   ['armed', 'starting'].forEach((phase) => manager.transition(sessionId, phase));

@@ -1,0 +1,20 @@
+const assert = require('node:assert/strict');
+const { normalizeGameDockCommand, normalizeGameDockState } = require('../electron/game-dock-commands.cjs');
+
+const base = { operationId: 'op-1', type: 'quick-add', payload: {} };
+assert.deepEqual(normalizeGameDockCommand(base), base);
+assert.throws(() => normalizeGameDockCommand({ ...base, operationId: '' }), /operation/i);
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'save-archive' }), /not supported/);
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'create-record', payload: { draftId: 'draft-1', name: 'x'.repeat(121) } }), /name/i);
+assert.equal(normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: ' Court ', ignored: 'unsafe' } }).payload.collection, 'Court');
+assert.equal('ignored' in normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: ' Court ', ignored: 'unsafe' } }).payload, false);
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: 'All characters' } }), /destination/i);
+assert.deepEqual(normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: .4, centerY: .6, size: .25 } } }).payload.crop, { centerX: .4, centerY: .6, size: .25 });
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: 2, centerY: .6, size: .25 } } }), /crop/i);
+const state = normalizeGameDockState({ mode: 'draft', collections: ['Court'], collection: 'Court', dnaReady: true, characterName: 'Ragnhild', visible: false, unknown: 'discard' });
+assert.equal(state.mode, 'draft');
+assert.equal(state.dnaReady, true);
+assert.equal(state.visible, undefined);
+assert.equal(state.unknown, undefined);
+assert.throws(() => normalizeGameDockState({ mode: 'admin' }), /mode/i);
+console.log('Game dock command tests passed: allow-listed semantic actions, strict payloads, safe crops, and bounded state.');

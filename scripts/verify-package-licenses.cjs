@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const outputDirectory = path.join(__dirname, '..', 'release', 'win-unpacked');
+const outputDirectory = path.resolve(process.env.CK3_PACKAGE_DIRECTORY || path.join(__dirname, '..', 'release', 'win-unpacked'));
 const requiredFiles = [
   'LICENSE.electron.txt',
   'LICENSES.chromium.html',
@@ -9,6 +9,7 @@ const requiredFiles = [
   path.join('resources', 'licenses', 'gifenc LICENSE.txt'),
   path.join('resources', 'licenses', 'gifuct-js LICENSE.txt'),
   path.join('resources', 'licenses', 'js-binary-schema-parser LICENSE.txt'),
+  path.join('resources', 'licenses', 'koffi LICENSE.txt'),
   path.join('resources', 'licenses', 'webm-muxer LICENSE.txt'),
 ];
 const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(outputDirectory, file)));

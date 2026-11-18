@@ -13,6 +13,7 @@ const { saveCaptureVideo } = require('./capture-video.cjs');
 const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 const { CaptureSessionManager } = require('./capture-session-manager.cjs');
 const { CaptureHud } = require('./capture-hud.cjs');
+const { GameDockService } = require('./game-dock-service.cjs');
 const { imageDirectory } = require('./image-directory.cjs');
 
 const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'];
@@ -33,7 +34,10 @@ let portraitPreviewDrainComplete = false;
 const captureSources = new Map();
 const captureSessions = new CaptureSessionManager(globalShortcut, crypto.randomUUID);
 let captureHud = null;
+let gameDock = null;
+let mainWindow = null;
 let mainWindowWebContentsId = null;
+let archiveSaveQueue = Promise.resolve();
 const dataDirectory = () => isDev
   ? path.resolve(testDataDirectory || path.join(projectRoot, 'character_gallery_data'))
   : path.join(app.getPath('userData'), 'character_gallery_data');
@@ -59,6 +63,22 @@ function destroyCaptureHud() {
     console.error('Capture HUD could not be destroyed:', error);
     return false;
   }
+}
+
+function ensureGameDock() {
+  gameDock ||= new GameDockService({
+    BrowserWindow,
+    screen,
+    clipboard,
+    createId: crypto.randomUUID,
+    getMainContents: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
+    showMainWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
+    htmlPath: path.join(__dirname, 'game-dock.html'),
+    preloadPath: path.join(__dirname, 'game-dock-preload.cjs'),
+    preferencesPath: path.join(dataDirectory(), 'ui-settings.json'),
+  });
+  gameDock.mainWindowWebContentsId = mainWindowWebContentsId;
+  return gameDock;
 }
 
 function readClipboardImagePath() {
@@ -183,7 +203,9 @@ async function createWindow() {
   });
   const contents = window.webContents;
   const ownerWebContentsId = contents.id;
+  mainWindow = window;
   mainWindowWebContentsId = ownerWebContentsId;
+  if (gameDock) gameDock.mainWindowWebContentsId = ownerWebContentsId;
   const releaseOwnedCaptures = () => releaseCaptureSessionsByOwner(ownerWebContentsId);
   const releaseOwnedPortraitSources = () => { void releasePortraitSourcesByOwner(ownerWebContentsId).catch(() => {}); };
   contents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
@@ -195,7 +217,9 @@ async function createWindow() {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.once('closed', () => {
     if (mainWindowWebContentsId === ownerWebContentsId) mainWindowWebContentsId = null;
-    if (!destroyCaptureHud()) app.quit();
+    if (mainWindow === window) mainWindow = null;
+    destroyCaptureHud();
+    app.quit();
   });
 
   contents.on('before-input-event', (event, input) => {
@@ -209,10 +233,22 @@ async function createWindow() {
   await window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
+function presentCaptureStatus(capture, sessionId, status) {
+  if (capture?.dockDraftId) return gameDock?.updateCapture(capture, status) || false;
+  if (status === null) return captureHud?.release(sessionId) || false;
+  return ensureCaptureHud().update(sessionId, status);
+}
+
 function releaseCaptureSession(sessionId, terminalStatus = null) {
+  const capture = captureSessions.get(sessionId);
   const released = captureSessions.release(sessionId);
-  try { captureHud?.release(sessionId, terminalStatus); }
-  catch (error) { console.error('Capture HUD could not release:', error); }
+  if (released && capture?.dockDraftId && capture.ownerWebContentsId === mainWindowWebContentsId) {
+    mainWindow?.webContents.setBackgroundThrottling(true);
+  }
+  try {
+    if (capture?.dockDraftId) gameDock?.updateCapture(capture, terminalStatus);
+    else captureHud?.release(sessionId, terminalStatus);
+  } catch (error) { console.error('Capture status could not be released:', error); }
   return released;
 }
 
@@ -221,8 +257,9 @@ function releaseCaptureSessionsByOwner(ownerWebContentsId) {
   const capture = sessionId && captureSessions.get(sessionId);
   captureSessions.releaseByOwner(ownerWebContentsId);
   if (capture?.ownerWebContentsId === ownerWebContentsId) {
-    try { captureHud?.release(sessionId); }
-    catch (error) { console.error('Capture HUD could not release:', error); }
+    if (capture.dockDraftId) mainWindow?.webContents.setBackgroundThrottling(true);
+    try { presentCaptureStatus(capture, sessionId, null); }
+    catch (error) { console.error('Capture status could not be released:', error); }
   }
 }
 
@@ -247,6 +284,37 @@ function captureFailureMessage(value) {
   return value.trim();
 }
 
+ipcMain.handle('game-dock:renderer-state', (event, patch) => {
+  requireTrustedCaptureSender(event);
+  ensureGameDock().updateFromRenderer(patch);
+  return true;
+});
+
+ipcMain.handle('game-dock:renderer-result', (event, operationId, result) => {
+  requireTrustedCaptureSender(event);
+  return ensureGameDock().completeRendererResult(event, operationId, result);
+});
+
+ipcMain.handle('game-dock:sync-library', (event, galleries) => {
+  requireTrustedCaptureSender(event);
+  ensureGameDock().syncLibrary(galleries);
+  return true;
+});
+
+ipcMain.handle('game-dock:set-enabled', async (event, enabled) => {
+  requireTrustedCaptureSender(event);
+  const service = ensureGameDock();
+  await service.loadPreferences();
+  return service.setEnabled(Boolean(enabled));
+});
+
+ipcMain.handle('game-dock:get-preferences', async (event) => {
+  requireTrustedCaptureSender(event);
+  const service = ensureGameDock();
+  await service.loadPreferences();
+  return { ...service.preferences };
+});
+
 ipcMain.handle('library:load', async () => {
   const data = await ensureData();
   return {
@@ -258,7 +326,9 @@ ipcMain.handle('library:load', async () => {
 });
 
 ipcMain.handle('library:save', async (_event, galleries) => {
-  return saveArchive(dataDirectory(), galleries);
+  const save = archiveSaveQueue.catch(() => {}).then(() => saveArchive(dataDirectory(), galleries));
+  archiveSaveQueue = save;
+  return save;
 });
 
 ipcMain.handle('library:choose-image', async (event, characterId) => {
@@ -358,25 +428,30 @@ ipcMain.handle('library:release-image-source', (event, sourceId) => {
   return releasePortraitSource(event.sender.id, sourceId);
 });
 
-ipcMain.handle('capture:list-sources', async (event) => {
+ipcMain.handle('capture:list-sources', async (event, gameHwnd = '') => {
   requireTrustedCaptureSender(event);
+  const hwnd = gameHwnd ? ensureGameDock().validateGameHwnd(gameHwnd) : '';
   const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 320, height: 180 } });
   captureSources.clear();
-  return sources.filter((source) => /crusader kings iii/i.test(source.name)).map((source) => {
+  return sources.filter((source) => hwnd
+    ? source.id.startsWith(`window:${hwnd}:`)
+    : /crusader kings iii/i.test(source.name)).map((source) => {
     captureSources.set(source.id, source);
     return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
   });
 });
 
-ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
+ipcMain.handle('capture:arm', (event, sourceId, shortcut, context) => {
   requireTrustedCaptureSender(event);
+  const dockContext = ensureGameDock().validateCaptureContext(context);
   const source = captureSources.get(sourceId);
-  if (!source) throw new Error('The selected CK3 window is no longer available.');
+  if (!source || (dockContext && !source.id.startsWith(`window:${dockContext.gameHwnd}:`))) throw new Error('The selected CK3 window is no longer available.');
   if (!isCaptureShortcut(shortcut)) throw new Error('Choose one of the available capture shortcuts.');
   const sessionId = captureSessions.arm({
     sourceId,
     shortcut,
     ownerWebContentsId: event.sender.id,
+    ...dockContext,
     onToggle: (id) => {
       if (event.sender.isDestroyed()) {
         releaseCaptureSession(id);
@@ -386,9 +461,14 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut) => {
     },
   });
   try {
-    const hud = ensureCaptureHud();
-    hud.arm(sessionId, { displayId: source.display_id, shortcut });
-    hud.update(sessionId, { state: 'starting' });
+    if (dockContext) {
+      event.sender.setBackgroundThrottling(false);
+      presentCaptureStatus(captureSessions.get(sessionId), sessionId, { state: 'starting' });
+    } else {
+      const hud = ensureCaptureHud();
+      hud.arm(sessionId, { displayId: source.display_id, shortcut });
+      hud.update(sessionId, { state: 'starting' });
+    }
   } catch (error) { releaseCaptureSession(sessionId); throw error; }
   return { sessionId, shortcut };
 });
@@ -399,8 +479,8 @@ ipcMain.handle('capture:status', (event, sessionId, status) => {
   if (status.state === 'recording' && (!Number.isFinite(status.startedAt) || status.startedAt < Date.now() - 60_000 || status.startedAt > Date.now() + 5_000)) throw new Error('Capture start time is invalid.');
   if (status.state === 'matching' && (!Number.isFinite(capture.startedAt) || !Number.isFinite(status.deadline) || status.deadline < Date.now() - 1_000 || status.deadline > capture.startedAt + 25_000)) throw new Error('Capture loop deadline is invalid.');
   captureSessions.transition(sessionId, status.state, status);
-  try { return ensureCaptureHud().update(sessionId, { state: status.state, startedAt: status.startedAt, deadline: status.deadline }); }
-  catch (error) { console.error('Capture HUD could not update:', error); return false; }
+  try { return presentCaptureStatus(capture, sessionId, { state: status.state, startedAt: status.startedAt, deadline: status.deadline }); }
+  catch (error) { console.error('Capture status could not update:', error); return false; }
 });
 
 ipcMain.handle('capture:finish', async (event, sessionId, characterId, video) => {
@@ -529,9 +609,13 @@ app.whenReady().then(async () => {
     callback(source && isOwnerMainFrame ? { video: source } : {});
   }, { useSystemPicker: false });
   session.fromPartition('capture-hud').setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: false });
+  session.fromPartition('game-dock').setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: false });
   await ensureData();
   ensureCaptureHud();
+  ensureGameDock();
   await createWindow();
+  await ensureGameDock().start();
+  if (isDev && process.env.CK3_GALLERY_TEST_DOCK_WINDOW === '1') ensureGameDock().dock?.ensureWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow().catch((error) => console.error('Failed to create a window:', error));
@@ -551,6 +635,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (portraitPreviewDrainInProgress) return;
   portraitPreviewDrainInProgress = true;
+  gameDock?.destroy();
   for (const window of BrowserWindow.getAllWindows()) {
     try {
       if (!window.isDestroyed()) window.destroy();

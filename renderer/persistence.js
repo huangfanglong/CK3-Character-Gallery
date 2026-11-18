@@ -111,6 +111,7 @@ async function saveLibrary() {
   try {
     const saved = Boolean(await desktop.save(galleries));
     if (!saved) throw new Error('The archive save did not complete.');
+    syncGameDockLibrary();
     render();
     return true;
   } catch (error) {

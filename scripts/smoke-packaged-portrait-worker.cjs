@@ -16,7 +16,7 @@ function fixture() {
 }
 
 async function runPackagedWorker() {
-  const asarPath = path.join(__dirname, '..', 'release', 'win-unpacked', 'resources', 'app.asar');
+  const asarPath = path.join(path.resolve(process.env.CK3_PACKAGE_DIRECTORY || path.join(__dirname, '..', 'release', 'win-unpacked')), 'resources', 'app.asar');
   const { PortraitWorkerClient } = require(path.join(asarPath, 'electron', 'portrait-worker-client.cjs'));
   const client = new PortraitWorkerClient({ workerPath: path.join(asarPath, 'electron', 'portrait-worker-thread.cjs') });
   try {
@@ -34,7 +34,7 @@ async function runPackagedWorker() {
 async function main() {
   if (process.platform !== 'win32') return console.log('Packaged portrait worker smoke test skipped outside Windows.');
   if (process.env.CK3_PACKAGED_PORTRAIT_WORKER === '1') return runPackagedWorker();
-  const executable = path.join(__dirname, '..', 'release', 'win-unpacked', 'CK3 Character Gallery.exe');
+  const executable = path.join(path.resolve(process.env.CK3_PACKAGE_DIRECTORY || path.join(__dirname, '..', 'release', 'win-unpacked')), 'CK3 Character Gallery.exe');
   const child = spawnSync(executable, [__filename], {
     encoding: 'utf8',
     env: { ...process.env, CK3_PACKAGED_PORTRAIT_WORKER: '1', ELECTRON_RUN_AS_NODE: '1' },

@@ -32,6 +32,7 @@ const state = {
   activeMenu: null,
   cropSession: null,
   captureSession: null,
+  gameDockPreferences: { enabled: true, position: 'center', collection: '' },
   pendingPortraitSource: null,
   pendingDnaSource: null,
   dnaHistory: null,

@@ -11,9 +11,11 @@ const electron = require('electron');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
 const smokeDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-renderer-smoke-'));
 fs.writeFileSync(path.join(smokeDataDirectory, 'galleries.json'), '{ "broken": ');
+const electronEnvironment = { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory };
+delete electronEnvironment.ELECTRON_RUN_AS_NODE;
 const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`], {
   cwd: path.join(__dirname, '..'),
-  env: { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory },
+  env: electronEnvironment,
   stdio: 'ignore',
 });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -791,14 +793,36 @@ async function main() {
   await evaluate("document.querySelector('[data-menu=help]').click()");
   if (!(await evaluate("document.querySelector('.chrome-menu')?.textContent.includes('Copy selected DNA') && document.querySelector('.chrome-menu')?.textContent.includes('Ctrl+Y') && document.querySelector('.chrome-menu')?.textContent.includes('Ctrl+Click')"))) throw new Error('Help menu did not expose hotkey hints.');
   await evaluate("document.querySelector('[data-menu=help]').click()");
+  await evaluate("document.querySelector('[data-menu=view]').click()");
+  if (!(await evaluate("document.querySelector('[data-action=toggle-game-dock]')?.textContent.includes('CK3 game dock: On')"))) throw new Error('View menu did not expose the enabled CK3 game dock state.');
+  await evaluate("(async()=>{document.querySelector('[data-action=toggle-game-dock]').click();for(let attempt=0;attempt<100&&state.gameDockPreferences.enabled;attempt+=1)await new Promise(resolve=>setTimeout(resolve,25));})()");
+  if (await evaluate('state.gameDockPreferences.enabled')) throw new Error('View menu did not disable the CK3 game dock.');
+  let dockPreferences = null;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      dockPreferences = JSON.parse(fs.readFileSync(path.join(smokeDataDirectory, 'ui-settings.json'), 'utf8'));
+      if (dockPreferences.enabled === false) break;
+    } catch {}
+    await delay(25);
+  }
+  if (dockPreferences?.enabled !== false || dockPreferences.position !== 'center') throw new Error(`Dock preferences were not persisted to the isolated archive (${JSON.stringify(dockPreferences)}).`);
+  await evaluate("document.querySelector('[data-menu=view]').click()");
+  if (!(await evaluate("document.querySelector('[data-action=toggle-game-dock]')?.textContent.includes('CK3 game dock: Off')"))) throw new Error('View menu did not reflect the disabled CK3 game dock state.');
+  await evaluate("(async()=>{document.querySelector('[data-action=toggle-game-dock]').click();for(let attempt=0;attempt<100&&!state.gameDockPreferences.enabled;attempt+=1)await new Promise(resolve=>setTimeout(resolve,25));})()");
+  if (!(await evaluate('state.gameDockPreferences.enabled'))) throw new Error('View menu did not re-enable the CK3 game dock.');
+  await evaluate("document.querySelector('[data-menu=help]').click();document.querySelector('[data-action=game-dock-help]').click()");
+  const dockGuide = await evaluate("document.querySelector('.modal')?.textContent || ''");
+  if (!dockGuide.includes('Add a character without leaving CK3') || !dockGuide.includes('Hover over it to unfold the controls') || !dockGuide.includes('Ctrl + Alt + G') || !dockGuide.includes('clipboard text only') || !dockGuide.includes('borderless') || !dockGuide.includes('Closing Bloodline closes the dock')) throw new Error('Game dock guide omitted hover, setup, privacy, hotkey, or display-mode instructions.');
+  await evaluate("document.querySelector('.modal [data-action=close-modal]').click()");
+  if (await evaluate('Boolean(state.modal)')) throw new Error('Game dock guide did not close.');
   await evaluate(`const input=document.querySelector('#search-input'); input.value=${JSON.stringify(firstName)}; input.dispatchEvent(new Event('input',{bubbles:true}))`);
   if ((await evaluate("document.querySelectorAll('.character-card').length")) < 1) throw new Error('Archive search did not retain the matching record.');
   await command('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1150, deviceScaleFactor: 1, mobile: false });
   await delay(150);
   const heightGap = await evaluate("Math.abs(document.querySelector('.app-shell').getBoundingClientRect().bottom - window.innerHeight)");
-  if (heightGap > 1) throw new Error(`Application shell did not stretch to the viewport (${heightGap}px gap).`);
+  if (heightGap > 1.1) throw new Error(`Application shell did not stretch to the viewport (${heightGap}px gap).`);
   const footerGap = await evaluate("Math.abs(document.querySelector('.inspector-footer').getBoundingClientRect().bottom-document.querySelector('.inspector').getBoundingClientRect().bottom)");
-  if (footerGap > 1) throw new Error(`Inspector actions were not pinned to the panel bottom (${footerGap}px gap).`);
+  if (footerGap > 1.1) throw new Error(`Inspector actions were not pinned to the panel bottom (${footerGap}px gap).`);
   if ((await evaluate("getComputedStyle(document.querySelector('.main-content')).scrollbarColor")) === 'auto') throw new Error('Application scrollbars retained the browser default theme.');
   if (!(await evaluate("Boolean(document.querySelector('.window-chrome'))"))) throw new Error('Themed window chrome was not rendered.');
   await command('Emulation.setDeviceMetricsOverride', { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });

@@ -20,6 +20,7 @@ async function main() {
     const gallery = {
       name: 'Court: Test',
       sortMode: 'custom',
+      gameDockPreferences: { enabled: false, position: 'right', collection: 'Private' },
       characters: [{
         id: 'character-1',
         name: 'Aldith',
@@ -68,6 +69,8 @@ async function main() {
     const metadata = JSON.parse(await fs.readFile(path.join(exportDirectory, 'gallery.json'), 'utf8'));
     assert.equal(metadata.name, gallery.name);
     assert.equal(metadata.sortMode, 'custom');
+    assert.equal(Object.hasOwn(metadata, 'gameDockPreferences'), false, 'Dock settings are application preferences, not portable collection data.');
+    assert.equal(manifest.some((character) => Object.hasOwn(character, 'gameDockPreferences')), false);
     await assert.rejects(() => exportGalleryToFolder(gallery, exportDirectory), /already exists/);
     await exportGalleryToFolder(gallery, exportDirectory, { replace: true });
 

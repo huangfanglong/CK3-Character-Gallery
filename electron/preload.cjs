@@ -9,8 +9,8 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   prepareImageData: (dataUrl) => ipcRenderer.invoke('library:prepare-image-data', dataUrl),
   saveCroppedImage: (characterId, payload) => ipcRenderer.invoke('library:save-cropped-image', characterId, payload),
   releaseImageSource: (sourceId) => ipcRenderer.invoke('library:release-image-source', sourceId),
-  listCaptureSources: () => ipcRenderer.invoke('capture:list-sources'),
-  armCapture: (sourceId, shortcut) => ipcRenderer.invoke('capture:arm', sourceId, shortcut),
+  listCaptureSources: (gameHwnd = '') => ipcRenderer.invoke('capture:list-sources', gameHwnd),
+  armCapture: (sourceId, shortcut, context) => ipcRenderer.invoke('capture:arm', sourceId, shortcut, context),
   setCaptureStatus: (sessionId, status) => ipcRenderer.invoke('capture:status', sessionId, status),
   finishCapture: (sessionId, characterId, video) => ipcRenderer.invoke('capture:finish', sessionId, characterId, video),
   completeCapture: (sessionId, outcome) => ipcRenderer.invoke('capture:complete', sessionId, outcome),
@@ -34,5 +34,25 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   duplicateCharacter: (character, name) => ipcRenderer.invoke('library:duplicate-character', character, name),
   openFolder: (directory) => ipcRenderer.invoke('library:open-folder', directory),
   imageUrl: (imagePath) => ipcRenderer.invoke('library:image-url', imagePath),
+  updateGameDock: (patch) => ipcRenderer.invoke('game-dock:renderer-state', patch),
+  completeGameDockCommand: (operationId, result) => ipcRenderer.invoke('game-dock:renderer-result', operationId, result),
+  syncGameDockLibrary: (galleries) => ipcRenderer.invoke('game-dock:sync-library', galleries),
+  setGameDockEnabled: (enabled) => ipcRenderer.invoke('game-dock:set-enabled', enabled),
+  getGameDockPreferences: () => ipcRenderer.invoke('game-dock:get-preferences'),
+  onGameDockCommand: (callback) => {
+    const listener = (_event, command) => callback(command);
+    ipcRenderer.on('game-dock:command', listener);
+    return () => ipcRenderer.removeListener('game-dock:command', listener);
+  },
+  onGameDockGameLoss: (callback) => {
+    const listener = (_event, detail) => callback(detail);
+    ipcRenderer.on('game-dock:game-lost', listener);
+    return () => ipcRenderer.removeListener('game-dock:game-lost', listener);
+  },
+  onGameDockPreferences: (callback) => {
+    const listener = (_event, preferences) => callback(preferences);
+    ipcRenderer.on('game-dock:preferences', listener);
+    return () => ipcRenderer.removeListener('game-dock:preferences', listener);
+  },
   quit: () => ipcRenderer.invoke('window:quit'),
 });

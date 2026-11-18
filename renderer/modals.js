@@ -153,10 +153,13 @@ async function handleModalAction(name) {
     const dnaSource = state.pendingDnaSource;
     state.pendingPortraitSource = null;
     state.pendingDnaSource = null;
-    if (state.preview) { state.preview = false; state.galleries = [{ name: 'Default', characters: [] }]; state.activeGallery = 'Default'; state.sort = 'recent'; }
-    const character = { id: crypto.randomUUID(), name: nameValue, images: [], dna: dnaSource || '', tags: [], created: Date.now(), modified: Date.now() };
-    getGallery().characters.push(character); state.activeId = character.id; state.focusContext = 'character'; state.selectedVariantIndex = null; state.modal = null; cancelBatchSelection(false); render();
-    if (!(await saveLibrary())) { releaseCropSource(portraitSource); return; }
+    try {
+      await createCharacterRecord({ name: nameValue, dna: dnaSource || '', galleryName: getGallery()?.name, select: true });
+    } catch (error) {
+      releaseCropSource(portraitSource);
+      showToast(readableError(error, 'The character could not be created.'), 'info');
+      return;
+    }
     if (portraitSource) { showCropModal(portraitSource); showToast('Record created. Position the clipboard portrait.', 'success'); }
     else if (dnaSource) showToast('Record created with clipboard DNA.', 'success');
     else showToast('Record created. Add a portrait when ready.', 'success');

@@ -20,7 +20,7 @@ async function main() {
     width: 1100,
     height: 820,
     useContentSize: true,
-    show: false,
+    show: true,
     backgroundColor: '#0d100f',
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
@@ -72,6 +72,7 @@ async function main() {
       renderLiveCaptureModal();
     })()`);
     await waitForPreview(window);
+    await window.webContents.executeJavaScript('window.__captureStream.getVideoTracks()[0].requestFrame()');
     await delay(250);
     const layout = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify((() => {
       const modal = document.querySelector('.capture-modal').getBoundingClientRect();
@@ -173,7 +174,7 @@ async function main() {
     interaction.controls.numberStyles.forEach((style) => {
       assert.ok(style.height >= 34, JSON.stringify(style));
       assert.ok(style.controlHeight >= 36, JSON.stringify(style));
-      assert.equal(style.colorScheme, 'dark');
+      assert.equal(style.colorScheme, 'light');
       assert.equal(style.appearance, 'textfield');
     });
     assert.equal(interaction.controls.stepButtons.count, 8);

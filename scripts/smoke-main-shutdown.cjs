@@ -7,9 +7,11 @@ const electron = require('electron');
 const projectRoot = path.join(__dirname, '..');
 const debuggingPort = 10000 + Math.floor(Math.random() * 50000);
 const smokeDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-shutdown-smoke-'));
+const electronEnvironment = { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory, CK3_GALLERY_TEST_DOCK_WINDOW: '1' };
+delete electronEnvironment.ELECTRON_RUN_AS_NODE;
 const child = spawn(electron, ['.', `--remote-debugging-port=${debuggingPort}`], {
   cwd: projectRoot,
-  env: { ...process.env, CK3_GALLERY_TEST_DATA_DIRECTORY: smokeDataDirectory },
+  env: electronEnvironment,
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 const childStderr = [];
@@ -43,8 +45,9 @@ async function getPage() {
     const fetchTimeout = setTimeout(() => controller.abort(), 1_000);
     try {
       const pages = await fetch(`http://127.0.0.1:${debuggingPort}/json`, { signal: controller.signal }).then((response) => response.json());
-      const page = pages.find((candidate) => candidate.type === 'page' && !candidate.url.startsWith('devtools://'));
-      if (page) return page;
+      const page = pages.find((candidate) => candidate.type === 'page' && candidate.url.includes('/renderer/index.html'));
+      const dock = pages.find((candidate) => candidate.type === 'page' && candidate.url.includes('/electron/game-dock.html'));
+      if (page && dock) return page;
     } catch {}
     finally { clearTimeout(fetchTimeout); }
     await delay(250);
@@ -132,17 +135,17 @@ async function main() {
   try {
     socket = await connect(await getPage());
     const bridgeReady = await runtimeCommand(socket, 1, "(async()=>{const deadline=Date.now()+5000;while(typeof window.galleryDesktop?.quit !== 'function' && Date.now()<deadline) await new Promise((resolve)=>setTimeout(resolve,25));return typeof window.galleryDesktop?.quit === 'function';})()", true);
-    if (!bridgeReady) throw new Error('The production quit bridge was not available.');
-    const quitScheduled = await runtimeCommand(socket, 2, "setTimeout(() => { void window.galleryDesktop.quit().catch(() => {}); }, 100); true");
-    if (!quitScheduled) throw new Error('The production quit request was not scheduled.');
+    if (!bridgeReady) throw new Error('The production window bridge was not available.');
+    const closeScheduled = await runtimeCommand(socket, 2, "setTimeout(() => window.close(), 100); true");
+    if (!closeScheduled) throw new Error('The main-window close request was not scheduled.');
     socket.close();
     socket = null;
     const exit = await waitForChildClose(SHUTDOWN_TIMEOUT_MS);
     const stderr = stderrText();
-    if (!exit) throw new Error(`Electron did not exit after the production quit request.${stderr ? `\n${stderr}` : ''}`);
+    if (!exit) throw new Error(`Electron did not exit after the main window closed with a dock present.${stderr ? `\n${stderr}` : ''}`);
     if (exit.code !== 0) throw new Error(`Electron exited with code ${exit.code} and signal ${exit.signal || 'none'}.${stderr ? `\n${stderr}` : ''}`);
     if (/Object has been destroyed/i.test(stderr)) throw new Error(`Electron accessed a destroyed object during shutdown.\n${stderr}`);
-    console.log('Main shutdown smoke test passed: the production quit path exits cleanly without destroyed-object errors.');
+    console.log('Main shutdown smoke test passed: closing the main window with a dock present exits cleanly without destroyed-object errors.');
   } finally {
     socket?.close();
     cleanup();

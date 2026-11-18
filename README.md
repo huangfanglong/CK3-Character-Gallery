@@ -24,6 +24,29 @@ Animated GIF portraits can also be imported alongside still images. Animated Web
 
 Note: If you are going to use animated portraits for a large collection expect to budget out disk space accordingly.
 
+### CK3 Game Dock (Windows)
+
+The game dock is a separate, content-protected overlay that appears as a thin 6 px strip at the top edge of CK3 while the visible game window is in the foreground. Hover over the strip to unfold the controls; move away to collapse them. Open menus and active capture workflows stay visible. It does not inject into CK3, read game memory, modify game files, or require the gallery window to stay visible.
+
+**Setup**
+
+1. Keep Bloodline running and use CK3 in **borderless or windowed** mode. Exclusive fullscreen may hide an external overlay.
+2. Leave **View → CK3 game dock** enabled, then focus `ck3.exe`. Use the same menu to turn the dock off; the setting is remembered.
+3. Hover over the thin top strip and choose a destination from the dock's collection picker. The picker includes search for large archives. **All characters** is a view, not a destination.
+4. If CK3 is running as administrator, run Bloodline at the same privilege level so Windows can deliver input and focus events normally. Bloodline does not request elevation itself.
+
+**Quick add and portraits**
+
+1. Use CK3's **Copy DNA** action, then choose **Quick add** in the dock. A character with an automatic name is created in the selected collection and the framing controls open.
+2. If the clipboard does not contain valid DNA, Quick add opens a draft instead. Copy DNA while that draft is visible, optionally enter a name, then choose **Create & frame portrait** or **Save DNA only**.
+3. Drag the square reticle to position it and drag its corner handles to resize it. **Snapshot** saves a 450 × 450 PNG. **Live portrait** records a 450 × 450 WebM through the same capture and Smart Loop pipeline used by the main app.
+4. Press `Ctrl+Alt+G` while CK3 is focused to start or stop a dock recording. During Smart Loop search, press it again to finish immediately.
+5. A successful quick add offers **View in gallery** and a 12-second **Undo**. Undo refuses to remove the record if it has changed elsewhere.
+
+The dock reads clipboard text only when you choose Quick add or while a visible new-record draft is waiting for DNA. It keeps no clipboard history, sends no telemetry, and stores its enabled/position/collection preferences locally in `ui-settings.json`; those preferences are not included in collection exports. Closing the Bloodline main window closes the dock and exits the app—there is no background tray mode.
+
+Open **View → Game dock guide** or **Help → CK3 game dock guide** for these instructions inside the app.
+
 ## Run v3
 
 You need Node.js 22.12 or newer.
@@ -69,6 +92,7 @@ Output is written to `release/`.
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | Create a character |
+| `Ctrl+Alt+G` | Start, stop, or finish a live CK3 portrait capture |
 | `Ctrl+F` | Focus search |
 | `Ctrl+S` | Save the archive |
 | `Ctrl+D` | Duplicate the selected character |
@@ -134,6 +158,21 @@ Run the live portrait capture runtime checks:
 npm run test:capture-hud-runtime
 npm run test:capture-ui-runtime
 npm run test:capture-loop-runtime
+```
+
+Run the game dock unit and interactive Windows runtime checks:
+
+```bash
+npm run test:game-dock
+npm run test:game-dock-runtime
+npm run test:windows-monitor-runtime
+```
+
+After building the Windows package, verify its native integrations:
+
+```bash
+npm run test:package-portrait-worker
+npm run test:package-game-dock
 ```
 
 Run the isolated collection round-trip test:

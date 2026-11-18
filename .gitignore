@@ -5,6 +5,7 @@ node_modules/
 dist/
 release/
 out/
+tasks/
 *.asar
 
 # Local tooling and operating system files

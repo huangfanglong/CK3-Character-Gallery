@@ -6,13 +6,13 @@ class CaptureSessionManager {
     this.activeSessionId = null;
   }
 
-  arm({ sourceId, shortcut, ownerWebContentsId, onToggle }) {
+  arm({ sourceId, shortcut, ownerWebContentsId, onToggle, dockDraftId = '', gameHwnd = '' }) {
     if (this.activeSessionId) throw new Error('Another live portrait capture is already active.');
     const sessionId = this.createId();
     if (!this.globalShortcut.register(shortcut, () => onToggle(sessionId))) {
       throw new Error(`${shortcut} is already in use by another application.`);
     }
-    this.sessions.set(sessionId, { sourceId, shortcut, ownerWebContentsId, phase: 'arming' });
+    this.sessions.set(sessionId, { sourceId, shortcut, ownerWebContentsId, dockDraftId, gameHwnd, phase: 'arming' });
     this.activeSessionId = sessionId;
     return sessionId;
   }

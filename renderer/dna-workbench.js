@@ -11,37 +11,6 @@ function showDnaModal(initialDna = null, focusSave = false) {
   render('modal');
 }
 
-function hasBalancedBraces(text) {
-  let depth = 0;
-  let quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] === '"' && text[index - 1] !== '\\') quoted = !quoted;
-    if (quoted) continue;
-    if (text[index] === '{') depth += 1;
-    if (text[index] === '}') depth -= 1;
-    if (depth < 0) return false;
-  }
-  return depth === 0;
-}
-
-function isValidCk3Dna(value) {
-  if (typeof value !== 'string') return false;
-  const text = value.trim();
-  if (!text) return false;
-  const plainTextDna = /^[\w.-]+\s*=\s*\{/.test(text)
-    && /\bgenes\s*=\s*\{/.test(text)
-    && /\b(?:hair_color|skin_color|eye_color|gene_[\w]+|face_detail_[\w]+)\s*=\s*\{/.test(text)
-    && hasBalancedBraces(text);
-  if (plainTextDna) return true;
-
-  const compact = text.replace(/\s+/g, '');
-  if (compact.length < 80 || compact.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) return false;
-  try {
-    const decoded = atob(compact.padEnd(Math.ceil(compact.length / 4) * 4, '='));
-    return decoded.length >= 60;
-  } catch { return false; }
-}
-
 function openClipboardDna(value, confirmOverwrite = true) {
   const character = getActiveCharacter();
   const dna = typeof value === 'string' ? value.trim() : '';

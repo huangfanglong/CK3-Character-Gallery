@@ -1158,6 +1158,8 @@ function action(name) {
   if (name === 'manage-record') return showManageModal();
   if (name === 'focus-search') { render(); document.querySelector('#search-input')?.focus(); return; }
   if (name === 'help-hint') return render();
+  if (name === 'toggle-game-dock') return setGameDockEnabled(!state.gameDockPreferences?.enabled);
+  if (name === 'game-dock-help') return showGameDockHelp();
   if (name === 'view-cards') { state.view = 'cards'; state.visibleLimit = 48; return render(); }
   if (name === 'view-compact') { state.view = 'compact'; state.visibleLimit = 48; return render(); }
   if (name === 'view-table') { state.view = 'table'; state.visibleLimit = 48; return render(); }
@@ -1454,6 +1456,7 @@ async function boot() {
   installClipboardPasteHandler();
   desktop?.onPasteImage(() => { void pasteClipboardPortrait(); });
   desktop?.onCaptureToggle((sessionId) => toggleLiveCapture(sessionId));
+  installGameDockBridge();
   let loaded = null;
   let loadError = null;
   try { loaded = desktop ? await desktop.load() : null; } catch (error) { loadError = error; }
@@ -1475,6 +1478,7 @@ async function boot() {
   }
   const startupWarning = loaded?.warning || (loadError ? readableError(loadError, 'The archive could not be loaded. Start with a new archive or restore the data file.') : null);
   state.startupWarning = startupWarning || '';
+  syncGameDockLibrary();
   render();
   if (startupWarning) requestAnimationFrame(() => showToast(startupWarning, 'info'));
 }

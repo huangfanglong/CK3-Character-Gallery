@@ -14,8 +14,9 @@ const rendererGlobals = Object.fromEntries([
   'showCharacterModal', 'showGalleryModal', 'showRenameGalleryModal', 'showDeleteGalleryConfirmation', 'showGalleryBatchDeleteConfirmation', 'showImportModal', 'showNoteModal', 'syncNoteHighlightScroll', 'updateNoteHighlights', 'showManageModal', 'showTransferCharacterModal', 'showDeleteConfirmation', 'showDeleteVariantConfirmation', 'showBatchDeleteConfirmation', 'showDnaOverwriteConfirmation', 'handleModalAction', 'deleteSelectedVariant',
   'duplicateSelectedCharacter', 'transferCharacters', 'uniqueCollectionName', 'duplicateActiveGallery', 'copyDna', 'saveLibrary', 'referencedImagePaths', 'cleanupUnusedPortraits', 'exportCollection', 'importCollection',
   'showDnaModal', 'hasBalancedBraces', 'isValidCk3Dna', 'openClipboardDna', 'pasteDnaFromClipboard', 'homogenizeDna', 'updateDnaCount', 'recordDnaHistory', 'setDnaEditorValue', 'undoDnaChange', 'redoDnaChange',
-  'desktop', 'app', 'SORT_OPTIONS', 'escapeHtml', 'noteTags', 'highlightedNoteMarkup', 'characterTags', 'activeFilterCount', 'availableTags', 'clearFilters', 'getGallery', 'getCharacters', 'getViewCharacters', 'getActiveCharacter', 'gallerySortMode', 'normalizedCharacter', 'colorFor', 'visibleCharacters', 'imageUrlFor', 'coverVariantIndex', 'portraitMarkup', 'icon', 'render', 'focusWithoutScroll', 'updateImageUrls', 'runPortraitSourceRequest', 'activePortraitTarget', 'characterForPortraitTarget', 'MAX_ANIMATED_PORTRAIT_BYTES', 'installEventDelegation', 'openContextMenu', 'handleContextAction', 'saveCollectionOrder', 'setSortMode', 'saveCustomCardOrder', 'cycleCardPortrait', 'toggleFavorite', 'saveCharacterTitle', 'startBatchSelection', 'cancelBatchSelection', 'toggleBatchSelection', 'selectAllVisibleCharacters', 'startGalleryBatchSelection', 'cancelGalleryBatchSelection', 'toggleGalleryBatchSelection', 'restoreSelectionFocus', 'action', 'showToast', 'readableError', 'chooseImage', 'pasteClipboardPortrait', 'pasteClipboardContent', 'bindModalDelegation', 'runModalAction', 'installKeyboardShortcuts', 'installClipboardPasteHandler', 'openClipboardFile', 'openClipboardSource', 'boot',
-].map((name) => [name, 'readonly']));
+  'desktop', 'app', 'SORT_OPTIONS', 'escapeHtml', 'noteTags', 'highlightedNoteMarkup', 'characterTags', 'activeFilterCount', 'availableTags', 'clearFilters', 'getGallery', 'getCharacters', 'getViewCharacters', 'getActiveCharacter', 'gallerySortMode', 'normalizedCharacter', 'colorFor', 'visibleCharacters', 'imageUrlFor', 'coverVariantIndex', 'portraitMarkup', 'icon', 'render', 'renderChrome', 'focusWithoutScroll', 'updateImageUrls', 'runPortraitSourceRequest', 'activePortraitTarget', 'characterForPortraitTarget', 'MAX_ANIMATED_PORTRAIT_BYTES', 'installEventDelegation', 'openContextMenu', 'handleContextAction', 'saveCollectionOrder', 'setSortMode', 'saveCustomCardOrder', 'cycleCardPortrait', 'toggleFavorite', 'saveCharacterTitle', 'startBatchSelection', 'cancelBatchSelection', 'toggleBatchSelection', 'selectAllVisibleCharacters', 'startGalleryBatchSelection', 'cancelGalleryBatchSelection', 'toggleGalleryBatchSelection', 'restoreSelectionFocus', 'action', 'showToast', 'readableError', 'chooseImage', 'pasteClipboardPortrait', 'pasteClipboardContent', 'bindModalDelegation', 'runModalAction', 'installKeyboardShortcuts', 'installClipboardPasteHandler', 'openClipboardFile', 'openClipboardSource', 'boot',
+  'createCharacterRecord', 'removeCreatedCharacter', 'bindCharacterGallery', 'dockWorkflow', 'dockBusyError', 'publishDockState', 'installGameDockBridge', 'setGameDockEnabled', 'showGameDockHelp', 'syncGameDockLibrary', 'startDockLiveCapture', 'releaseDockCapture', 'updateDockCaptureCrop', 'resetDockCaptureCrop',
+].map((name) => [name, name === 'dockWorkflow' ? 'writable' : 'readonly']));
 
 module.exports = [
   {
@@ -57,8 +58,27 @@ module.exports = [
     languageOptions: { globals: globals.browser },
   },
   {
+    files: ['electron/game-dock.js'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        displayRectForVideo: 'readonly',
+        moveCaptureCrop: 'readonly',
+        normalizedCaptureCrop: 'readonly',
+        resizeCaptureCrop: 'readonly',
+        resizeCaptureCropFromCenter: 'readonly',
+        restoredCaptureCrop: 'readonly',
+        selectionRectForCrop: 'readonly',
+      },
+    },
+  },
+  {
     files: ['renderer/capture-geometry.js'],
     languageOptions: { globals: { module: 'readonly' } },
+  },
+  {
+    files: ['renderer/dna-validation.js'],
+    languageOptions: { globals: { module: 'readonly', Buffer: 'readonly' } },
   },
   {
     files: ['electron/gallery-transfer.cjs'],

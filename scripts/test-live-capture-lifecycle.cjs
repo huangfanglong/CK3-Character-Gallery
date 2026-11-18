@@ -61,6 +61,10 @@ function createHarness() {
     getActiveCharacter: () => characters.find((character) => character.id === context.state.activeId),
     getGallery: () => context.state.galleries.find((gallery) => gallery.name === context.state.activeGallery),
     hasMaximumPortraits: () => false,
+    characterForPortraitTarget: (target) => context.state.galleries.find((gallery) => gallery.name === target?.galleryName)?.characters.find((character) => character.id === target?.characterId) || null,
+    dockBusyError: () => new Error('Another capture is active.'),
+    publishDockState: async (patch) => { context.dockPatches = context.dockPatches || []; context.dockPatches.push(patch); return true; },
+    HTMLMediaElement: { HAVE_CURRENT_DATA: 2 },
     readableError: (error, fallback) => error?.message || fallback,
     appendPortrait: async () => true,
     showToast() {},
@@ -91,7 +95,7 @@ function createHarness() {
   };
   vm.createContext(context);
   const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'live-capture.js'), 'utf8');
-  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview; globalThis.setLiveCaptureLoopSearchSecondsForTest = setLiveCaptureLoopSearchSeconds; globalThis.liveCaptureMatchingStatusForTest = liveCaptureMatchingStatus;`, context);
+  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview; globalThis.setLiveCaptureLoopSearchSecondsForTest = setLiveCaptureLoopSearchSeconds; globalThis.liveCaptureMatchingStatusForTest = liveCaptureMatchingStatus; globalThis.startDockLiveCaptureForTest = startDockLiveCapture; globalThis.updateDockCaptureCropForTest = updateDockCaptureCrop; globalThis.resetDockCaptureCropForTest = resetDockCaptureCrop;`, context);
   return { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses, timeouts };
 }
 
@@ -292,6 +296,48 @@ async function main() {
   assert.equal(newObserverDisconnected, false);
   assert.equal(generationCapture.previewResources, newResources);
   assert.equal(generationCapture.outputFrameRequest, 9);
+
+  let dockListedHwnd = '';
+  let automaticallySelected = '';
+  context.desktop.listCaptureSources = async (hwnd) => { dockListedHwnd = hwnd; return [{ id: 'window:42:0' }]; };
+  context.selectLiveCaptureSource = async (sourceId) => {
+    automaticallySelected = sourceId;
+    const capture = context.state.captureSession;
+    capture.phase = 'ready';
+    capture.video = { videoWidth: 1600, videoHeight: 900 };
+    capture.crop = { x: 350, y: 0, size: 900 };
+  };
+  await context.startDockLiveCaptureForTest({ draftId: 'dock-draft', characterId: 'character-1', galleryName: 'Test Gallery', gameHwnd: '42' }, '42');
+  assert.equal(dockListedHwnd, '42');
+  assert.equal(automaticallySelected, 'window:42:0');
+  assert.equal(context.state.captureSession.dock, true);
+  assert.equal(context.state.captureSession.dockDraftId, 'dock-draft');
+
+  Object.assign(context, require('../renderer/capture-geometry.js'));
+  context.updateDockCaptureCropForTest({ centerX: .25, centerY: .5, size: .25 });
+  assert.deepEqual({ ...context.state.captureSession.crop }, { x: 288, y: 338, size: 225 });
+  context.resetDockCaptureCropForTest();
+  assert.deepEqual({ ...context.state.captureSession.crop }, { x: 350, y: 0, size: 900 });
+  assert.equal(context.dockPatches.at(-1).sourceSize.width, 1600);
+
+  const dockSelection = captureSession();
+  dockSelection.dock = true;
+  dockSelection.dockDraftId = 'dock-draft';
+  dockSelection.gameHwnd = '42';
+  context.state.captureSession = dockSelection;
+  let armArguments = null;
+  context.desktop.armCapture = async (...args) => { armArguments = args; return { sessionId: 'dock-session', shortcut: args[1] }; };
+  const dockTrack = { addEventListener() {}, stop() {} };
+  context.navigator.mediaDevices.getDisplayMedia = async () => ({ getTracks: () => [dockTrack], getVideoTracks: () => [dockTrack] });
+  context.initializeDockCaptureWorkspace = (capture) => {
+    capture.video = { readyState: 2, videoWidth: 1600, videoHeight: 900 };
+    capture.crop = { x: 350, y: 0, size: 900 };
+  };
+  await context.selectLiveCaptureSourceForTest('source-1');
+  assert.equal(armArguments[2].dockDraftId, 'dock-draft');
+  assert.equal(armArguments[2].gameHwnd, '42');
+  assert.equal(dockSelection.phase, 'ready');
+  assert.equal(statuses.at(-1).status.state, 'armed');
 
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
   assert.match(appSource, /if \(state\.modal\) \{ event\.preventDefault\(\); runModalAction\('close-modal'\); \}/);

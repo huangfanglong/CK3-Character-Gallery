@@ -4,7 +4,7 @@ const { app, BrowserWindow } = require('electron');
 
 async function main() {
   const window = new BrowserWindow({
-    show: false,
+    show: true,
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   try {

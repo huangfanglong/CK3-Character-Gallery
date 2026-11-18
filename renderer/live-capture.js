@@ -8,12 +8,25 @@ const LIVE_CAPTURE_SHORTCUTS = [
 const LIVE_CAPTURE_CROP_STORAGE_KEY = 'ck3-live-capture-crops-v1';
 const LIVE_CAPTURE_LOOP_SEARCH_STORAGE_KEY = 'ck3-live-capture-loop-search-seconds-v1';
 
+function createLiveCaptureSession(character, galleryName, dock = null) {
+  return {
+    characterId: character.id, galleryName, sources: [], selectedSourceId: null, stream: null,
+    phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null,
+    durationTimer: null, matchingTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0],
+    loopSearchSeconds: savedLiveCaptureLoopSearchSeconds(), loopSearchDurationMs: 0, loopDeadline: 0,
+    crop: null, recordingCrop: null, canvas: null, outputCanvas: null, outputFrameRequest: null,
+    previewResizeObserver: null, previewResizeListener: null, previewResources: null, encoder: null,
+    loopProcessor: null, recordingError: null, drawMode: false,
+    ...(dock ? { dock: true, dockDraftId: dock.draftId, gameHwnd: dock.gameHwnd } : {}),
+  };
+}
+
 async function showLiveCaptureModal() {
   const character = getActiveCharacter();
   const gallery = getGallery();
   if (!character || !gallery || state.preview || state.captureSession) return;
   if (hasMaximumPortraits(character)) return showToast(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`, 'info');
-  state.captureSession = { characterId: character.id, galleryName: gallery.name, sources: [], selectedSourceId: null, stream: null, phase: 'loading', frames: 0, encodedFrames: 0, droppedFrames: 0, timer: null, durationTimer: null, matchingTimer: null, sessionId: null, shortcut: LIVE_CAPTURE_SHORTCUTS[0][0], loopSearchSeconds: savedLiveCaptureLoopSearchSeconds(), loopSearchDurationMs: 0, loopDeadline: 0, crop: null, recordingCrop: null, canvas: null, outputCanvas: null, outputFrameRequest: null, previewResizeObserver: null, previewResizeListener: null, previewResources: null, encoder: null, loopProcessor: null, recordingError: null, drawMode: false };
+  state.captureSession = createLiveCaptureSession(character, gallery.name);
   const capture = state.captureSession;
   renderLiveCaptureModal();
   try {
@@ -155,16 +168,78 @@ function trapLiveCaptureFocus(event) {
   return false;
 }
 
+async function startDockLiveCapture(workflow, gameHwnd) {
+  const character = characterForPortraitTarget(workflow);
+  if (!character) throw new Error('The new character no longer exists.');
+  if (state.captureSession) throw dockBusyError();
+  if (hasMaximumPortraits(character)) throw new Error(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`);
+  const capture = createLiveCaptureSession(character, workflow.galleryName, { draftId: workflow.draftId, gameHwnd });
+  state.captureSession = capture;
+  const sources = await desktop.listCaptureSources(gameHwnd);
+  if (state.captureSession !== capture) return;
+  if (!sources.length) throw new Error('The detected CK3 window cannot be captured. Use windowed or borderless mode and keep it visible.');
+  capture.sources = sources;
+  capture.phase = 'select-source';
+  await selectLiveCaptureSource(sources[0].id);
+  if (state.captureSession === capture && capture.error) throw new Error(capture.error);
+}
+
+function initializeDockCaptureWorkspace(capture) {
+  const workspace = document.createElement('div');
+  workspace.setAttribute('aria-hidden', 'true');
+  workspace.style.cssText = 'position:fixed;left:-10000px;top:0;width:16px;height:16px;opacity:0;pointer-events:none;overflow:hidden;';
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  const output = document.createElement('canvas');
+  output.width = 450;
+  output.height = 450;
+  workspace.append(video, output);
+  document.body.append(workspace);
+  capture.workspace = workspace;
+  capture.video = video;
+  capture.outputCanvas = output;
+  capture.canvas = output;
+  video.srcObject = capture.stream;
+  const loadCrop = () => {
+    if (!video.videoWidth || !video.videoHeight) return;
+    capture.crop = capture.crop
+      ? clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight)
+      : savedLiveCaptureCrop(video.videoWidth, video.videoHeight) || defaultCaptureCrop(video.videoWidth, video.videoHeight);
+    capture.sourceWidth = video.videoWidth;
+    capture.sourceHeight = video.videoHeight;
+  };
+  if (video.videoWidth && video.videoHeight) loadCrop();
+  else video.addEventListener('loadedmetadata', loadCrop, { once: true });
+  const resizeListener = () => {
+    if (!video.videoWidth || !video.videoHeight || state.captureSession !== capture) return;
+    if (['starting-recording', 'recording', 'matching', 'finishing', 'completing'].includes(capture.phase)) {
+      void cancelLiveCapture('CK3 capture resolution changed.');
+      return;
+    }
+    const normalized = capture.crop && capture.sourceWidth && capture.sourceHeight
+      ? normalizedCaptureCrop(capture.crop, capture.sourceWidth, capture.sourceHeight)
+      : null;
+    capture.crop = (normalized && restoredCaptureCrop(normalized, video.videoWidth, video.videoHeight)) || defaultCaptureCrop(video.videoWidth, video.videoHeight);
+    capture.sourceWidth = video.videoWidth;
+    capture.sourceHeight = video.videoHeight;
+    if (capture.phase === 'ready') void publishDockState({ crop: normalizedCaptureCrop(capture.crop, video.videoWidth, video.videoHeight), sourceSize: { width: video.videoWidth, height: video.videoHeight } });
+  };
+  capture.previewResizeListener = resizeListener;
+  video.addEventListener('resize', resizeListener);
+}
+
 async function selectLiveCaptureSource(sourceId) {
   const capture = state.captureSession;
   if (!capture || capture.phase !== 'select-source' || !capture.sources.some((source) => source.id === sourceId)) return;
   capture.phase = 'starting';
   capture.error = '';
-  renderLiveCaptureModal();
+  if (!capture.dock) renderLiveCaptureModal();
   let sessionId = null;
   let stream = null;
   try {
-    const armed = await desktop.armCapture(sourceId, capture.shortcut);
+    const armed = await desktop.armCapture(sourceId, capture.shortcut, capture.dock ? { dockDraftId: capture.dockDraftId, gameHwnd: capture.gameHwnd } : undefined);
     sessionId = armed.sessionId;
     if (state.captureSession !== capture || capture.phase !== 'starting') {
       await desktop.releaseCapture(sessionId).catch(() => {});
@@ -183,7 +258,8 @@ async function selectLiveCaptureSource(sourceId) {
     stream.getVideoTracks()[0].addEventListener('ended', () => {
       if (state.captureSession === capture && ['starting', 'ready', 'starting-recording', 'recording', 'matching'].includes(capture.phase)) void cancelLiveCapture('CK3 window capture ended.');
     }, { once: true });
-    renderLiveCaptureModal();
+    if (capture.dock) initializeDockCaptureWorkspace(capture);
+    else renderLiveCaptureModal();
     await waitForLiveCapturePreview(capture);
     if (state.captureSession !== capture || capture.phase !== 'starting') {
       stream.getTracks().forEach((track) => track.stop());
@@ -192,21 +268,21 @@ async function selectLiveCaptureSource(sourceId) {
     }
     capture.phase = 'ready';
     await reportLiveCaptureStatus(capture, { state: 'armed' });
-    renderLiveCaptureModal();
+    if (!capture.dock) renderLiveCaptureModal();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
     const failure = readableError(error, 'CK3 capture could not start.');
     if (sessionId) await desktop.releaseCapture(sessionId, state.captureSession === capture ? failure : '').catch(() => {});
     if (state.captureSession !== capture) return;
     capture.sessionId = null;
-    capture.phase = 'select-source';
+    capture.phase = capture.dock ? 'error' : 'select-source';
     capture.error = failure;
-    renderLiveCaptureModal();
+    if (!capture.dock) renderLiveCaptureModal();
   }
 }
 
 function waitForLiveCapturePreview(capture) {
-  const video = document.querySelector('#capture-video');
+  const video = capture?.dock ? capture.video : document.querySelector('#capture-video');
   if (!video) return Promise.reject(new Error('CK3 capture preview could not start.'));
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -257,9 +333,13 @@ function minimumLiveCaptureCrop(videoWidth) {
   return Math.max(32, Math.round(videoWidth / 40));
 }
 
+function liveCaptureVideo(capture = state.captureSession) {
+  return capture?.video || document.querySelector('#capture-video');
+}
+
 function commitLiveCaptureCrop(nextCrop) {
   const capture = state.captureSession;
-  const video = document.querySelector('#capture-video');
+  const video = liveCaptureVideo(capture);
   if (!capture || capture.phase !== 'ready' || !video?.videoWidth || !video.videoHeight) return;
   capture.crop = clampCaptureCrop(nextCrop, video.videoWidth, video.videoHeight);
   capture.applyCrop?.();
@@ -267,14 +347,32 @@ function commitLiveCaptureCrop(nextCrop) {
 }
 
 function resetLiveCaptureCrop() {
-  const video = document.querySelector('#capture-video');
+  const video = liveCaptureVideo();
   if (video?.videoWidth && video.videoHeight) commitLiveCaptureCrop(defaultCaptureCrop(video.videoWidth, video.videoHeight));
 }
 
 function centerLiveCaptureCrop() {
   const capture = state.captureSession;
-  const video = document.querySelector('#capture-video');
+  const video = liveCaptureVideo(capture);
   if (capture?.crop && video?.videoWidth && video.videoHeight) commitLiveCaptureCrop(centeredCaptureCrop(capture.crop, video.videoWidth, video.videoHeight));
+}
+
+function updateDockCaptureCrop(normalized) {
+  const capture = state.captureSession;
+  const video = liveCaptureVideo(capture);
+  if (!capture?.dock || capture.phase !== 'ready' || !video?.videoWidth || !video.videoHeight) throw new Error('The portrait frame is not ready to move.');
+  const crop = restoredCaptureCrop(normalized, video.videoWidth, video.videoHeight);
+  if (!crop) throw new Error('The portrait frame is invalid.');
+  commitLiveCaptureCrop(crop);
+  void publishDockState({ crop: normalizedCaptureCrop(capture.crop, video.videoWidth, video.videoHeight), sourceSize: { width: video.videoWidth, height: video.videoHeight } });
+}
+
+function resetDockCaptureCrop() {
+  const capture = state.captureSession;
+  if (!capture?.dock || capture.phase !== 'ready') throw new Error('The portrait frame is not ready to reset.');
+  resetLiveCaptureCrop();
+  const video = liveCaptureVideo(capture);
+  void publishDockState({ crop: normalizedCaptureCrop(capture.crop, video.videoWidth, video.videoHeight), sourceSize: { width: video.videoWidth, height: video.videoHeight } });
 }
 
 function setLiveCaptureDrawMode(enabled) {
@@ -722,7 +820,10 @@ async function completeLiveCaptureDecision(capture, decision, reason = '') {
     capture.phase = 'completing';
     updateLiveCaptureFinishingUi();
     let saved = false;
-    try { saved = await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true); }
+    try {
+      saved = await appendPortrait(character, selected, reason || 'Live CK3 portrait added.', true);
+      if (saved && capture.dock && dockWorkflow?.draftId === capture.dockDraftId) dockWorkflow.expectedModified = character.modified;
+    }
     finally {
       if (state.captureSession === capture) {
         await desktop.completeCapture(capture.sessionId, saved
@@ -747,6 +848,8 @@ function stopLiveCaptureStream(capture) {
   if (capture) { capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; }
   cleanupLiveCapturePreview(capture);
   capture?.stream?.getTracks().forEach((track) => track.stop());
+  capture?.workspace?.remove();
+  if (capture) capture.workspace = null;
 }
 async function releaseLiveCapture(failureMessage = '') {
   const capture = state.captureSession;
@@ -756,4 +859,14 @@ async function releaseLiveCapture(failureMessage = '') {
   stopLiveCaptureStream(capture);
   if (capture.sessionId) await desktop?.releaseCapture(capture.sessionId, failureMessage).catch(() => {});
 }
-async function cancelLiveCapture(message = '') { await releaseLiveCapture(message); state.captureSession = null; state.modal = null; render('modal'); if (message) showToast(message, 'info'); }
+async function releaseDockCapture() {
+  if (state.captureSession?.dock) await cancelLiveCapture();
+}
+async function cancelLiveCapture(message = '') {
+  const dock = Boolean(state.captureSession?.dock);
+  await releaseLiveCapture(message);
+  state.captureSession = null;
+  state.modal = null;
+  render('modal');
+  if (message && !dock) showToast(message, 'info');
+}
