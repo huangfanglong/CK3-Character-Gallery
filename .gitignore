@@ -6,6 +6,7 @@ dist/
 release/
 out/
 tasks/
+reference/
 *.asar
 
 # Local tooling and operating system files

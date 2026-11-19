@@ -133,6 +133,19 @@ button:disabled { cursor: default; opacity: .42; }
 .text-button:hover { background: rgba(255, 255, 255, .6); color: var(--ink); }
 .danger-button { background: #a94d42; color: #fff5ee; }
 .danger-button:hover { background: #bd574a; }
+.live-button { display: inline-flex; flex: none; min-height: 34px; align-items: center; gap: 5px; border-radius: 10px; background: transparent; padding: 6px 8px; color: var(--copper); font-size: 12px; font-weight: 680; }
+.live-button:hover { background: #ece9fb; color: #5242c0; }
+.live-controls-note { color: var(--copper); }
+.live-mapping { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; margin: 12px 0; }
+.live-mapping > div { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.45); padding: 10px 12px; }
+.live-mapping small, .live-mapping strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-mapping small { margin-bottom: 4px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.live-mapping strong { font-size: 14px; }
+.live-mapping > span { color: var(--copper); font-size: 20px; }
+.live-report { max-height: 54px; overflow: auto; margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; user-select: text; }
+.live-actions { margin-top: 12px; }
+.live-result .capture-copy span { white-space: normal; }
+.live-result .capture-state { padding-block: 5px; }
 
 .dock-body { position: relative; z-index: 1; padding: 6px 18px 18px; }
 .dock-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }

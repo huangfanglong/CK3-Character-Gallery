@@ -312,7 +312,25 @@ ipcMain.handle('game-dock:get-preferences', async (event) => {
   requireTrustedCaptureSender(event);
   const service = ensureGameDock();
   await service.loadPreferences();
-  return { ...service.preferences };
+  return { ...service.preferences, liveLink: { ...service.preferences.liveLink } };
+});
+
+ipcMain.handle('game-dock:sync-selection', (event, selection) => {
+  requireTrustedCaptureSender(event);
+  ensureGameDock().syncSelection(selection);
+  return true;
+});
+
+ipcMain.handle('game-dock:set-live-link-choice', async (event, enabled) => {
+  requireTrustedCaptureSender(event);
+  if (typeof enabled !== 'boolean') throw new Error('The Live Game Link choice is invalid.');
+  return ensureGameDock().setLiveLinkChoice(enabled);
+});
+
+ipcMain.handle('game-dock:set-live-link-enabled', async (event, enabled) => {
+  requireTrustedCaptureSender(event);
+  if (typeof enabled !== 'boolean') throw new Error('The Live Game Link setting is invalid.');
+  return ensureGameDock().setLiveLinkEnabled(enabled);
 });
 
 ipcMain.handle('library:load', async () => {

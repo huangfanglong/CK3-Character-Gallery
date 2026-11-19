@@ -168,20 +168,63 @@ function trapLiveCaptureFocus(event) {
   return false;
 }
 
-async function startDockLiveCapture(workflow, gameHwnd) {
+function dockCaptureStartupError(message, cancelled = false) {
+  const error = new Error(message);
+  if (cancelled) error.name = 'AbortError';
+  return error;
+}
+
+function dockCaptureCancelled(capture) {
+  return Boolean(capture?.dock && (capture.startupSignal?.aborted || state.captureSession !== capture));
+}
+
+function throwIfDockCaptureCancelled(capture) {
+  if (dockCaptureCancelled(capture)) throw dockCaptureStartupError('Quick add was cancelled. Any saved character is kept.', true);
+}
+
+/* Chromium and Windows normally answer these steps quickly, but neither API guarantees
+   settlement. Keep every startup wait cancellable and clean up a resource that arrives late. */
+function waitForDockCaptureStep(value, capture, timeoutMessage, onLateValue = null) {
+  if (!capture.dock) return Promise.resolve(value);
+  try { throwIfDockCaptureCancelled(capture); } catch (error) { return Promise.reject(error); }
+  const signal = capture.startupSignal;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', aborted);
+      error ? reject(error) : resolve(result);
+    };
+    const aborted = () => finish(dockCaptureStartupError('Quick add was cancelled. Any saved character is kept.', true));
+    const deadline = Number.isFinite(capture.startupDeadline) ? capture.startupDeadline : Date.now() + 15_000;
+    const remaining = Math.max(1, deadline - Date.now());
+    const timeout = setTimeout(() => finish(dockCaptureStartupError(timeoutMessage)), remaining);
+    signal?.addEventListener('abort', aborted, { once: true });
+    Promise.resolve(value).then((result) => {
+      if (settled || dockCaptureCancelled(capture)) onLateValue?.(result);
+      else finish(null, result);
+    }).catch((error) => finish(error));
+  });
+}
+
+async function startDockLiveCapture(workflow, gameHwnd, { signal = null, timeoutMs = 15_000 } = {}) {
   const character = characterForPortraitTarget(workflow);
   if (!character) throw new Error('The new character no longer exists.');
   if (state.captureSession) throw dockBusyError();
   if (hasMaximumPortraits(character)) throw new Error(`This character already has ${MAX_PORTRAIT_VARIANTS} portrait variants.`);
   const capture = createLiveCaptureSession(character, workflow.galleryName, { draftId: workflow.draftId, gameHwnd });
+  capture.startupSignal = signal;
+  capture.startupDeadline = Date.now() + timeoutMs;
   state.captureSession = capture;
-  const sources = await desktop.listCaptureSources(gameHwnd);
-  if (state.captureSession !== capture) return;
+  const sources = await waitForDockCaptureStep(desktop.listCaptureSources(gameHwnd), capture, 'Windows did not provide the CK3 capture window in time.');
   if (!sources.length) throw new Error('The detected CK3 window cannot be captured. Use windowed or borderless mode and keep it visible.');
   capture.sources = sources;
   capture.phase = 'select-source';
   await selectLiveCaptureSource(sources[0].id);
-  if (state.captureSession === capture && capture.error) throw new Error(capture.error);
+  throwIfDockCaptureCancelled(capture);
+  if (capture.error) throw new Error(capture.error);
 }
 
 function initializeDockCaptureWorkspace(capture) {
@@ -239,44 +282,54 @@ async function selectLiveCaptureSource(sourceId) {
   let sessionId = null;
   let stream = null;
   try {
-    const armed = await desktop.armCapture(sourceId, capture.shortcut, capture.dock ? { dockDraftId: capture.dockDraftId, gameHwnd: capture.gameHwnd } : undefined);
+    const arming = desktop.armCapture(sourceId, capture.shortcut, capture.dock ? { dockDraftId: capture.dockDraftId, gameHwnd: capture.gameHwnd } : undefined);
+    const armed = await waitForDockCaptureStep(arming, capture, 'The CK3 capture session did not respond.', (late) => {
+      if (late?.sessionId) void desktop.releaseCapture(late.sessionId).catch(() => {});
+    });
     sessionId = armed.sessionId;
     if (state.captureSession !== capture || capture.phase !== 'starting') {
       await desktop.releaseCapture(sessionId).catch(() => {});
       return;
     }
+    throwIfDockCaptureCancelled(capture);
     capture.selectedSourceId = sourceId;
     capture.sessionId = sessionId;
     capture.shortcut = armed.shortcut;
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: LIVE_CAPTURE_FPS }, audio: false });
+    const display = navigator.mediaDevices.getDisplayMedia({ video: { frameRate: LIVE_CAPTURE_FPS }, audio: false });
+    stream = await waitForDockCaptureStep(display, capture, 'Chromium did not start the CK3 capture stream in time.', (lateStream) => {
+      lateStream?.getTracks().forEach((track) => track.stop());
+    });
     if (state.captureSession !== capture || capture.phase !== 'starting') {
       stream.getTracks().forEach((track) => track.stop());
       await desktop.releaseCapture(sessionId).catch(() => {});
       return;
     }
+    throwIfDockCaptureCancelled(capture);
     capture.stream = stream;
     stream.getVideoTracks()[0].addEventListener('ended', () => {
       if (state.captureSession === capture && ['starting', 'ready', 'starting-recording', 'recording', 'matching'].includes(capture.phase)) void cancelLiveCapture('CK3 window capture ended.');
     }, { once: true });
     if (capture.dock) initializeDockCaptureWorkspace(capture);
     else renderLiveCaptureModal();
-    await waitForLiveCapturePreview(capture);
+    await waitForDockCaptureStep(waitForLiveCapturePreview(capture), capture, 'The CK3 capture preview timed out.');
     if (state.captureSession !== capture || capture.phase !== 'starting') {
       stream.getTracks().forEach((track) => track.stop());
       await desktop.releaseCapture(sessionId).catch(() => {});
       return;
     }
+    throwIfDockCaptureCancelled(capture);
     capture.phase = 'ready';
-    await reportLiveCaptureStatus(capture, { state: 'armed' });
+    await waitForDockCaptureStep(reportLiveCaptureStatus(capture, { state: 'armed' }), capture, 'The CK3 capture status did not respond.');
     if (!capture.dock) renderLiveCaptureModal();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
+    const cancelled = capture.dock && (error?.name === 'AbortError' || dockCaptureCancelled(capture));
     const failure = readableError(error, 'CK3 capture could not start.');
-    if (sessionId) await desktop.releaseCapture(sessionId, state.captureSession === capture ? failure : '').catch(() => {});
+    if (sessionId) await desktop.releaseCapture(sessionId, state.captureSession === capture && !cancelled ? failure : '').catch(() => {});
     if (state.captureSession !== capture) return;
     capture.sessionId = null;
-    capture.phase = capture.dock ? 'error' : 'select-source';
-    capture.error = failure;
+    capture.phase = cancelled ? 'cancelled' : capture.dock ? 'error' : 'select-source';
+    capture.error = cancelled ? '' : failure;
     if (!capture.dock) renderLiveCaptureModal();
   }
 }
@@ -851,22 +904,28 @@ function stopLiveCaptureStream(capture) {
   capture?.workspace?.remove();
   if (capture) capture.workspace = null;
 }
-async function releaseLiveCapture(failureMessage = '') {
-  const capture = state.captureSession;
-  if (!capture) return;
+async function releaseLiveCapture(failureMessage = '', capture = state.captureSession) {
+  if (!capture) return false;
   capture.phase = 'releasing';
   discardLiveCaptureRecording(capture);
   stopLiveCaptureStream(capture);
   if (capture.sessionId) await desktop?.releaseCapture(capture.sessionId, failureMessage).catch(() => {});
+  return true;
 }
-async function releaseDockCapture() {
-  if (state.captureSession?.dock) await cancelLiveCapture();
+async function releaseDockCapture(expected = null) {
+  const capture = state.captureSession;
+  if (!capture?.dock || (typeof expected === 'string' ? capture.dockDraftId !== expected : expected && capture !== expected)) return false;
+  return cancelLiveCapture('', capture);
 }
-async function cancelLiveCapture(message = '') {
-  const dock = Boolean(state.captureSession?.dock);
-  await releaseLiveCapture(message);
+async function cancelLiveCapture(message = '', capture = state.captureSession) {
+  if (!capture || state.captureSession !== capture) return false;
+  const dock = Boolean(capture.dock);
+  /* Release the renderer's busy state before waiting for an operating-system IPC reply.
+       A delayed reply must not prevent a retry or hold the next dock command hostage. */
   state.captureSession = null;
   state.modal = null;
   render('modal');
+  await releaseLiveCapture(message, capture);
   if (message && !dock) showToast(message, 'info');
+  return true;
 }

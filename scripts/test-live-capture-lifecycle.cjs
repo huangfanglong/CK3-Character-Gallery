@@ -339,9 +339,38 @@ async function main() {
   assert.equal(dockSelection.phase, 'ready');
   assert.equal(statuses.at(-1).status.state, 'armed');
 
+  context.state.captureSession = null;
+  const stalledSources = deferred();
+  context.desktop.listCaptureSources = () => stalledSources.promise;
+  const listingController = new AbortController();
+  const stalledStartup = context.startDockLiveCaptureForTest({ draftId: 'stalled-draft', characterId: 'character-1', galleryName: 'Test Gallery', gameHwnd: '42' }, '42', { signal: listingController.signal });
+  listingController.abort();
+  await assert.rejects(stalledStartup, { name: 'AbortError' });
+  stalledSources.resolve([{ id: 'window:42:0' }]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(context.state.captureSession.dockDraftId, 'stalled-draft', 'A late source listing cannot replace the cancelled session.');
+  context.state.captureSession = null;
+
+  const lateArm = deferred();
+  const armController = new AbortController();
+  const cancelledSelection = captureSession();
+  cancelledSelection.dock = true;
+  cancelledSelection.dockDraftId = 'stalled-draft';
+  cancelledSelection.gameHwnd = '42';
+  cancelledSelection.startupDeadline = Date.now() + 15_000;
+  cancelledSelection.startupSignal = armController.signal;
+  context.state.captureSession = cancelledSelection;
+  context.desktop.armCapture = () => lateArm.promise;
+  const cancelledArm = context.selectLiveCaptureSourceForTest('source-1');
+  armController.abort();
+  await cancelledArm;
+  lateArm.resolve({ sessionId: 'late-arm-after-cancel', shortcut: 'CommandOrControl+Alt+G' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(releases.includes('late-arm-after-cancel'), 'An armed session arriving after Cancel is released.');
+
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
   assert.match(appSource, /if \(state\.modal\) \{ event\.preventDefault\(\); runModalAction\('close-modal'\); \}/);
-  console.log('Live capture lifecycle test passed: stale listings are ignored, source selection is single-flight, late streams stop, accepted and dropped frames are accurate, stale encoder work is isolated, and Escape uses modal cleanup.');
+  console.log('Live capture lifecycle test passed: stale work isolation, abortable dock startup, late resource cleanup, accurate recording, and modal cleanup.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

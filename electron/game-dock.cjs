@@ -5,11 +5,17 @@ const DOCK_RESTING_HEIGHT = 6;
 const DOCK_COMPACT_HEIGHT = 48;
 const DOCK_EXPANDED_HEIGHT = 310;
 
+function normalizeLiveLinkPreferences(preferences = {}) {
+  const decision = ['undecided', 'enabled', 'declined'].includes(preferences?.liveLink?.decision) ? preferences.liveLink.decision : 'undecided';
+  return { decision, enabled: decision === 'enabled' && preferences?.liveLink?.enabled === true };
+}
+
 function normalizeDockPreferences(preferences = {}) {
   return {
     enabled: typeof preferences.enabled === 'boolean' ? preferences.enabled : true,
     position: DOCK_POSITIONS.has(preferences.position) ? preferences.position : 'center',
     collection: typeof preferences.collection === 'string' ? preferences.collection.trim().slice(0, 120) : '',
+    liveLink: normalizeLiveLinkPreferences(preferences),
   };
 }
 
@@ -92,6 +98,15 @@ class GameDock {
       shortcut: 'CommandOrControl+Alt+G',
       undoUntil: 0,
       sound: true,
+      liveEnabled: this.preferences.liveLink.enabled,
+      liveSelectedName: '',
+      liveCanApply: false,
+      liveTargetName: '',
+      liveReport: '',
+      liveUndoUntil: 0,
+      liveRetry: false,
+      liveImported: false,
+      commandEpoch: 0,
     };
     this.handleGameChange = (game) => this.setGame(game);
     this.reposition = () => this.positionWindow();
@@ -137,8 +152,12 @@ class GameDock {
     return this.started;
   }
 
-  setPreferences(preferences) {
+  syncPreferences(preferences) {
     this.preferences = normalizeDockPreferences({ ...this.preferences, ...preferences });
+  }
+
+  setPreferences(preferences) {
+    this.syncPreferences(preferences);
     this.update({ position: this.preferences.position });
     if (this.preferences.collection) this.update({ collection: this.preferences.collection });
     this.onPreferencesChange({ ...this.preferences });
@@ -285,6 +304,11 @@ class GameDock {
     this.syncDraftVisibility();
   }
 
+  retirePendingCommands() {
+    this.state.commandEpoch = (Number(this.state.commandEpoch) || 0) + 1;
+    this.present();
+  }
+
   present() {
     if (!this.ready || !this.window || this.window.isDestroyed()) return;
     this.window.webContents.send('game-dock:state', { ...this.state, preferences: { ...this.preferences } });
@@ -324,6 +348,7 @@ module.exports = {
   dockSurfaceBounds,
   gameDockBounds,
   normalizeDockPreferences,
+  normalizeLiveLinkPreferences,
   pointInRegions,
   shouldShowDock,
 };

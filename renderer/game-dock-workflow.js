@@ -1,5 +1,6 @@
 let dockWorkflow = null;
 let dockCommandQueue = Promise.resolve();
+let dockActiveCreate = null;
 
 function publishDockState(patch = {}) {
   const workflow = dockWorkflow;
@@ -27,39 +28,83 @@ function dockSuccessState(message = 'Character and DNA saved.') {
   return { mode: 'success', capture: null, crop: null, sourceSize: null, message, error: '', undoUntil: Date.now() + 12_000, busy: false, dnaReady: true, dnaAttached: true };
 }
 
+function dockCancellationError() {
+  const error = new Error('Quick add was cancelled. Any saved character is kept.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function dockOperationIsCurrent(operation) {
+  return dockActiveCreate === operation && dockWorkflow === operation.workflow && !operation.controller.signal.aborted;
+}
+
+function publishDockOperationState(operation, patch) {
+  if (!dockOperationIsCurrent(operation)) return Promise.resolve(false);
+  return publishDockState(patch);
+}
+
+/* Saving is allowed to finish in the background so an already-written character is never
+   deleted. The same creation promise is reused on retry, even after Cancel or a timeout. */
+function waitForDockCreation(value, operation) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      operation.controller.signal.removeEventListener('abort', aborted);
+      error ? reject(error) : resolve(result);
+    };
+    const aborted = () => finish(dockCancellationError());
+    const timeout = setTimeout(() => finish(new Error('The archive did not finish saving in time. Any saved character is kept; try again.')), 15_000);
+    operation.controller.signal.addEventListener('abort', aborted, { once: true });
+    if (operation.controller.signal.aborted) aborted();
+    else Promise.resolve(value).then((result) => finish(null, result)).catch((error) => finish(error));
+  });
+}
+
 async function createFromDock(command) {
   if (state.modal || state.cropSession || state.captureSession) throw dockBusyError();
   const { draftId, dna, collection, gameHwnd } = command.payload;
   if (!draftId || !isValidCk3Dna(dna)) throw new Error('Copy valid CK3 DNA before creating this record.');
-  if (dockWorkflow && dockWorkflow.draftId !== draftId) dockWorkflow = null;
-  const existing = dockWorkflow?.draftId === draftId ? dockWorkflowCharacter(dockWorkflow) : null;
-  const result = existing
-    ? { character: existing, galleryName: dockWorkflow.galleryName }
-    : await createCharacterRecord({
-      name: command.payload.name || '',
-      dna,
-      galleryName: collection,
-      select: false,
-    });
-  dockWorkflow = {
-    draftId,
-    characterId: result.character.id,
-    galleryName: result.galleryName,
-    name: result.character.name,
-    expectedModified: existing ? dockWorkflow.expectedModified : result.character.modified,
-    gameHwnd,
-    lastCommand: command,
-  };
-  if (command.type === 'create-record' && command.payload.frame === false) {
-    await publishDockState(dockSuccessState('DNA saved. You can add a portrait later.'));
-    return { ok: true };
-  }
-  await publishDockState({ mode: 'framing', busy: true, message: 'Opening the CK3 capture stream…', error: '', dnaReady: true, dnaAttached: true });
+  const workflow = dockWorkflow?.draftId === draftId ? dockWorkflow : { draftId, characterId: null, creationPromise: null, lastCommand: null };
+  dockWorkflow = workflow;
+  const operation = { workflow, controller: new AbortController(), operationId: command.operationId };
+  dockActiveCreate = operation;
+  workflow.lastCommand = command;
+  workflow.gameHwnd = gameHwnd;
   try {
-    await startDockLiveCapture(dockWorkflow, gameHwnd);
+    let character = dockWorkflowCharacter(workflow);
+    if (!character) {
+      if (!workflow.creationPromise) {
+        workflow.creationPromise = createCharacterRecord({
+          name: command.payload.name || '', dna, galleryName: collection, select: false,
+        }).then((result) => {
+          workflow.characterId = result.character.id;
+          workflow.galleryName = result.galleryName;
+          workflow.name = result.character.name;
+          workflow.expectedModified = result.character.modified;
+          return result;
+        }).catch((error) => {
+          if (!workflow.characterId) workflow.creationPromise = null;
+          throw error;
+        });
+      }
+      await waitForDockCreation(workflow.creationPromise, operation);
+      character = dockWorkflowCharacter(workflow);
+    }
+    if (!character) throw new Error('The new character no longer exists.');
+    if (!dockOperationIsCurrent(operation)) throw dockCancellationError();
+    if (command.type === 'create-record' && command.payload.frame === false) {
+      await publishDockOperationState(operation, dockSuccessState('DNA saved. You can add a portrait later.'));
+      return { ok: true };
+    }
+    await publishDockOperationState(operation, { mode: 'framing', busy: true, message: 'Opening the CK3 capture stream…', error: '', dnaReady: true, dnaAttached: true });
+    await startDockLiveCapture(workflow, gameHwnd, { signal: operation.controller.signal });
+    if (!dockOperationIsCurrent(operation)) throw dockCancellationError();
     const capture = state.captureSession;
-    if (!capture?.dock || capture.phase !== 'ready') throw new Error(capture?.error || 'The CK3 capture stream is not ready.');
-    await publishDockState({
+    if (!capture?.dock || capture.dockDraftId !== draftId || capture.phase !== 'ready') throw new Error(capture?.error || 'The CK3 capture stream is not ready.');
+    await publishDockOperationState(operation, {
       mode: 'framing', busy: false, message: 'Frame the portrait, then choose Snapshot or Live portrait.',
       crop: capture.crop ? normalizedCaptureCrop(capture.crop, capture.video.videoWidth, capture.video.videoHeight) : null,
       sourceSize: { width: capture.video.videoWidth, height: capture.video.videoHeight },
@@ -67,9 +112,17 @@ async function createFromDock(command) {
     });
     return { ok: true };
   } catch (error) {
-    if (state.captureSession?.dock) await releaseDockCapture();
-    await publishDockState({ mode: 'error', busy: false, capture: null, crop: null, error: readableError(error, 'CK3 capture could not start. The character and DNA are still saved.') });
-    return { ok: false, error: readableError(error, 'CK3 capture could not start.') };
+    if (error?.name === 'AbortError' || !dockOperationIsCurrent(operation)) {
+      void releaseDockCapture(draftId);
+      return { ok: true, cancelled: true };
+    }
+    await releaseDockCapture(draftId);
+    const detail = readableError(error, 'CK3 capture could not start.');
+    const recovery = dockWorkflowCharacter(workflow) ? `${detail} The character and DNA are still saved.` : detail;
+    await publishDockOperationState(operation, { mode: 'error', busy: false, capture: null, crop: null, error: recovery });
+    return { ok: false, error: recovery };
+  } finally {
+    if (dockActiveCreate === operation) dockActiveCreate = null;
   }
 }
 
@@ -165,23 +218,49 @@ async function processGameDockCommand(command) {
     }
     throw new Error('The requested dock action is not available.');
   } catch (error) {
+    if (error?.name === 'AbortError') return { ok: true, cancelled: true };
     const message = readableError(error, 'The dock action could not be completed.');
     if (dockWorkflow) await publishDockState({ mode: 'error', busy: false, error: message });
     return { ok: false, error: message };
   }
 }
 
+const dockCancelledOperations = new Set();
+
+function retireDockOperation(operationId) {
+  if (!operationId) return;
+  dockCancelledOperations.add(operationId);
+  if (dockCancelledOperations.size > 500) dockCancelledOperations.delete(dockCancelledOperations.values().next().value);
+}
+
 function handleGameDockCommand(command) {
-  if (dockWorkflow && ['quick-add', 'create-record'].includes(command.type)) dockWorkflow.lastCommand = command;
-  const result = dockCommandQueue.then(() => processGameDockCommand(command));
+  /* IPC listeners are ordered, but command execution is queued. A cancellation can
+     therefore arrive before a forwarded command starts; retire that exact operation. */
+  if (dockCancelledOperations.has(command.operationId)) return Promise.resolve({ ok: true, cancelled: true });
+  const result = dockCommandQueue.then(() => dockCancelledOperations.has(command.operationId)
+    ? { ok: true, cancelled: true }
+    : processGameDockCommand(command));
   dockCommandQueue = result.catch(() => {});
   return result;
 }
 
-function handleGameDockGameLoss({ draftId }) {
-  if (state.captureSession?.dock && state.captureSession.dockDraftId === draftId) {
-    void cancelLiveCapture('CK3 is no longer in the foreground. The character and DNA are still saved.');
+function cancelGameDockDraft({ draftId, reason = 'cancelled', operationIds = [] } = {}) {
+  if (Array.isArray(operationIds)) operationIds.forEach(retireDockOperation);
+  const operation = dockActiveCreate?.workflow.draftId === draftId ? dockActiveCreate : null;
+  if (operation) {
+    retireDockOperation(operation.operationId);
+    dockActiveCreate = null;
+    operation.controller.abort();
   }
+  if (!draftId || dockWorkflow?.draftId !== draftId) return false;
+  if (reason === 'cancelled') dockWorkflow.lastCommand = null;
+  void releaseDockCapture(draftId);
+  return true;
+}
+
+function handleGameDockGameLoss({ draftId }) {
+  if (!cancelGameDockDraft({ draftId, reason: 'game-lost' })) return;
+  void publishDockState({ mode: 'error', busy: false, capture: null, crop: null, error: 'CK3 is no longer in the foreground. The character and DNA are still saved.' });
 }
 
 function installGameDockBridge() {
@@ -190,18 +269,14 @@ function installGameDockBridge() {
       .then((result) => desktop.completeGameDockCommand(command.operationId, result))
       .catch((error) => desktop.completeGameDockCommand(command.operationId, { ok: false, error: readableError(error, 'The dock action failed.') }));
   });
+  desktop?.onGameDockCancel?.(cancelGameDockDraft);
   desktop?.onGameDockGameLoss?.(handleGameDockGameLoss);
-  desktop?.onGameDockPreferences?.((preferences) => {
-    state.gameDockPreferences = preferences;
-    renderChrome();
-  });
+  desktop?.onGameDockPreferences?.(receiveGameDockPreferences);
   if (desktop?.getGameDockPreferences) {
-    void desktop.getGameDockPreferences().then((preferences) => {
-      state.gameDockPreferences = preferences;
-      renderChrome();
-    }).catch(() => {});
+    void desktop.getGameDockPreferences().then(receiveGameDockPreferences).catch(() => {});
   }
   syncGameDockLibrary();
+  syncLiveGameSelection();
 }
 
 async function setGameDockEnabled(enabled) {
@@ -229,4 +304,61 @@ function syncGameDockLibrary() {
   if (!desktop?.syncGameDockLibrary) return;
   const collections = state.preview ? [{ name: 'Default' }] : state.galleries.map((gallery) => ({ name: gallery.name }));
   void desktop.syncGameDockLibrary(collections).catch(() => {});
+}
+
+let liveSelectionSignature = '';
+let livePreferenceSaving = false;
+
+function selectedLiveGameRecord() {
+  if (state.preview || !state.activeId) return null;
+  for (const gallery of state.galleries) {
+    const character = gallery.characters.find((item) => item.id === state.activeId);
+    if (!character) continue;
+    const dna = typeof character.dna === 'string' ? character.dna.trim() : '';
+    const geneCount = (dna.match(/(?:^|[\s{}])[a-z][a-z0-9_]{0,119}\s*=\s*\{[^{}]*\}/gi) || []).length;
+    if (!Number.isFinite(character.modified) || geneCount < 20 || !/\bgenes\s*=\s*\{/.test(dna) || !isValidCk3Dna(dna)) return null;
+    return { id: character.id, name: character.name, modified: character.modified, dna };
+  }
+  return null;
+}
+
+function syncLiveGameSelection() {
+  if (!desktop?.syncLiveGameSelection) return;
+  const selection = selectedLiveGameRecord();
+  const signature = selection ? `${selection.id}:${selection.modified}:${selection.dna}` : '';
+  if (signature === liveSelectionSignature) return;
+  liveSelectionSignature = signature;
+  void desktop.syncLiveGameSelection(selection).catch(() => { liveSelectionSignature = ''; });
+}
+
+async function setLiveGameLinkChoice(enabled, announce = true) {
+  if (!desktop?.setLiveGameLinkChoice || livePreferenceSaving) return false;
+  livePreferenceSaving = true;
+  document.querySelectorAll('[data-action="live-link-accept"], [data-action="live-link-decline"]').forEach((button) => { button.disabled = true; });
+  try {
+    const liveLink = await desktop.setLiveGameLinkChoice(Boolean(enabled));
+    receiveGameDockPreferences({ ...state.gameDockPreferences, liveLink });
+    if (announce) showToast(enabled ? 'Live Game Link enabled. Focus CK3 and hover the dock to import or apply DNA.' : 'Live Game Link will stay off. You can enable it later in File.', 'success');
+    return true;
+  } catch (error) {
+    showToast(readableError(error, 'The Live Game Link choice could not be saved.'), 'info');
+    document.querySelectorAll('[data-action="live-link-accept"], [data-action="live-link-decline"]').forEach((button) => { button.disabled = false; });
+    return false;
+  } finally { livePreferenceSaving = false; }
+}
+
+async function setLiveGameLinkEnabled(enabled) {
+  if (!desktop?.setLiveGameLinkEnabled) return showToast('Live Game Link requires the desktop app on Windows.', 'info');
+  if (enabled) return setLiveGameLinkChoice(true);
+  if (livePreferenceSaving) return false;
+  livePreferenceSaving = true;
+  try {
+    const liveLink = await desktop.setLiveGameLinkEnabled(false);
+    receiveGameDockPreferences({ ...state.gameDockPreferences, liveLink });
+    showToast('Live Game Link disabled. Pending live previews were cancelled.', 'success');
+    return true;
+  } catch (error) {
+    showToast(readableError(error, 'The Live Game Link setting could not be changed.'), 'info');
+    return false;
+  } finally { livePreferenceSaving = false; }
 }

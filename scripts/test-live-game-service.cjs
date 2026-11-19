@@ -1,0 +1,165 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { GameDockService } = require('../electron/game-dock-service.cjs');
+const { liveFixture } = require('./live-game-fixture.cjs');
+
+function fixture(preferencesPath = '', preferences = { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'undecided', enabled: false } }, loadSaved = false) {
+  const dock = {
+    state: { mode: 'compact', collections: ['Court'], collection: 'Court' },
+    game: { hwnd: '42', processId: 42, executable: 'ck3.exe', executablePath: 'C:\\fixture\\ck3.exe' },
+    update(patch) { Object.assign(this.state, patch); }, setEnabled() {}, destroy() {}, setLibrary() {}, start() { return true; },
+  };
+  const dna = liveFixture().process.persistentDna();
+  const bridge = {
+    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null,
+    async setEnabled(value) {
+      this.calls.push(['enabled', value]);
+      if (value && this.failNextEnable) {
+        this.failNextEnable = false;
+        this.enabled = false;
+        throw new Error('Synthetic worker startup failure.');
+      }
+      this.enabled = value;
+      return value;
+    },
+    async import() {
+      this.calls.push(['import']);
+      if (!this.enabled) throw new Error('Live Game Link is turned off.');
+      if (this.pendingImport) return this.pendingImport;
+      if (this.failImport) { this.failImport = false; throw new Error('Layout unavailable.'); }
+      return { dna, target: { id: 1, name: 'Aella', nameIsKey: true }, geneCount: 24 };
+    },
+    async prepareApply(_game, selection) { this.calls.push(['prepare', selection]); return { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, message: '24 genes mapped. Special appearance entries excluded.' } }; },
+    async confirmApply() { this.calls.push(['confirm']); return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + 20_000, report: { geneCount: 24, message: '24 genes mapped.' } }; },
+    async undo() { this.calls.push(['undo']); return { target: { id: 1, name: 'Aella' } }; },
+    async cancel() { this.calls.push(['cancel']); return true; }, async close() {},
+  };
+  const contents = { id: 7, isDestroyed: () => false, send() {} };
+  const options = loadSaved ? {} : { preferences };
+  const service = new GameDockService({ dock, liveBridge: bridge, preferencesPath, clipboard: { readText: () => '' }, getMainContents: () => contents, createId: () => 'draft-live', ...options });
+  service.mainWindowWebContentsId = contents.id;
+  return { dock, bridge, service, dna };
+}
+
+(async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-live-service-'));
+  const preferencesPath = path.join(directory, 'ui-settings.json');
+  const app = fixture(preferencesPath);
+  try {
+    await app.service.setLiveLinkChoice(false);
+    assert.deepEqual(JSON.parse(fs.readFileSync(preferencesPath, 'utf8')).liveLink, { decision: 'declined', enabled: false });
+    const remembered = fixture(preferencesPath, undefined, true);
+    assert.equal(remembered.service.preferencesLoaded, false, 'The restart fixture must not preload preferences.');
+    await remembered.service.loadPreferences();
+    assert.deepEqual(remembered.service.preferences.liveLink, { decision: 'declined', enabled: false });
+    assert.equal(remembered.bridge.enabled, false);
+    const blocked = await app.service.handleCommand({ operationId: 'blocked', type: 'live-import', payload: {} });
+    assert.equal(blocked.ok, false);
+    assert.equal(app.bridge.calls.some(([action]) => action === 'import'), false);
+
+    await app.service.setLiveLinkChoice(true);
+    assert.equal(app.bridge.enabled, true);
+    assert.equal(app.bridge.calls.some(([action]) => action === 'import'), false, 'Consent alone performs no game access.');
+    app.bridge.failImport = true;
+    assert.equal((await app.service.handleCommand({ operationId: 'import-fail', type: 'live-import', payload: {} })).ok, false);
+    assert.equal(app.dock.state.liveRetry, true);
+    assert.equal((await app.service.handleCommand({ operationId: 'import-retry', type: 'live-retry', payload: {} })).ok, true);
+    assert.equal(app.dock.state.mode, 'draft');
+    assert.equal(app.dock.state.liveImported, true);
+    assert.equal(app.service.draftDna, app.dna);
+    assert.match(app.dock.state.message, /persistent DNA/);
+    await app.service.handleCommand({ operationId: 'cancel-import', type: 'cancel-draft', payload: {} });
+
+    app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 5, dna: app.dna });
+    assert.equal(app.dock.state.liveCanApply, true);
+    assert.equal(app.dock.state.liveSelectedName, 'Archived Aella');
+    await app.service.handleCommand({ operationId: 'prepare-stale', type: 'live-prepare-apply', payload: {} });
+    assert.equal(app.dock.state.mode, 'live-confirm');
+    assert.equal(app.dock.state.liveTargetName, 'Aella');
+    app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: app.dna });
+    assert.equal(app.dock.state.mode, 'compact');
+    assert.equal(app.service.liveApply, null);
+    assert.equal((await app.service.handleCommand({ operationId: 'stale-confirm', type: 'live-confirm-apply', payload: {} })).ok, false);
+    assert.equal(app.bridge.calls.some(([action]) => action === 'confirm'), false, 'Selection changes invalidate a pending apply.');
+
+    await app.service.handleCommand({ operationId: 'prepare', type: 'live-prepare-apply', payload: {} });
+    await app.service.handleCommand({ operationId: 'confirm', type: 'live-confirm-apply', payload: {} });
+    assert.equal(app.dock.state.mode, 'live-result');
+    assert.ok(app.dock.state.liveUndoUntil > Date.now());
+    await app.service.handleCommand({ operationId: 'undo', type: 'live-undo', payload: {} });
+    assert.equal(app.dock.state.liveUndoUntil, 0);
+    assert.match(app.dock.state.message, /restored and verified/);
+
+    app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: Buffer.alloc(80, 65).toString('base64') });
+    assert.equal(app.service.selection, null);
+    assert.equal(app.dock.state.liveCanApply, false, 'Manual Base64 records do not become live apply inputs.');
+    app.service.preferencesChanged({ enabled: false, position: 'right', collection: 'Court', liveLink: { decision: 'undecided', enabled: false } });
+    assert.deepEqual(app.service.preferences.liveLink, { decision: 'enabled', enabled: true }, 'Dock preference callbacks cannot restore a stale consent decision.');
+    assert.equal(app.dock.state.liveEnabled, true);
+    await app.service.setLiveLinkEnabled(false);
+    assert.equal(app.bridge.enabled, false);
+    assert.equal(app.service.preferences.liveLink.decision, 'enabled', 'Turning the feature off preserves the first-run decision.');
+    assert.equal((await app.service.handleCommand({ operationId: 'disabled-again', type: 'live-prepare-apply', payload: {} })).ok, false);
+
+    const recovering = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    try {
+      recovering.bridge.failNextEnable = true;
+      await recovering.service.start();
+      assert.equal(recovering.bridge.enabled, false, 'The startup failure disables the worker, not the saved preference.');
+      const imported = await recovering.service.handleCommand({ operationId: 'recover-import', type: 'live-import', payload: {} });
+      assert.equal(imported.ok, true, 'Import retries a failed worker startup instead of reporting that the enabled preference is off.');
+      assert.equal(recovering.dock.state.mode, 'draft');
+      assert.equal(recovering.bridge.calls.filter(([action, value]) => action === 'enabled' && value).length, 2);
+    } finally { recovering.service.destroy(); }
+
+    const stalled = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    let rejectImport;
+    let importing;
+    try {
+      await stalled.service.setLiveLinkChoice(true);
+      stalled.bridge.pendingImport = new Promise((_resolve, reject) => { rejectImport = reject; });
+      importing = stalled.service.handleCommand({ operationId: 'stalled-import', type: 'live-import', payload: {} });
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(stalled.service.mutation !== null, true);
+      await stalled.service.setLiveLinkEnabled(false);
+      await stalled.service.setLiveLinkChoice(true);
+      stalled.bridge.pendingImport = null;
+      let retryTimer;
+      const retryTimeout = new Promise((_resolve, reject) => {
+        retryTimer = setTimeout(() => reject(new Error('A stalled Import still blocks the queue after off/on.')), 1000);
+      });
+      let renewed;
+      try {
+        renewed = await Promise.race([
+          stalled.service.handleCommand({ operationId: 'renewed-import', type: 'live-import', payload: {} }),
+          retryTimeout,
+        ]);
+      } finally { clearTimeout(retryTimer); }
+      assert.equal(renewed.ok, true, 'Import can start a fresh operation after the old one is retired.');
+      assert.equal(stalled.bridge.calls.filter(([action]) => action === 'import').length, 2);
+      assert.equal(stalled.dock.state.liveImported, true);
+      const quickAdd = await stalled.service.handleCommand({ operationId: 'quick-add-after-toggle', type: 'quick-add', payload: {} });
+      assert.equal(quickAdd.ok, true, 'Quick Add remains available even if the old live operation never settles cleanly.');
+      assert.equal(stalled.dock.state.mode, 'draft');
+      rejectImport(new Error('Live Game Link is turned off.'));
+      assert.equal((await importing).cancelled, true, 'The retired Import completes as cancelled.');
+      assert.equal(stalled.dock.state.mode, 'draft', 'A late live-link failure cannot overwrite the newer Quick Add draft.');
+    } finally {
+      rejectImport?.(new Error('Test cleanup.'));
+      await importing;
+      stalled.service.destroy();
+    }
+
+    const synchronized = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    try {
+      await synchronized.service.setLiveLinkChoice(true);
+      await synchronized.service.setLiveLinkEnabled(false);
+      synchronized.bridge.failNextEnable = true;
+      await assert.rejects(synchronized.service.setLiveLinkChoice(true), /startup failure/);
+      assert.equal(synchronized.dock.state.liveEnabled, true, 'A failed enable still synchronizes the saved preference back to the dock.');
+    } finally { synchronized.service.destroy(); }
+    console.log('Live game service tests passed: consent, bounded command recovery, startup retry, toggle synchronization, import/apply, undo, and stale-operation isolation.');
+  } finally { app.service.destroy(); fs.rmSync(directory, { recursive: true, force: true }); }
+})().catch((error) => { console.error(error); process.exitCode = 1; });

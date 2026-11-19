@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('gameDock', {
       const timeout = setTimeout(() => {
         pending.delete(operationId);
         resolve({ ok: false, error: 'The gallery did not respond. Try again.' });
-      }, 60_000);
+      }, 25_000);
       pending.set(operationId, { resolve, timeout });
       ipcRenderer.send('game-dock:command', { operationId, type, payload });
     });

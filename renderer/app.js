@@ -257,6 +257,7 @@ function render(scope = 'all') {
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
   void updateImageUrls().catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
+  syncLiveGameSelection();
 }
 
 function focusWithoutScroll(element) {
@@ -288,6 +289,7 @@ function renderSelection() {
   const next = morphAppRegion(current, inspectorMarkup(getActiveCharacter()));
   if (next) syncCharacterAppearance(next);
   syncPortraitPlayback(app, Boolean(state.modal));
+  syncLiveGameSelection();
 }
 
 function closeQuickLook() {
@@ -412,6 +414,7 @@ function installEventDelegation() {
 
 function handleDelegatedClick(event) {
   if (!(event.target instanceof Element)) return;
+  if (state.liveLinkConsentPending && !['live-link-accept', 'live-link-decline'].includes(event.target.closest('[data-action]')?.dataset.action)) return;
   const removeButton = event.target.closest('[data-remove-comparison]');
   if (removeButton) {
     event.stopPropagation();
@@ -1121,6 +1124,9 @@ function restoreSelectionFocus() {
 }
 
 function action(name) {
+  if (state.liveLinkConsentPending && !['live-link-accept', 'live-link-decline'].includes(name)) return;
+  if (name === 'live-link-accept') return setLiveGameLinkChoice(true);
+  if (name === 'live-link-decline') return setLiveGameLinkChoice(false);
   const hadActiveMenu = Boolean(state.activeMenu);
   state.activeMenu = null;
   if (hadActiveMenu) render('chrome');
@@ -1159,6 +1165,7 @@ function action(name) {
   if (name === 'focus-search') { render(); document.querySelector('#search-input')?.focus(); return; }
   if (name === 'help-hint') return render();
   if (name === 'toggle-game-dock') return setGameDockEnabled(!state.gameDockPreferences?.enabled);
+  if (name === 'toggle-live-link') return setLiveGameLinkEnabled(!state.gameDockPreferences?.liveLink?.enabled);
   if (name === 'game-dock-help') return showGameDockHelp();
   if (name === 'view-cards') { state.view = 'cards'; state.visibleLimit = 48; return render(); }
   if (name === 'view-compact') { state.view = 'compact'; state.visibleLimit = 48; return render(); }
@@ -1271,6 +1278,7 @@ function runModalAction(actionName) {
 
 function installKeyboardShortcuts() {
   document.addEventListener('keydown', (event) => {
+    if (trapLiveLinkConsentFocus(event)) return;
     const command = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
     const target = event.target;
@@ -1479,7 +1487,12 @@ async function boot() {
   const startupWarning = loaded?.warning || (loadError ? readableError(loadError, 'The archive could not be loaded. Start with a new archive or restore the data file.') : null);
   state.startupWarning = startupWarning || '';
   syncGameDockLibrary();
+  if (desktop?.getGameDockPreferences) {
+    try { state.gameDockPreferences = await desktop.getGameDockPreferences(); } catch { /* Keep the safe, disabled default. */ }
+  }
   render();
+  state.libraryReady = true;
+  receiveGameDockPreferences(state.gameDockPreferences);
   if (startupWarning) requestAnimationFrame(() => showToast(startupWarning, 'info'));
 }
 

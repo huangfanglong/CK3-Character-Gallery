@@ -1,8 +1,9 @@
 const dockRoot = document.querySelector('#game-dock');
 const announcer = document.querySelector('#announcer');
 const dockBridge = window.gameDock;
-let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true };
-let dockView = { picker: false, menu: '', help: false, query: '', pending: false, revealed: false };
+let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveSelectedName: '', liveTargetName: '', liveReport: '', liveUndoUntil: 0, liveRetry: false, busy: false, commandEpoch: 0 };
+let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
+let commandSequence = 0;
 let interactive = false;
 let drag = null;
 let captureClock = null;
@@ -31,6 +32,8 @@ function dockIcon(name) {
     record: '<circle cx="12" cy="12" r="6"/>',
     undo: '<path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 0 12" transform="translate(0 -3)"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6 1c0 2-2.3 2-2.3 4M12 17h.01"/>',
+    download: '<path d="M12 3v12m-5-5 5 5 5-5M5 20h14"/>',
+    apply: '<path d="M12 21V9m-5 5 5-5 5 5M5 4h14"/>',
   };
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.more}</svg>`;
 }
@@ -53,7 +56,7 @@ function collectionPicker() {
 }
 
 function dockMenu() {
-  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p>Use windowed or borderless CK3. Keep Bloodline running. Clipboard text is checked only while a draft awaits DNA.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
+  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p><strong>Live Game Link:</strong> open a CK3 character window, then <strong>Import</strong> creates a draft with persistent DNA. Select a gallery character with persistent DNA, then <strong>Apply</strong> previews and confirms a version-matched write. Only raw genes are included; hair, beard, clothes, and special appearance entries are excluded. Undo is available briefly.</p><p>Use windowed or borderless CK3. Keep Bloodline running. Clipboard text is checked only while a draft awaits DNA.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
   if (dockView.menu !== 'menu') return '';
   return `<section class="popover menu" role="menu" aria-label="Game dock options"><p class="popover-label">DOCK POSITION</p>${['left', 'center', 'right'].map((position) => `<button class="menu-option" role="menuitem" data-command="set-position" data-position="${position}"><span>${position[0].toUpperCase()}${position.slice(1)}</span>${dockState.position === position ? dockIcon('check') : ''}</button>`).join('')}<div class="menu-separator"></div><button class="menu-option" role="menuitem" data-command="help">${dockIcon('help')}<span>How to use the dock</span></button><button class="menu-option danger" role="menuitem" data-command="disable-dock">Disable CK3 dock</button></section>`;
 }
@@ -69,7 +72,9 @@ function draftMarkup() {
 
 function framingMarkup() {
   const capture = dockState.capture;
-  return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">PORTRAIT FRAMING</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><span class="helper">450 × 450</span></div><p class="helper">Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.</p><div class="capture-actions" style="margin-top:14px"><button class="text-button" data-command="reset-crop">Reset frame</button><span class="spacer"></span><button class="text-button" data-command="finish-without-portrait">Skip portrait</button><button class="secondary-button" data-command="live-capture"${capture ? ' disabled' : ''}>${dockIcon('record')} Live portrait</button><button class="primary-button" data-command="snapshot"${capture ? ' disabled' : ''}>${dockIcon('camera')} Snapshot</button></div></div>`;
+  const opening = dockState.busy || dockView.pending;
+  const unavailable = capture || opening ? ' disabled' : '';
+  return `<div class="dock-body" aria-busy="${opening}"><div class="dock-heading"><div><p class="eyebrow">${opening ? 'OPENING CK3 CAPTURE' : 'PORTRAIT FRAMING'}</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Cancel quick add; keep the saved character">${dockIcon('close')}</button></div><p class="helper">${opening ? 'This may take a few seconds. Cancel keeps the character if it has already been saved.' : 'Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.'}</p><div class="capture-actions" style="margin-top:14px"><button class="text-button" data-command="reset-crop"${unavailable}>Reset frame</button><span class="spacer"></span><button class="text-button" data-command="finish-without-portrait"${unavailable}>Skip portrait</button><button class="secondary-button" data-command="live-capture"${unavailable}>${dockIcon('record')} Live portrait</button><button class="primary-button" data-command="snapshot"${unavailable}>${dockIcon('camera')} Snapshot</button></div><button class="text-button" data-command="cancel-draft">Cancel quick add</button></div>`;
 }
 
 function captureMarkup() {
@@ -85,14 +90,26 @@ function successMarkup() {
   return `<div class="dock-body"><div class="capture-state"><span class="success-mark">${dockIcon('check')}</span><div class="capture-copy"><strong>Saved to ${dockEscape(dockState.collection)}</strong><span>${dockEscape(dockState.message || `${dockState.characterName} is in your archive.`)}</span></div></div><div class="success-actions" style="margin-top:14px"><button class="text-button" data-command="undo-create"${dockState.undoUntil > Date.now() ? '' : ' disabled'}>Undo</button><span class="spacer"></span><button class="secondary-button" data-command="view-gallery">View in gallery</button><button class="primary-button" data-command="dismiss">Done</button></div></div>`;
 }
 
+function liveConfirmMarkup() {
+  return `<div class="dock-body live-confirm" aria-busy="${dockState.busy}"><div class="dock-heading"><div><p class="eyebrow">LIVE GAME LINK · CONFIRM APPLY</p><h2>Replace this character’s DNA?</h2></div><button class="icon-button" data-command="live-cancel" aria-label="Cancel DNA apply"${dockState.busy ? ' disabled' : ''}>${dockIcon('close')}</button></div><div class="live-mapping"><div><small>FROM YOUR GALLERY</small><strong>${dockEscape(dockState.liveSelectedName)}</strong></div><span aria-hidden="true">→</span><div><small>OPEN IN CK3</small><strong>${dockEscape(dockState.liveTargetName)}</strong></div></div><p class="live-report">${dockEscape(dockState.liveReport)}</p><p class="helper">Hair, beard, clothing, and other special appearance entries are excluded. This changes the running CK3 session; review the character before saving your game.</p><div class="capture-actions live-actions"><button class="text-button" data-command="live-cancel"${dockState.busy ? ' disabled' : ''}>Cancel</button><button class="primary-button" data-command="live-confirm-apply"${dockState.busy || dockView.pending ? ' disabled' : ''}>${dockState.busy ? 'Applying & verifying…' : 'Apply DNA to CK3'}</button></div></div>`;
+}
+
+function liveResultMarkup() {
+  const canUndo = dockState.liveUndoUntil > Date.now();
+  const seconds = Math.max(0, Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
+  return `<div class="dock-body live-result" aria-busy="${dockState.busy}"><div class="capture-state"><span class="success-mark">${dockIcon('check')}</span><div class="capture-copy"><strong>${canUndo ? `DNA applied to ${dockEscape(dockState.liveTargetName)}` : 'Live Game Link complete'}</strong><span>${dockEscape(dockState.message)}</span></div></div><div class="success-actions live-actions">${canUndo ? `<button class="secondary-button" data-command="live-undo"${dockState.busy || dockView.pending ? ' disabled' : ''}>${dockState.busy ? 'Restoring…' : `Undo (<span id="live-undo-time">${seconds}</span>s)`}</button>` : ''}<span class="spacer"></span><button class="primary-button" data-command="live-cancel"${dockState.busy ? ' disabled' : ''}>Done</button></div></div>`;
+}
+
 function errorMarkup() {
-  return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">COULDN’T COMPLETE THAT</p><h2>${dockEscape(dockState.error || 'The archive did not respond.')}</h2></div><button class="icon-button" data-command="dismiss" aria-label="Dismiss error">${dockIcon('close')}</button></div><div class="capture-actions"><button class="secondary-button" data-command="dismiss">Dismiss</button><button class="primary-button" data-command="retry">Try again</button></div></div>`;
+  const live = Boolean(dockState.liveRetry);
+  return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">COULDN’T COMPLETE THAT</p><h2>${dockEscape(dockState.error || 'The archive did not respond.')}</h2></div><button class="icon-button" data-command="${live ? 'live-cancel' : 'dismiss'}" aria-label="Dismiss error">${dockIcon('close')}</button></div><div class="capture-actions"><button class="secondary-button" data-command="${live ? 'live-cancel' : 'dismiss'}">Dismiss</button><button class="primary-button" data-command="${live ? 'live-retry' : 'retry'}"${dockView.pending ? ' disabled' : ''}>Try again</button></div></div>`;
 }
 
 function compactBar() {
-  const destinationDisabled = dockView.pending || !['compact', 'draft'].includes(dockState.mode);
-  const quickAddDisabled = dockView.pending || !dockState.connected || dockState.mode !== 'compact';
-  return `<div class="dock-bar">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${quickAddDisabled ? ' disabled' : ''}>${dockIcon('plus')} ${dockView.pending ? 'Adding…' : 'Quick add'}</button><span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}"><span class="dna-dot"></span>${dockState.dnaReady ? 'DNA copied' : 'CK3 ready'}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
+  const unavailable = dockView.pending || dockState.busy || !dockState.connected || dockState.mode !== 'compact';
+  const destinationDisabled = dockView.pending || dockState.busy || !['compact', 'draft'].includes(dockState.mode);
+  const liveControls = dockState.liveEnabled ? `<span class="divider"></span><button class="live-button" data-command="live-import" title="Import persistent DNA from the character open in CK3" aria-label="Import DNA from CK3"${unavailable ? ' disabled' : ''}>${dockIcon('download')}<span>Import</span></button><button class="live-button" data-command="live-prepare-apply" title="${dockState.liveCanApply ? `Apply ${dockEscape(dockState.liveSelectedName)} to the character open in CK3` : 'Select a gallery character with persistent DNA first'}" aria-label="Apply selected gallery DNA to CK3"${unavailable || !dockState.liveCanApply ? ' disabled' : ''}>${dockIcon('apply')}<span>Apply</span></button>` : '';
+  return `<div class="dock-bar">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${unavailable ? ' disabled' : ''}>${dockIcon('plus')} Quick add</button>${liveControls}<span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}"><span class="dna-dot"></span>${dockState.liveImported ? 'Persistent DNA' : dockState.dnaReady ? 'DNA copied' : 'CK3 ready'}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
 }
 
 function dockDisplayGeometry() {
@@ -123,7 +140,7 @@ function renderDock() {
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
   const expanded = mode !== 'compact';
   const classes = ['dock', `position-${dockState.position || 'center'}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
-  const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'error' ? errorMarkup() : '';
+  const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'live-confirm' ? liveConfirmMarkup() : mode === 'live-result' ? liveResultMarkup() : mode === 'error' ? errorMarkup() : '';
   dockRoot.innerHTML = dockState.visible ? `<section class="${classes}" aria-label="Bloodline game dock">${compactBar()}${body}${collectionPicker()}${dockMenu()}</section>${reticleMarkup()}` : '';
   syncCaptureClock();
 }
@@ -131,10 +148,21 @@ function renderDock() {
 function syncCaptureClock() {
   if (captureClock) clearInterval(captureClock);
   captureClock = null;
-  if (!dockState.capture?.startedAt || !['recording', 'matching'].includes(dockState.capture.state)) return;
+  const recording = dockState.capture?.startedAt && ['recording', 'matching'].includes(dockState.capture.state);
+  const undo = dockState.mode === 'live-result' && dockState.liveUndoUntil > Date.now();
+  if (!recording && !undo) return;
   captureClock = setInterval(() => {
-    const clock = document.querySelector('#capture-time');
-    if (clock) clock.textContent = elapsedLabel(dockState.capture.startedAt);
+    if (recording) {
+      const clock = document.querySelector('#capture-time');
+      if (clock) clock.textContent = elapsedLabel(dockState.capture.startedAt);
+    }
+    if (dockState.mode === 'live-result') {
+      if (dockState.liveUndoUntil <= Date.now()) { dockState.liveUndoUntil = 0; renderDock(); }
+      else {
+        const clock = document.querySelector('#live-undo-time');
+        if (clock) clock.textContent = String(Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
+      }
+    }
   }, 500);
 }
 
@@ -153,18 +181,30 @@ function closeMenus() {
 
 async function runCommand(type, payload = {}) {
   if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
-  if (dockView.pending && ['quick-add', 'create-record', 'snapshot', 'live-capture', 'undo-create'].includes(type)) return;
-  if (['quick-add', 'create-record', 'snapshot', 'live-capture', 'undo-create'].includes(type)) { dockView.pending = true; renderDock(); }
+  const blocking = ['quick-add', 'create-record', 'snapshot', 'live-capture', 'undo-create', 'live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-retry'];
+  if (dockView.pending && (blocking.includes(type) || type === 'live-cancel')) return;
+  const operation = { id: ++commandSequence, type };
+  if (blocking.includes(type)) {
+    dockView.pending = true;
+    dockView.pendingCommand = operation;
+    renderDock();
+  }
   try {
     const result = await dockBridge.command(type, payload);
-    if (!result?.ok) {
+    const current = !blocking.includes(type) || dockView.pendingCommand === operation;
+    if (current && !result?.ok && !result?.cancelled) {
       dockState = { ...dockState, mode: 'error', error: result?.error || 'The action could not be completed.' };
       renderDock();
     }
     return result;
   } finally {
-    dockView.pending = false;
-    renderDock();
+    /* A late timeout or completion belongs only to its own command. It cannot unlock,
+       re-render, or overwrite a newer draft's pending state. */
+    if (dockView.pendingCommand === operation) {
+      dockView.pending = false;
+      dockView.pendingCommand = null;
+      renderDock();
+    }
   }
 }
 
@@ -239,15 +279,17 @@ function nudgeCrop(event) {
 dockRoot.addEventListener('click', (event) => {
   const button = event.target.closest('[data-command]');
   if (button) { event.preventDefault(); void selectCommand(button); return; }
+  if (event.target.closest('.dock-text-input')) return;
   if (!event.target.closest('.popover')) { closeMenus(); renderDock(); }
 });
 dockRoot.addEventListener('pointerdown', (event) => {
   const input = event.target.closest('.dock-text-input');
   if (input) {
-    event.preventDefault();
+    /* Native focus must be requested, but Chromium still owns caret placement and
+       drag-selection. Cancelling pointerdown made the field look read-only. */
     textInputActive = true;
     dockBridge.setTextInput(true);
-    setTimeout(() => input.focus(), 0);
+    if (document.activeElement !== input) input.focus({ preventScroll: true });
     return;
   }
   beginCrop(event);
@@ -262,6 +304,7 @@ dockRoot.addEventListener('keydown', (event) => {
     if (textInputActive) { document.activeElement?.blur(); dockBridge.setTextInput(false); textInputActive = false; }
     if (dockView.picker || dockView.menu || dockView.help) { closeMenus(); renderDock(); }
     else if (dockState.mode === 'draft') void runCommand('cancel-draft');
+    else if (['live-confirm', 'live-result'].includes(dockState.mode) || dockState.liveRetry) void runCommand('live-cancel');
     else if (dockState.capture) void runCommand('cancel-capture');
   }
   if (event.key === 'Enter' && event.target.id === 'character-name') {
@@ -291,22 +334,52 @@ dockRoot.addEventListener('focusout', () => {
     if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
   }, 0);
 });
-document.addEventListener('mousemove', (event) => {
+function withinRevealedCompactDock(event) {
+  if (dockState.mode !== 'compact' || !dockView.revealed) return false;
+  const width = Math.min(680, Math.max(0, window.innerWidth - 24));
+  const left = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
+  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < 48;
+}
+
+function dockPointerTargets(event) {
   const target = document.elementFromPoint(event.clientX, event.clientY);
-  setDockRevealed(Boolean(target?.closest('.dock')));
-  setInteractive(Boolean(target?.closest('.dock, .reticle')));
+  /* Removing click-through can immediately dispatch another mousemove before the
+     expansion transition has enlarged the DOM hit box. Use the final compact bounds
+     during that transition so the same pointer cannot collapse its own menu. */
+  const overDock = Boolean(target?.closest('.dock')) || withinRevealedCompactDock(event);
+  return { overDock, overSurface: overDock || Boolean(target?.closest('.reticle')) };
+}
+
+document.addEventListener('mousemove', (event) => {
+  const targets = dockPointerTargets(event);
+  setDockRevealed(targets.overDock);
+  setInteractive(targets.overSurface);
 });
-document.addEventListener('mouseleave', () => { if (!drag) { setInteractive(false); setDockRevealed(false); } });
+document.addEventListener('mouseleave', (event) => {
+  /* Windows can emit a synthetic leave at the same coordinates when the native
+     click-through flag or dock mode changes. Check the actual expanded controls,
+     not only the compact strip, before treating it as a real departure. */
+  if (!drag && !dockPointerTargets(event).overSurface) { setInteractive(false); setDockRevealed(false); }
+});
 window.addEventListener('blur', () => { if (!drag) { setInteractive(false); setDockRevealed(false); } });
 dockBridge.onState((nextState) => {
   const input = document.activeElement;
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';
   const name = preserveName ? input.value : '';
+  const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
+  if ((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0)) {
+    dockView.pending = false;
+    dockView.pendingCommand = null;
+  }
   dockState = { ...dockState, ...nextState };
   if (preserveName) dockState.characterName = name;
   renderDock();
-  if (preserveName) { const field = document.querySelector('#character-name'); field?.focus(); field?.setSelectionRange(name.length, name.length); }
+  if (preserveName) {
+    const field = document.querySelector('#character-name');
+    field?.focus({ preventScroll: true });
+    field?.setSelectionRange(selection.start, selection.end, selection.direction);
+  }
   if (preservePicker) document.querySelector('#collection-filter')?.focus();
   if (nextState.message || nextState.error) announcer.textContent = nextState.error || nextState.message;
 });

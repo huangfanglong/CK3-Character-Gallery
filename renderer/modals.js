@@ -1,3 +1,40 @@
+function showLiveGameLinkConsent() {
+  if (!desktop?.setLiveGameLinkChoice || state.gameDockPreferences?.liveLink?.decision !== 'undecided') return;
+  state.liveLinkConsentPending = true;
+  state.activeMenu = null;
+  state.modal = `<div class="modal-backdrop live-link-backdrop"><div class="modal live-link-consent" role="dialog" aria-modal="true" aria-labelledby="live-link-title" aria-describedby="live-link-description"><div class="live-link-emblem" aria-hidden="true"><span>B</span><i></i><span>CK3</span></div><p class="eyebrow">OPTIONAL · LIVE GAME LINK</p><h2 id="live-link-title">Bring your archive into character view</h2><p class="modal-copy" id="live-link-description">Import persistent DNA from the character whose CK3 window is open, or apply a selected gallery record’s DNA after an explicit confirmation.</p><div class="live-link-permissions"><p><strong>Only when you choose an action</strong><span>Bloodline reads the CK3 process for Import. It requests write access only for Apply or Undo.</span></p><p><strong>No changes when you enable this</strong><span>Your archive keeps persistent DNA. No generated Base64 is stored or shown.</span></p></div><p class="live-link-caveat">Game updates or modded gene catalogs may be incompatible. Bloodline refuses uncertain layouts instead of guessing. Hair, beard, clothing, and special appearance entries are not applied.</p><div class="modal-actions"><button class="outline-button" data-action="live-link-decline">Keep off</button><button class="primary-button" data-action="live-link-accept" autofocus>Enable Live Game Link ${icon('arrow')}</button></div><p class="live-link-choice-note">Choose once. Change this later in File → Live Game Link.</p></div></div>`;
+  render('modal');
+  focusWithoutScroll(document.querySelector('[data-action="live-link-accept"]'));
+}
+
+function receiveGameDockPreferences(preferences) {
+  if (!preferences || typeof preferences !== 'object') return;
+  state.gameDockPreferences = preferences;
+  if (preferences.liveLink?.decision === 'undecided') {
+    renderChrome();
+    if (state.libraryReady) showLiveGameLinkConsent();
+    return;
+  }
+  if (state.liveLinkConsentPending) {
+    state.liveLinkConsentPending = false;
+    state.modal = null;
+    render();
+  } else renderChrome();
+}
+
+function trapLiveLinkConsentFocus(event) {
+  if (!state.liveLinkConsentPending) return false;
+  const dialog = document.querySelector('.live-link-consent');
+  const controls = [...(dialog?.querySelectorAll('button:not(:disabled)') || [])];
+  if (event.key === 'Tab' && controls.length) {
+    event.preventDefault();
+    const index = controls.indexOf(document.activeElement);
+    const next = event.shiftKey ? (index <= 0 ? controls.length - 1 : index - 1) : (index + 1) % controls.length;
+    controls[next].focus();
+  } else if (event.key !== 'Tab') event.preventDefault();
+  return true;
+}
+
 function showCharacterModal(portraitSource = null, dnaSource = null) {
   state.pendingPortraitSource = portraitSource;
   state.pendingDnaSource = dnaSource;
@@ -131,6 +168,11 @@ function showDnaOverwriteConfirmation(dna) {
 }
 
 async function handleModalAction(name) {
+  if (state.liveLinkConsentPending) {
+    if (name === 'live-link-accept') return setLiveGameLinkChoice(true);
+    if (name === 'live-link-decline') return setLiveGameLinkChoice(false);
+    return;
+  }
   if (name === 'close-modal') {
     releaseCropSource();
     if (state.captureSession) await releaseLiveCapture();

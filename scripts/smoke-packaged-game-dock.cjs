@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-function runPackagedGameDock() {
+async function runPackagedGameDock() {
   const asarPath = path.join(path.resolve(process.env.CK3_PACKAGE_DIRECTORY || path.join(__dirname, '..', 'release', 'win-unpacked')), 'resources', 'app.asar');
   const { WindowsGameMonitor } = require(path.join(asarPath, 'electron', 'windows-game-monitor.cjs'));
   const { gameDockBounds, normalizeDockPreferences } = require(path.join(asarPath, 'electron', 'game-dock.cjs'));
-  assert.deepEqual(normalizeDockPreferences({ enabled: false, position: 'right', collection: ' Court ' }), { enabled: false, position: 'right', collection: 'Court' });
+  assert.deepEqual(normalizeDockPreferences({ enabled: false, position: 'right', collection: ' Court ' }), { enabled: false, position: 'right', collection: 'Court', liveLink: { decision: 'undecided', enabled: false } });
   assert.deepEqual(gameDockBounds({ clientBounds: { x: -12, y: 42, width: 1920, height: 1032 } }), { x: -12, y: 42, width: 1920, height: 1032 });
 
   const monitor = new WindowsGameMonitor({ reconcileIntervalMs: 100 });
@@ -25,10 +25,18 @@ function runPackagedGameDock() {
   assert.equal(monitor.started, false);
   assert.equal(monitor.hooks.length, 0);
   assert.equal(monitor.callbacks.length, 0);
-  console.log('Packaged game dock smoke test passed: app.asar loading, native Koffi, Win32 hooks, foreground reconciliation, preference normalization, and cleanup.');
+
+  const { LiveGameBridge } = require(path.join(asarPath, 'electron', 'live-game-bridge.cjs'));
+  const liveBridge = new LiveGameBridge({ workerPath: path.join(asarPath, 'electron', 'live-game-worker.cjs') });
+  try {
+    assert.equal(await liveBridge.setEnabled(true), true, 'The packaged Live Game Link worker could not start. Enabling alone must not access CK3.');
+  } finally {
+    await liveBridge.close();
+  }
+  console.log('Packaged game dock smoke test passed: app.asar loading, native Koffi, Win32 hooks, live-worker startup without game access, preference normalization, and cleanup.');
 }
 
-function main() {
+async function main() {
   if (process.platform !== 'win32') return console.log('Packaged game dock smoke test skipped outside Windows.');
   if (process.env.CK3_PACKAGED_GAME_DOCK === '1') return runPackagedGameDock();
   const executable = path.join(path.resolve(process.env.CK3_PACKAGE_DIRECTORY || path.join(__dirname, '..', 'release', 'win-unpacked')), 'CK3 Character Gallery.exe');
@@ -52,5 +60,4 @@ function main() {
   }
 }
 
-try { main(); }
-catch (error) { console.error(error); process.exitCode = 1; }
+main().catch((error) => { console.error(error); process.exitCode = 1; });

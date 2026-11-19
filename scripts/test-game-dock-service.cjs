@@ -15,7 +15,14 @@ function fixture(options = {}) {
     setEnabled(value) { this.preferences.enabled = value; },
   };
   const commands = [];
-  const contents = { id: 7, isDestroyed: () => false, send(channel, value) { if (channel === 'game-dock:command') { commands.push(value); queueMicrotask(() => service.completeRendererResult({ sender: contents, senderFrame: contents.mainFrame }, value.operationId, { ok: true })); } } };
+  const cancellations = [];
+  const contents = { id: 7, isDestroyed: () => false, send(channel, value) {
+    if (channel === 'game-dock:cancel') cancellations.push(value);
+    if (channel === 'game-dock:command') {
+      commands.push(value);
+      if (options.autoRespond !== false) queueMicrotask(() => service.completeRendererResult({ sender: contents, senderFrame: contents.mainFrame }, value.operationId, { ok: true }));
+    }
+  } };
   contents.mainFrame = {};
   let clipboard = '';
   let reads = 0;
@@ -27,9 +34,10 @@ function fixture(options = {}) {
     createId: (() => { let index = 0; return () => `draft-${++index}`; })(),
     ...(Object.hasOwn(options, 'preferences') ? { preferences: options.preferences } : { preferences: { enabled: true, position: 'center', collection: 'Court' } }),
     preferencesPath: options.preferencesPath || '',
+    rendererCommandTimeoutMs: options.rendererCommandTimeoutMs,
   });
   service.mainWindowWebContentsId = contents.id;
-  return { dock, commands, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads };
+  return { dock, commands, cancellations, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads };
 }
 
 (async () => {
@@ -94,7 +102,7 @@ function fixture(options = {}) {
     stored.service.preferencesChanged({ enabled: false, position: 'right', collection: 'Court' });
     await stored.service.preferencesSaveQueue;
     const saved = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
-    assert.deepEqual(saved, { enabled: false, position: 'right', collection: 'Court' }, 'Queued writes must persist the latest preferences.');
+    assert.deepEqual(saved, { enabled: false, position: 'right', collection: 'Court', liveLink: { decision: 'undecided', enabled: false } }, 'Queued writes must persist the latest preferences.');
 
     const restarted = fixture({ preferencesPath, preferences: undefined });
     await restarted.service.loadPreferences();
@@ -105,10 +113,51 @@ function fixture(options = {}) {
     stored.service.destroy();
     fs.rmSync(preferencesDirectory, { recursive: true, force: true });
   }
+  const stalled = fixture({ autoRespond: false });
+  stalled.setClipboard(validDna);
+  const creating = stalled.service.handleCommand({ operationId: 'op-stalled', type: 'quick-add', payload: {} });
+  assert.equal(stalled.commands.length, 1);
+  stalled.dock.game = null;
+  const cancelled = await stalled.service.handleCommand({ operationId: 'op-cancel', type: 'cancel-draft', payload: {} });
+  assert.equal(cancelled.ok, true, 'Cancel works while a dock text field owns foreground focus.');
+  assert.equal((await creating).cancelled, true, 'Cancel resolves the pending renderer mutation.');
+  assert.equal(stalled.service.pendingRenderer.size, 0);
+  assert.equal(stalled.service.mutation, null);
+  assert.deepEqual(stalled.cancellations[0], { draftId: 'draft-1', reason: 'cancelled', operationIds: ['op-stalled'] });
+  assert.equal(stalled.service.updateFromRenderer({ mode: 'framing', draftId: 'draft-1', busy: false }), false, 'Late state from a cancelled draft is ignored.');
+  assert.equal(stalled.dock.state.mode, 'compact');
+  assert.equal(stalled.service.completeRendererResult({ sender: stalled.contents, senderFrame: stalled.contents.mainFrame }, 'op-stalled', { ok: true }), false);
+  stalled.dock.game = { hwnd: '42' };
+  const newDraft = stalled.service.handleCommand({ operationId: 'op-new', type: 'quick-add', payload: {} });
+  assert.equal(stalled.commands.length, 2, 'A new draft is not blocked by the retired mutation.');
+  stalled.service.completeRendererResult({ sender: stalled.contents, senderFrame: stalled.contents.mainFrame }, 'op-new', { ok: true });
+  assert.equal((await newDraft).ok, true);
+  stalled.service.destroy();
+
+  const capturePending = fixture({ autoRespond: false });
+  capturePending.setClipboard(validDna);
+  const creatingCapture = capturePending.service.handleCommand({ operationId: 'op-capture-start', type: 'quick-add', payload: {} });
+  capturePending.dock.update({ mode: 'capture', capture: { state: 'starting' } });
+  const cancelledCapture = await capturePending.service.handleCommand({ operationId: 'op-capture-cancel', type: 'cancel-capture', payload: {} });
+  assert.equal(cancelledCapture.cancelled, true, 'The Preparing capture Cancel button aborts creation instead of being rejected as another mutation.');
+  assert.equal((await creatingCapture).cancelled, true);
+  assert.equal(capturePending.dock.state.mode, 'compact');
+  capturePending.service.destroy();
+
+  const timedOut = fixture({ autoRespond: false, rendererCommandTimeoutMs: 20 });
+  timedOut.setClipboard(validDna);
+  const timeoutResult = await timedOut.service.handleCommand({ operationId: 'op-timeout', type: 'quick-add', payload: {} });
+  assert.equal(timeoutResult.ok, false);
+  assert.match(timeoutResult.error, /did not finish/);
+  assert.equal(timedOut.service.pendingRenderer.size, 0);
+  assert.equal(timedOut.cancellations.at(-1).reason, 'timeout');
+  assert.equal(timedOut.dock.state.mode, 'error');
+  timedOut.service.destroy();
+
   blocked.service.destroy();
   valid.service.destroy();
   fast.service.destroy();
-  console.log('Game dock service tests passed: scoped clipboard access, fast quick-add, draft continuity, trusted forwarding, queued preferences, restart loading, and cleanup.');
+  console.log('Game dock service tests passed: clipboard scoping, forwarding, preferences, focus-independent cancellation, bounded requests, stale-result rejection, and cleanup.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
 function delayImmediate() { return new Promise((resolve) => setImmediate(resolve)); }

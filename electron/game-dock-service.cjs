@@ -4,8 +4,11 @@ const { WindowsGameMonitor } = require('./windows-game-monitor.cjs');
 const { GameDock, normalizeDockPreferences } = require('./game-dock.cjs');
 const { normalizeGameDockCommand, normalizeGameDockState } = require('./game-dock-commands.cjs');
 const { isValidCk3Dna } = require('../renderer/dna-validation.js');
+const { parsePersistentDna } = require('./live-dna-codec.cjs');
+const { LiveGameBridge } = require('./live-game-bridge.cjs');
 
 const MUTATING_COMMANDS = new Set(['quick-add', 'create-record', 'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'undo-create', 'finish-without-portrait', 'retry']);
+const LIVE_COMMANDS = new Set(['live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-cancel', 'live-retry']);
 
 class GameDockService {
   constructor(options) {
@@ -17,19 +20,31 @@ class GameDockService {
     this.logger = options.logger || console;
     this.setInterval = options.setInterval || global.setInterval;
     this.clearInterval = options.clearInterval || global.clearInterval;
+    this.setTimeout = options.setTimeout || global.setTimeout;
+    this.clearTimeout = options.clearTimeout || global.clearTimeout;
+    this.rendererCommandTimeoutMs = Number.isFinite(options.rendererCommandTimeoutMs) ? Math.max(10, options.rendererCommandTimeoutMs) : 20_000;
     this.dock = options.dock || null;
     this.preferences = normalizeDockPreferences(options.preferences);
     this.preferencesPath = options.preferencesPath || '';
     this.preferencesLoaded = Boolean(options.preferences);
     this.preferencesSaveQueue = Promise.resolve();
     this.pending = new Map();
+    this.pendingRenderer = new Map();
     this.completed = new Map();
     this.mutation = null;
+    this.mutationKind = '';
+    this.liveRevision = 0;
     this.draftActive = false;
     this.draftDna = '';
     this.clipboardTimer = null;
     this.destroyed = false;
     this.mainWindowWebContentsId = null;
+    this.liveBridge = options.liveBridge || new LiveGameBridge({ cachePath: this.preferencesPath ? path.join(path.dirname(this.preferencesPath), 'live-layout-cache.json') : '', logger: this.logger });
+    this.selection = null;
+    this.selectionSignature = '';
+    this.liveApply = null;
+    this.lastLiveCommand = null;
+    this.liveQueue = Promise.resolve();
   }
 
   async loadPreferences() {
@@ -46,7 +61,7 @@ class GameDockService {
 
   async savePreferences() {
     if (!this.preferencesPath) return;
-    const preferences = { ...this.preferences };
+    const preferences = { ...this.preferences, liveLink: { ...this.preferences.liveLink } };
     const save = this.preferencesSaveQueue.catch(() => {}).then(async () => {
       const temporary = `${this.preferencesPath}.tmp`;
       await fs.mkdir(path.dirname(this.preferencesPath), { recursive: true });
@@ -75,21 +90,106 @@ class GameDockService {
         onGameLoss: () => this.notifyGameLoss(),
       });
     }
+    if (this.preferences.liveLink.enabled) {
+      try { await this.liveBridge.setEnabled(true); }
+      catch (error) { this.logger.error('Live Game Link could not start:', error); }
+    }
+    this.syncLiveState();
     if (!this.preferences.enabled) return false;
     return this.dock.start();
   }
 
   preferencesChanged(preferences) {
-    this.preferences = normalizeDockPreferences(preferences);
+    /* Live Game Link is service-owned; dock position/visibility callbacks must not restore
+       the dock's older consent value and unexpectedly show the first-run dialog again. */
+    this.preferences = normalizeDockPreferences({ ...preferences, liveLink: this.preferences.liveLink });
     void this.savePreferences().catch((error) => this.logger.error('Game dock preferences could not be saved:', error));
+    this.broadcastPreferences();
+    this.syncLiveState();
+  }
+
+  broadcastPreferences() {
     const contents = this.getMainContents();
-    if (contents && !contents.isDestroyed()) contents.send('game-dock:preferences', { ...this.preferences });
+    if (contents && !contents.isDestroyed()) contents.send('game-dock:preferences', { ...this.preferences, liveLink: { ...this.preferences.liveLink } });
+  }
+
+  async setLiveLinkChoice(enabled) {
+    await this.loadPreferences();
+    this.preferences = normalizeDockPreferences({ ...this.preferences, liveLink: { decision: enabled ? 'enabled' : 'declined', enabled: Boolean(enabled) } });
+    await this.savePreferences();
+    try { await this.applyLivePreference(); }
+    finally {
+      this.broadcastPreferences();
+      this.syncLiveState();
+    }
+    return { ...this.preferences.liveLink };
+  }
+
+  async setLiveLinkEnabled(enabled) {
+    await this.loadPreferences();
+    const decision = enabled ? 'enabled' : this.preferences.liveLink.decision;
+    this.preferences = normalizeDockPreferences({ ...this.preferences, liveLink: { decision, enabled: Boolean(enabled) } });
+    await this.savePreferences();
+    try { await this.applyLivePreference(); }
+    finally {
+      this.broadcastPreferences();
+      this.syncLiveState();
+    }
+    return { ...this.preferences.liveLink };
+  }
+
+  async applyLivePreference() {
+    if (!this.preferences.liveLink.enabled) {
+      this.retireLiveOperations();
+      try { await this.liveBridge.setEnabled(false); }
+      finally {
+        /* Preference changes also retire the dock's local pending command. Late IPC
+           replies remain identity-checked and cannot unlock a newer operation. */
+        this.dock?.retirePendingCommands?.();
+        this.clearLiveState();
+      }
+      return false;
+    }
+    await this.liveBridge.setEnabled(true);
+    return true;
+  }
+
+  async ensureLiveBridge() {
+    /* enabled records the user's runtime choice; workerReady proves this particular
+       worker received it. A crashed replacement must complete its own handshake. */
+    if (this.liveBridge.enabled && this.liveBridge.workerReady !== false) return true;
+    await this.liveBridge.setEnabled(true);
+    if (!this.liveBridge.enabled) throw new Error('Live Game Link is still starting. Try the action again.');
+    return true;
+  }
+
+  retireLiveOperations() {
+    ++this.liveRevision;
+    /* Detach an unsettled legacy worker operation from the queue. Revision checks
+       keep its eventual result away from the replacement live-link session. */
+    this.liveQueue = Promise.resolve();
+    this.liveApply = null;
+    this.lastLiveCommand = null;
+    if (this.mutationKind === 'live') {
+      this.mutation = null;
+      this.mutationKind = '';
+    }
+  }
+
+  syncLiveState() {
+    if (!this.dock) return;
+    this.dock.syncPreferences?.({ liveLink: this.preferences.liveLink });
+    this.dock.update({ liveEnabled: this.preferences.liveLink.enabled, liveSelectedName: this.selection?.name || '', liveCanApply: Boolean(this.selection) });
   }
 
   setEnabled(enabled) {
     if (!this.dock) return false;
     const result = this.dock.setEnabled(Boolean(enabled));
-    if (!enabled) this.clearDraft();
+    if (!enabled) {
+      this.cancelRendererDraft(this.dock.state.draftId || '');
+      this.clearDraft();
+      this.clearLiveState();
+    }
     return result;
   }
 
@@ -100,10 +200,37 @@ class GameDockService {
     if (selected && selected !== this.preferences.collection) this.dock.setPreferences({ collection: selected });
   }
 
+  syncSelection(input) {
+    let selection = null;
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      if (typeof input.id !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(input.id) || typeof input.name !== 'string' || !Number.isFinite(input.modified) || typeof input.dna !== 'string' || input.dna.length > 1_000_000) throw new Error('The selected gallery record is invalid.');
+      try {
+        parsePersistentDna(input.dna);
+        selection = { id: input.id, name: input.name.trim().slice(0, 120), modified: input.modified, dna: input.dna.trim() };
+      } catch { selection = null; }
+    }
+    const signature = selection ? `${selection.id}:${selection.modified}:${selection.dna}` : '';
+    if (signature === this.selectionSignature) { this.syncLiveState(); return; }
+    this.selectionSignature = signature;
+    this.selection = selection;
+    this.liveApply = null;
+    this.lastLiveCommand = null;
+    void this.liveBridge.cancel().catch(() => {});
+    if (['live-confirm', 'live-result'].includes(this.dock?.state.mode) || this.dock?.state.liveRetry) this.clearLiveState();
+    this.syncLiveState();
+  }
+
   validateGameHwnd(value) {
     const hwnd = typeof value === 'string' ? value : '';
     if (!/^\d{1,20}$/.test(hwnd) || String(this.dock?.game?.hwnd || '') !== hwnd) throw new Error('The foreground CK3 window has changed. Start the capture again.');
     return hwnd;
+  }
+
+  liveGame() {
+    if (!this.preferences.liveLink.enabled) throw new Error('Live Game Link is turned off. Enable it in File → Live Game Link.');
+    const game = this.dock?.game;
+    if (!game?.processId || game.executable !== 'ck3.exe' || !game.executablePath) throw new Error('Focus CK3 before using Live Game Link.');
+    return { pid: game.processId, executablePath: game.executablePath };
   }
 
   validateCaptureContext(context) {
@@ -115,12 +242,16 @@ class GameDockService {
   }
 
   updateFromRenderer(patch) {
-    if (!this.dock) return;
+    if (!this.dock) return false;
     const state = normalizeGameDockState(patch);
+    /* Renderer operations carry their draft identity even after IPC settles. Never let
+       a cancelled operation reopen framing or overwrite a newer destination/draft. */
+    if (state.draftId && state.draftId !== this.dock.state.draftId) return false;
     this.dock.update(state);
     if (state.collection && state.collection !== this.preferences.collection) this.dock.setPreferences({ collection: state.collection });
     if (state.mode && state.mode !== 'draft') this.setDraftActive(false);
     if (['compact', 'success'].includes(state.mode) && !state.characterId && this.dock.state.mode === 'compact') this.draftDna = '';
+    return true;
   }
 
   setDraftActive(active) {
@@ -140,7 +271,7 @@ class GameDockService {
     catch (error) { this.logger.error('Draft clipboard could not be read:', error); return false; }
     if (!this.draftActive || this.dock.state.mode !== 'draft' || !isValidCk3Dna(text)) return false;
     this.draftDna = text.trim();
-    this.dock.update({ dnaReady: true, message: 'DNA detected. Choose a destination and create the record.' });
+    this.dock.update({ dnaReady: true, liveImported: false, message: 'DNA detected. Choose a destination and create the record.' });
     this.setDraftActive(false);
     return true;
   }
@@ -172,6 +303,30 @@ class GameDockService {
       this.dock.update({ collection: payload.collection });
       return { ok: true };
     }
+    if (LIVE_COMMANDS.has(type)) {
+      if (this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
+      const revision = this.liveRevision;
+      const operation = this.liveQueue.catch(() => {}).then(() => this.executeLiveCommand(command, revision));
+      this.liveQueue = operation.catch(() => {});
+      this.mutation = operation;
+      this.mutationKind = 'live';
+      try { return await operation; }
+      finally {
+        if (this.mutation === operation) {
+          this.mutation = null;
+          this.mutationKind = '';
+        }
+      }
+    }
+    /* Dismissal is local cleanup. It must still work while the dock's name field owns
+       Windows focus, or after CK3 loses its foreground window. */
+    if (type === 'cancel-draft' || type === 'dismiss' || (type === 'cancel-capture' && this.mutation)) {
+      this.cancelRendererDraft(this.dock.state.draftId || '');
+      this.clearDraft();
+      this.clearLiveState();
+      void this.liveBridge.cancel().catch(() => {});
+      return { ok: true, cancelled: true };
+    }
     if (!this.dock.game?.hwnd && type !== 'view-gallery') throw new Error('CK3 is no longer in the foreground.');
     if (type === 'quick-add') {
       if (this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
@@ -179,17 +334,13 @@ class GameDockService {
       this.draftDna = '';
       const clipboardText = this.clipboard.readText();
       const dna = isValidCk3Dna(clipboardText) ? clipboardText.trim() : '';
+      this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: Boolean(dna), dnaAttached: false, liveImported: false, capture: null, crop: null, error: '', message: dna ? 'Creating the character…' : 'Copy DNA in CK3 to continue.' });
       if (!dna) {
-        this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: false, dnaAttached: false, capture: null, crop: null, error: '', message: 'Copy DNA in CK3 to continue.' });
         this.setDraftActive(this.dock.state.visible);
         return { ok: true };
       }
       this.draftDna = dna;
       return this.runMutation({ ...command, payload: { ...payload, draftId, dna, collection: this.dock.state.collection, gameHwnd: this.dock.game.hwnd } });
-    }
-    if (type === 'cancel-draft' || type === 'dismiss') {
-      this.clearDraft();
-      return { ok: true };
     }
     if (MUTATING_COMMANDS.has(type) && this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
     const enriched = { ...command, payload: { ...payload, draftId: this.dock.state.draftId, collection: this.dock.state.collection, gameHwnd: this.dock.game?.hwnd || '' } };
@@ -197,18 +348,135 @@ class GameDockService {
     return MUTATING_COMMANDS.has(type) ? this.runMutation(enriched) : this.forward(enriched);
   }
 
+  async executeLiveCommand(command, revision = this.liveRevision) {
+    const stale = () => revision !== this.liveRevision;
+    if (stale()) return { ok: true, cancelled: true };
+    const { type } = command;
+    if (type === 'live-cancel') {
+      await this.liveBridge.cancel();
+      if (stale()) return { ok: true, cancelled: true };
+      this.liveApply = null;
+      this.lastLiveCommand = null;
+      this.clearLiveState();
+      return { ok: true };
+    }
+    if (type === 'live-retry') {
+      if (!this.lastLiveCommand) throw new Error('Start the live-game action again.');
+      command = { ...this.lastLiveCommand, operationId: command.operationId };
+    }
+    try {
+      if (command.type === 'live-import') {
+        this.lastLiveCommand = command;
+        this.dock.update({ busy: true, message: 'Validating the open CK3 character…', error: '', liveRetry: false });
+        const game = this.liveGame();
+        await this.ensureLiveBridge();
+        if (stale()) return { ok: true, cancelled: true };
+        const result = await this.liveBridge.import(game);
+        if (stale()) return { ok: true, cancelled: true };
+        parsePersistentDna(result.dna);
+        const draftId = this.createId();
+        this.draftDna = result.dna;
+        this.dock.update({ mode: 'draft', busy: false, draftId, characterId: '', characterName: result.target.name, dnaReady: true, dnaAttached: true, liveImported: true, capture: null, crop: null, error: '', liveRetry: false, message: `${result.geneCount} genes imported as persistent DNA. Hairstyle, beard, and clothing are not in this DNA array.` });
+        this.lastLiveCommand = null;
+        return { ok: true };
+      }
+      if (command.type === 'live-prepare-apply') {
+        if (!this.selection) throw new Error('Select a gallery character with persistent Ruler Designer DNA in Bloodline first. Base64-only records need persistent DNA before they can be applied.');
+        this.lastLiveCommand = command;
+        const signature = this.selectionSignature;
+        this.dock.update({ busy: true, message: 'Preparing a version-matched DNA preview…', error: '', liveRetry: false });
+        const game = this.liveGame();
+        await this.ensureLiveBridge();
+        if (stale()) return { ok: true, cancelled: true };
+        const result = await this.liveBridge.prepareApply(game, this.selection);
+        if (stale()) return { ok: true, cancelled: true };
+        if (signature !== this.selectionSignature) { await this.liveBridge.cancel(); throw new Error('The gallery selection changed. No DNA was applied.'); }
+        this.liveApply = { token: result.token, selectionSignature: signature };
+        this.dock.update({ mode: 'live-confirm', busy: false, liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: 0, liveRetry: false, error: '', message: '' });
+        return { ok: true };
+      }
+      if (command.type === 'live-confirm-apply') {
+        if (!this.liveApply || this.liveApply.selectionSignature !== this.selectionSignature) throw new Error('The gallery record changed or this preview expired. Prepare the apply again.');
+        this.dock.update({ busy: true, liveRetry: false, error: '' });
+        const result = await this.liveBridge.confirmApply(this.liveGame(), this.liveApply.token);
+        if (stale()) return { ok: true, cancelled: true };
+        this.liveApply = null;
+        this.lastLiveCommand = null;
+        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: `Applied ${result.report.geneCount} mapped genes. Hair, beard, and clothing were not changed.` });
+        return { ok: true };
+      }
+      if (command.type === 'live-undo') {
+        if (!this.dock.state.liveUndoUntil || this.dock.state.liveUndoUntil <= Date.now()) throw new Error('The guarded undo window has expired.');
+        this.dock.update({ busy: true, error: '' });
+        const result = await this.liveBridge.undo(this.liveGame());
+        if (stale()) return { ok: true, cancelled: true };
+        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: 0, liveRetry: false, error: '', message: 'Original DNA restored and verified.' });
+        return { ok: true };
+      }
+      throw new Error('That live-game action is not available.');
+    } catch (error) {
+      if (stale()) return { ok: true, cancelled: true };
+      const message = String(error.message || error).slice(0, 500);
+      this.liveApply = null;
+      this.dock.update({ mode: 'error', busy: false, error: message, liveRetry: Boolean(this.lastLiveCommand) });
+      return { ok: false, error: message };
+    }
+  }
+
+  clearLiveState() {
+    if (!this.dock) return;
+    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveReport: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, error: '' });
+  }
+
   async runMutation(command) {
-    const operation = this.forward(command).finally(() => { if (this.mutation === operation) this.mutation = null; });
+    const operation = this.forward(command);
     this.mutation = operation;
-    const result = await operation;
-    if (result.ok && ['quick-add', 'create-record', 'finish-without-portrait', 'dismiss'].includes(command.type)) this.clearDraft(false);
-    return result;
+    this.mutationKind = 'archive';
+    try {
+      const result = await operation;
+      if (result.cancelled || this.mutation !== operation) return { ok: true, cancelled: true };
+      if (result.ok && ['quick-add', 'create-record', 'finish-without-portrait', 'dismiss'].includes(command.type)) this.clearDraft(false);
+      return result;
+    } finally {
+      if (this.mutation === operation) {
+        this.mutation = null;
+        this.mutationKind = '';
+      }
+    }
   }
 
   clearDraft(resetState = true) {
     this.setDraftActive(false);
     this.draftDna = '';
-    if (resetState && this.dock) this.dock.update({ mode: 'compact', draftId: null, characterId: null, characterName: '', dnaReady: false, dnaAttached: false, capture: null, crop: null, sourceSize: null, message: '', error: '', undoUntil: 0 });
+    if (resetState && this.dock) this.dock.update({ mode: 'compact', draftId: null, characterId: null, characterName: '', dnaReady: false, dnaAttached: false, liveImported: false, capture: null, crop: null, sourceSize: null, message: '', error: '', undoUntil: 0 });
+  }
+
+  settleRendererRequest(operationId, response) {
+    const request = this.pendingRenderer.get(operationId);
+    if (!request) return false;
+    this.pendingRenderer.delete(operationId);
+    this.clearTimeout(request.timeout);
+    request.resolve(response);
+    return true;
+  }
+
+  cancelRendererDraft(draftId, reason = 'cancelled') {
+    if (!draftId) return false;
+    const operationIds = [];
+    for (const [operationId, request] of this.pendingRenderer) {
+      if (request.draftId !== draftId) continue;
+      operationIds.push(operationId);
+      this.settleRendererRequest(operationId, { ok: true, cancelled: true });
+    }
+    const contents = this.getMainContents();
+    if (contents && !contents.isDestroyed()) contents.send('game-dock:cancel', { draftId, reason, operationIds });
+    /* The forward promise's own finally still runs; this merely lets a new local draft
+       open immediately without waiting behind an obsolete renderer operation. */
+    if (this.mutation && reason !== 'timeout') {
+      this.mutation = null;
+      this.mutationKind = '';
+    }
+    return true;
   }
 
   forward(command) {
@@ -216,26 +484,37 @@ class GameDockService {
     if (!contents || contents.isDestroyed()) return Promise.resolve({ ok: false, error: 'The gallery is still starting. Try again in a moment.' });
     if (command.type === 'view-gallery') this.showMainWindow();
     return new Promise((resolve) => {
-      this.pendingRenderer = this.pendingRenderer || new Map();
-      this.pendingRenderer.set(command.operationId, { resolve, contentsId: contents.id });
-      contents.send('game-dock:command', command);
+      const request = {
+        resolve, contentsId: contents.id, draftId: command.payload?.draftId || '', timeout: null,
+      };
+      this.pendingRenderer.set(command.operationId, request);
+      request.timeout = this.setTimeout(() => {
+        const error = 'The gallery did not finish this action. Saved changes are kept. Try again or cancel.';
+        if (!this.settleRendererRequest(command.operationId, { ok: false, error })) return;
+        if (request.draftId) this.cancelRendererDraft(request.draftId, 'timeout');
+        if (this.dock && (!request.draftId || this.dock.state.draftId === request.draftId)) this.dock.update({ mode: 'error', error, busy: false });
+      }, this.rendererCommandTimeoutMs);
+      try { contents.send('game-dock:command', command); }
+      catch { this.settleRendererRequest(command.operationId, { ok: false, error: 'The gallery could not receive this action. Try again.' }); }
     });
   }
 
   completeRendererResult(event, operationId, result) {
-    const request = this.pendingRenderer?.get(operationId);
+    const request = this.pendingRenderer.get(operationId);
     if (!request || event.sender.id !== request.contentsId || event.sender.id !== this.mainWindowWebContentsId || event.senderFrame !== event.sender.mainFrame) return false;
-    this.pendingRenderer.delete(operationId);
-    const response = { ok: result?.ok !== false };
+    const response = { ok: result?.cancelled ? true : result?.ok !== false };
+    if (result?.cancelled) response.cancelled = true;
     if (!response.ok) response.error = String(result?.error || 'The action could not be completed.').slice(0, 256);
-    request.resolve(response);
+    this.settleRendererRequest(operationId, response);
     if (!response.ok && this.dock.state.mode !== 'error') this.dock.update({ mode: 'error', error: response.error, busy: false });
     return true;
   }
 
   notifyGameLoss() {
     const contents = this.getMainContents();
-    if (contents && !contents.isDestroyed()) contents.send('game-dock:game-lost', { draftId: this.dock?.state.draftId || '' });
+    const draftId = this.dock?.state.draftId || '';
+    const operationIds = [...this.pendingRenderer].filter(([, request]) => request.draftId === draftId).map(([operationId]) => operationId);
+    if (contents && !contents.isDestroyed()) contents.send('game-dock:game-lost', { draftId, operationIds });
   }
 
   updateCapture(capture, status) {
@@ -255,10 +534,13 @@ class GameDockService {
     this.destroyed = true;
     this.setDraftActive(false);
     this.draftDna = '';
-    if (this.pendingRenderer) {
-      for (const request of this.pendingRenderer.values()) request.resolve({ ok: false, error: 'The application is closing.' });
-      this.pendingRenderer.clear();
+    this.selection = null;
+    this.selectionSignature = '';
+    this.liveApply = null;
+    for (const operationId of this.pendingRenderer.keys()) {
+      this.settleRendererRequest(operationId, { ok: false, error: 'The application is closing.' });
     }
+    void this.liveBridge.close().catch(() => {});
     this.dock?.destroy();
     this.dock = null;
   }

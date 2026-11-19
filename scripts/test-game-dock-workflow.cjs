@@ -2,9 +2,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
+const delayImmediate = () => new Promise((resolve) => setImmediate(resolve));
 
 const context = {
-  console, crypto,
+  console, crypto, AbortController, setTimeout, clearTimeout,
   state: {
     galleries: [{ name: 'Court', characters: [] }], activeGallery: 'Court', activeId: null,
     focusContext: 'character', selectedVariantIndex: null, preview: false, modal: null,
@@ -22,7 +23,7 @@ const context = {
   resetSelection(id = null) { context.state.activeId = id; context.state.focusContext = 'character'; context.state.selectedVariantIndex = null; },
   cleanupUnusedPortraits: async (paths) => { context.deletedImages.push(...paths); return 0; },
   bindCharacterGallery(id) { const gallery = context.state.galleries.find((item) => item.characters.some((character) => character.id === id)); if (gallery) context.state.activeGallery = gallery.name; },
-  startDockLiveCapture: async () => { context.state.captureSession = { dock: true, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; },
+  startDockLiveCapture: async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; },
   captureDockSnapshot: async () => true,
   toggleLiveCapture: async () => {},
   releaseDockCapture: async () => { context.state.captureSession = null; },
@@ -34,7 +35,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
 
 (async () => {
   const created = await context.processGameDockCommand({ operationId: 'op-1', type: 'quick-add', payload: { draftId: 'draft-1', dna: 'valid-dna', collection: 'Court', gameHwnd: '42' } });
-  assert.equal(created.ok, true);
+  assert.equal(created.ok, true, JSON.stringify(created));
   const character = context.state.galleries[0].characters[0];
   assert.equal(character.name, 'Unnamed character');
   assert.equal(character.dna, 'valid-dna');
@@ -107,7 +108,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   const failedStart = await context.processGameDockCommand({ operationId: 'op-13', type: 'quick-add', payload: { draftId: 'draft-7', dna: 'dna-7', collection: 'Court', gameHwnd: '42' } });
   assert.equal(failedStart.ok, false);
   assert.equal(context.state.galleries[0].characters.length, countBeforeRetry + 1);
-  context.startDockLiveCapture = async () => { context.state.captureSession = { dock: true, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
+  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
   const retryCharacter = context.state.galleries[0].characters.at(-1);
   const createdModified = retryCharacter.modified;
   retryCharacter.modified += 1;
@@ -119,5 +120,58 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.match(changedUndo.error, /changed since it was created/);
   assert.equal(retryCharacter.modified, createdModified + 1);
   assert.equal(context.state.galleries[0].characters.at(-1), retryCharacter);
-  console.log('Game dock workflow tests passed: real creation, DNA-only saves, Undo, stale requests, busy protection, snapshots, failure cleanup, safe retry, and missing collections.');
+
+  context.state.captureSession = null;
+  const stalledCount = context.state.galleries[0].characters.length;
+  let lateCapture = null;
+  context.startDockLiveCapture = (_workflow, _hwnd, { signal }) => new Promise((resolve, reject) => {
+    lateCapture = resolve;
+    signal.addEventListener('abort', () => {
+      const error = new Error('Capture cancelled.');
+      error.name = 'AbortError';
+      reject(error);
+    }, { once: true });
+  });
+  const stalled = context.handleGameDockCommand({ operationId: 'op-16', type: 'create-record', payload: { draftId: 'draft-8', name: 'Test', dna: 'dna-8', collection: 'Court', gameHwnd: '42' } });
+  for (let attempt = 0; attempt < 20 && !lateCapture; attempt += 1) await delayImmediate();
+  assert.equal(typeof lateCapture, 'function', 'The capture really is stalled when Cancel is requested.');
+  assert.equal(context.cancelGameDockDraft({ draftId: 'draft-8' }), true);
+  const cancelled = await stalled;
+  assert.equal(cancelled.cancelled, true, 'Cancel retires the queued command instead of waiting forever.');
+  assert.equal(context.state.galleries[0].characters.length, stalledCount + 1, 'Cancel preserves the already-created character.');
+  const patchesBeforeLateCompletion = context.dockUpdates.length;
+  lateCapture();
+  await delayImmediate();
+  assert.equal(context.dockUpdates.length, patchesBeforeLateCompletion, 'Late capture completion cannot publish framing after Cancel.');
+  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
+  const retried = await context.handleGameDockCommand({ operationId: 'op-17', type: 'create-record', payload: { draftId: 'draft-8', name: 'Test', dna: 'dna-8', collection: 'Court', gameHwnd: '42' } });
+  assert.equal(retried.ok, true);
+  assert.equal(context.state.galleries[0].characters.length, stalledCount + 1, 'Retrying the same draft reuses its saved record.');
+
+  context.state.captureSession = null;
+  const normalSave = context.saveLibrary;
+  let finishSave = null;
+  context.saveLibrary = () => new Promise((resolve) => { finishSave = resolve; });
+  const savingCount = context.state.galleries[0].characters.length;
+  const saving = context.handleGameDockCommand({ operationId: 'op-18', type: 'create-record', payload: { draftId: 'draft-9', name: 'Late save', dna: 'dna-9', collection: 'Court', frame: false, gameHwnd: '42' } });
+  for (let attempt = 0; attempt < 20 && !finishSave; attempt += 1) await delayImmediate();
+  assert.equal(context.state.galleries[0].characters.length, savingCount + 1);
+  context.cancelGameDockDraft({ draftId: 'draft-9' });
+  assert.equal((await saving).cancelled, true, 'Cancelling a stalled archive save releases the command queue.');
+  const patchesBeforeLateSave = context.dockUpdates.length;
+  finishSave(true);
+  for (let attempt = 0; attempt < 20 && !context.dockWorkflowCharacter(); attempt += 1) await delayImmediate();
+  assert.equal(context.dockUpdates.length, patchesBeforeLateSave, 'A late save cannot reopen a cancelled dock.');
+  assert.equal(context.state.galleries[0].characters.length, savingCount + 1, 'Late persistence still preserves the character.');
+  context.saveLibrary = normalSave;
+  const retriedSave = await context.handleGameDockCommand({ operationId: 'op-19', type: 'create-record', payload: { draftId: 'draft-9', name: 'Late save', dna: 'dna-9', collection: 'Court', frame: false, gameHwnd: '42' } });
+  assert.equal(retriedSave.ok, true);
+  assert.equal(context.state.galleries[0].characters.length, savingCount + 1, 'A late save and retry cannot create duplicate records.');
+
+  const beforeQueuedCancel = context.state.galleries[0].characters.length;
+  const queued = context.handleGameDockCommand({ operationId: 'op-20', type: 'create-record', payload: { draftId: 'draft-10', name: 'Too late', dna: 'dna-10', collection: 'Court', frame: false, gameHwnd: '42' } });
+  context.cancelGameDockDraft({ draftId: 'draft-10', operationIds: ['op-20'] });
+  assert.equal((await queued).cancelled, true);
+  assert.equal(context.state.galleries[0].characters.length, beforeQueuedCancel, 'A command cancelled before queue execution never creates a record.');
+  console.log('Game dock workflow tests passed: creation, Undo, snapshots, safe retry, stalled capture/save cancellation, queued cancellation, late completion isolation, and duplicate prevention.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
