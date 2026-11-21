@@ -5,8 +5,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { Ck3LayoutResolver, CHARACTER_DATABASE, WINDOW_CLASS, IDLER_CLASS, uint32 } = require('./live-game-resolver.cjs');
 const { WindowsLiveProcess } = require('./windows-live-process.cjs');
-const { createGeneCatalog, rawToPersistentDna, persistentDnaToRaw } = require('./live-dna-codec.cjs');
+const { rawToPersistentDna, persistentDnaToRaw } = require('./live-dna-codec.cjs');
+const { loadEffectiveGeneCatalog } = require('./live-game-catalog.cjs');
 
+/* Kept for callers that displayed the original supported-file list. Catalog loading
+   now discovers every effective raw-gene file instead of using this legacy subset. */
 const GENE_FILES = ['00_genes_color.txt', '01_genes_morph.txt', '02_genes_accessories_misc.txt'];
 function fingerprintOf(target) { return `${target.pid}:${target.id}:${target.character}:${target.window}:${target.dnaPointer}:${target.geneCount}:${target.catalogHash}:${target.exeHash}`; }
 function validGame(game) {
@@ -50,19 +53,7 @@ class LiveGameEngine {
   }
   assertEnabled() { if (!this.enabled) throw new Error('Live Game Link is turned off. Enable it in the File menu before using this action.'); }
   async loadCatalog(executablePath) {
-    const ancestors = [];
-    let current = path.dirname(executablePath);
-    for (let count = 0; count < 5; count++) { ancestors.push(current); current = path.dirname(current); }
-    let directory = '';
-    for (const candidate of ancestors) {
-      const genes = path.join(candidate, 'game', 'common', 'genes');
-      try { await fs.stat(genes); directory = genes; break; } catch { /* Try the next installation layout. */ }
-    }
-    if (!directory) throw new Error('CK3’s base-game gene files were not found. Live Game Link supports standard installations without modded gene catalogs.');
-    const sources = await Promise.all(GENE_FILES.map(async (name) => ({ name, text: await this.readFile(path.join(directory, name), 'utf8') })));
-    const catalog = createGeneCatalog(sources);
-    catalog.hash = crypto.createHash('sha256').update(sources.map((source) => `${source.name}\0${source.text}`).join('\0')).digest('hex');
-    return catalog;
+    return loadEffectiveGeneCatalog(executablePath, { readFile: this.readFile });
   }
   async prepareSession(game) {
     const identity = validGame(game);
@@ -106,53 +97,118 @@ class LiveGameEngine {
     try { return await callback(opened, session); }
     finally { this.activeHandle = null; this.process.close(opened.handle); }
   }
+  async heapObjects(handle, session) {
+    if (session.heapObjects) return session.heapObjects;
+    if (typeof this.process.findVtableInstances !== 'function') throw new Error('This CK3 process reader cannot search for live interface objects.');
+    const database = await session.resolver.oneVtable(CHARACTER_DATABASE);
+    const addresses = [session.base + BigInt(session.layout.windowVtableRva), session.resolver.address(database.rva)];
+    const found = await this.process.findVtableInstances(handle, addresses);
+    session.heapObjects = {
+      window: found.get(addresses[0].toString(16)) || [],
+      database: found.get(addresses[1].toString(16)) || [],
+    };
+    return session.heapObjects;
+  }
+  async windowCandidates(handle, session) {
+    const { resolver } = session;
+    try {
+      const idler = await resolver.staticObject(IDLER_CLASS);
+      const gfx = await resolver.field(idler, '.?AVCIngameInterfaceIdlerGfx@@', 0x100);
+      const handler = await resolver.field(gfx, '.?AVCIngameInterfaceHandler@@', 0x200);
+      return [await resolver.field(handler, WINDOW_CLASS, 0x1000)];
+    } catch (error) {
+      /* Recent CK3 builds can keep these objects alive without the old module-global
+         pointers. A heap match is only a candidate: vtable, visible CPdxGuiWindow,
+         shown ID, CCharacter class, embedded ID and database slot are all checked below. */
+      if (typeof this.process.findVtableInstances !== 'function') throw error;
+      return (await this.heapObjects(handle, session)).window;
+    }
+  }
+  async databaseCandidates(handle, session) {
+    try { return [await session.resolver.staticObject(CHARACTER_DATABASE)]; }
+    catch (error) {
+      if (typeof this.process.findVtableInstances !== 'function') throw error;
+      return (await this.heapObjects(handle, session)).database;
+    }
+  }
+  async resolveWindowGui(handle, session, window) {
+    const { layout, resolver } = session;
+    const bytes = await this.process.read(handle, window, 0x408);
+    const preferred = [session.guiOffset, layout.guiOffset].filter((offset) => Number.isInteger(offset));
+    const offsets = [...new Set([...preferred, ...Array.from({ length: (0x400 - 0x18) / 8 + 1 }, (_, index) => 0x18 + index * 8)])];
+    const candidates = new Map();
+    for (const offset of offsets) {
+      const gui = bytes.readBigUInt64LE(offset);
+      if (gui < 0x10000n || await resolver.className(gui) !== '.?AVCPdxGuiWindow@@') continue;
+      const opacity = (await this.process.read(handle, gui + BigInt(layout.opacityOffset), 4)).readFloatLE(0);
+      if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1.001) continue;
+      candidates.set(gui.toString(16), { gui, opacity, offset });
+      if (preferred.includes(offset)) break;
+    }
+    if (candidates.size !== 1) {
+      if (candidates.size > 1) throw new Error('CK3 reported more than one possible character-window GUI. Live Game Link will not guess.');
+      return null;
+    }
+    const result = candidates.values().next().value;
+    session.guiOffset = result.offset;
+    return result;
+  }
   async readTarget(handle, session) {
     const { layout, catalog, resolver } = session;
     const read = (address, size) => this.process.read(handle, address, size);
     const pointer = async (address) => (await read(address, 8)).readBigUInt64LE(0);
-    const idlerRva = await resolver.findStatic(IDLER_CLASS);
-    const idler = await resolver.pointerRva(idlerRva);
-    if (!idler || await resolver.className(idler) !== IDLER_CLASS) throw new Error('CK3 has not loaded its game interface yet. Load a save and try again.');
-    const gfx = await resolver.field(idler, '.?AVCIngameInterfaceIdlerGfx@@', 0x100);
-    const handler = await resolver.field(gfx, '.?AVCIngameInterfaceHandler@@', 0x200);
-    const window = await resolver.field(handler, WINDOW_CLASS, 0x1000);
-    if (await pointer(window) !== session.base + BigInt(layout.windowVtableRva)) throw new Error('The character window changed. Reopen it and try again.');
-    const gui = await pointer(window + BigInt(layout.guiOffset));
-    if (!gui) throw new Error('Open a character window in CK3 before importing or applying DNA.');
-    const opacity = (await read(gui + BigInt(layout.opacityOffset), 4)).readFloatLE(0);
-    if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1.001) throw new Error('CK3’s character-window layout is not supported by this installation.');
-    if (opacity <= 0.01) throw new Error('The CK3 character window is closed. Open the character you want to use.');
-    const databaseRva = await resolver.findStatic(CHARACTER_DATABASE);
-    const database = await resolver.pointerRva(databaseRva);
-    if (!database || await resolver.className(database) !== CHARACTER_DATABASE) throw new Error('CK3’s character database is unavailable. Load a save first.');
-    const view = await read(database + 0x20n, 16);
-    const array = view.readBigUInt64LE(0);
-    const capacity = view.readUInt32LE(12);
-    if (!array || capacity <= 0 || capacity > 0x1000000) throw new Error('CK3’s character database layout failed validation.');
-    const matches = [];
-    for (const idOffset of layout.idOffsets) {
-      const id = uint32((await read(window + BigInt(idOffset), 4)).readInt32LE(0));
-      const index = id & 0xffffff;
-      if (!id || id === 0xffffffff || index >= capacity) continue;
-      /* Every candidate must resolve through CK3's own database to a CCharacter
-         whose embedded ID agrees. Never select the first merely plausible field. */
-      const character = await resolver.pointer(array + BigInt(index * 16 + 8));
-      if (!character) continue;
-      const identity = await read(character + 0x18n, 4).catch(() => null);
-      if (!identity || uint32(identity.readInt32LE(0)) !== id || await resolver.className(character) !== '.?AVCCharacter@@') continue;
-      matches.push({ id, character });
+    const expectedWindowVtable = session.base + BigInt(layout.windowVtableRva);
+    const databases = [];
+    for (const database of await this.databaseCandidates(handle, session)) {
+      try {
+        if (!database || await resolver.className(database) !== CHARACTER_DATABASE) continue;
+        const view = await read(database + 0x20n, 16);
+        const array = view.readBigUInt64LE(0);
+        const capacity = view.readUInt32LE(12);
+        if (!array || capacity <= 0 || capacity > 0x1000000) continue;
+        databases.push({ database, array, capacity });
+      } catch { /* Another candidate must pass every runtime identity check. */ }
     }
-    const distinctMatches = [...new Map(matches.map((match) => [`${match.id}:${match.character}`, match])).values()];
+    if (!databases.length) throw new Error('CK3’s character database is unavailable. Load a save first.');
+    const matches = [];
+    let closed = false;
+    for (const window of await this.windowCandidates(handle, session)) {
+      try {
+        if (!window || await pointer(window) !== expectedWindowVtable) continue;
+        const gui = await this.resolveWindowGui(handle, session, window);
+        if (!gui) continue;
+        if (gui.opacity <= 0.01) { closed = true; continue; }
+        for (const { array, capacity } of databases) {
+          for (const idOffset of layout.idOffsets) {
+            const id = uint32((await read(window + BigInt(idOffset), 4)).readInt32LE(0));
+            const index = id & 0xffffff;
+            if (!id || id === 0xffffffff || index >= capacity) continue;
+            /* Every candidate must resolve through CK3's own database to a CCharacter
+               whose embedded ID agrees. Never select the first merely plausible field. */
+            const character = await resolver.pointer(array + BigInt(index * 16 + 8));
+            if (!character) continue;
+            const identity = await read(character + 0x18n, 4).catch(() => null);
+            if (!identity || uint32(identity.readInt32LE(0)) !== id || await resolver.className(character) !== '.?AVCCharacter@@') continue;
+            matches.push({ id, character, window });
+          }
+        }
+      } catch (error) {
+        if (/more than one possible character-window GUI/.test(error.message)) throw error;
+        // Stale heap objects can retain a vtable after the game has discarded them.
+      }
+    }
+    const distinctMatches = [...new Map(matches.map((match) => [`${match.id}:${match.character}:${match.window}`, match])).values()];
     if (distinctMatches.length !== 1) throw new Error(matches.length
       ? 'CK3 reported more than one possible selected character. Close and reopen its character window; Live Game Link will not guess.'
-      : 'The CK3 character window does not show a character whose identity can be verified. Reopen it and try again.');
-    const { id, character } = distinctMatches[0];
+      : closed ? 'The CK3 character window is closed. Open the character you want to use.'
+        : 'The CK3 character window does not show a character whose identity can be verified. Reopen it and try again.');
+    const { id, character, window } = distinctMatches[0];
     const arrayInfo = await read(character + BigInt(layout.dnaOffset), 16);
     const dnaPointer = arrayInfo.readBigUInt64LE(0);
     const geneCount = arrayInfo.readUInt32LE(8);
     const capacityCount = arrayInfo.readUInt32LE(12);
     if (!dnaPointer || geneCount === 0 || geneCount > 1000 || geneCount !== capacityCount || geneCount !== catalog.genes.length) {
-      throw new Error(`The live DNA array (${geneCount} genes) does not match the installation catalog (${catalog.genes.length} genes). Modded gene catalogs are not currently supported.`);
+      throw new Error(`The live DNA array (${geneCount} genes) does not match the installation catalog (${catalog.genes.length} genes). Wait for CK3 and its enabled mods to finish loading, then reopen the character window.`);
     }
     const raw = Buffer.from(await read(dnaPointer, geneCount * 4));
     const stringInfo = await read(character + 0x20n, 32);

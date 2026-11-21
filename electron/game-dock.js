@@ -8,13 +8,53 @@ let interactive = false;
 let drag = null;
 let captureClock = null;
 let textInputActive = false;
+let hitRegionFrame = null;
+let hitRegionTimer = null;
+
+function sendNativeHitRegions() {
+  const regions = [];
+  for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
+    let rect = element.getBoundingClientRect();
+    if (element.classList.contains('dock') && dockState.mode === 'compact') {
+      /* Claim the final compact bounds as reveal starts, not only after its CSS
+         transition. Otherwise a fast pointer leaves the temporary native region. */
+      const available = Math.max(120, window.innerWidth - 24);
+      const width = dockView.revealed ? Math.min(680, available) : Math.min(280, available);
+      const x = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
+      rect = { x, y: 0, width, height: dockView.revealed ? 48 : 6 };
+    }
+    if (!(rect.width > 0 && rect.height > 0)) continue;
+    /* Include crop handles outside the reticle and its label below. These are real
+       native hit regions, so their clickable area must include the visible border. */
+    const padding = element.classList.contains('reticle') ? 10 : 1;
+    const labelSpace = element.classList.contains('reticle') ? 24 : 0;
+    regions.push({
+      x: Math.floor(rect.x) - padding,
+      y: Math.floor(rect.y) - padding,
+      width: Math.ceil(rect.width) + padding * 2,
+      height: Math.ceil(rect.height) + padding * 2 + labelSpace,
+    });
+  }
+  dockBridge.setHitRegions(regions);
+}
+
+function syncNativeHitRegions() {
+  sendNativeHitRegions();
+  if (hitRegionFrame !== null) cancelAnimationFrame(hitRegionFrame);
+  if (hitRegionTimer !== null) clearTimeout(hitRegionTimer);
+  hitRegionFrame = requestAnimationFrame(() => { hitRegionFrame = null; sendNativeHitRegions(); });
+  /* Reveal and height transitions must not leave a stale narrow or short region. */
+  hitRegionTimer = setTimeout(() => { hitRegionTimer = null; sendNativeHitRegions(); }, 300);
+}
 
 function setDockRevealed(next) {
   const pinned = dockView.picker || Boolean(dockView.menu) || dockView.help || dockView.pending || textInputActive;
   const revealed = Boolean(next || pinned);
-  if (dockView.revealed === revealed) return;
-  dockView.revealed = revealed;
-  document.querySelector('.dock')?.classList.toggle('revealed', revealed);
+  if (dockView.revealed !== revealed) {
+    dockView.revealed = revealed;
+    document.querySelector('.dock')?.classList.toggle('revealed', revealed);
+  }
+  syncNativeHitRegions();
 }
 
 function dockEscape(value = '') {
@@ -143,6 +183,7 @@ function renderDock() {
   const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'live-confirm' ? liveConfirmMarkup() : mode === 'live-result' ? liveResultMarkup() : mode === 'error' ? errorMarkup() : '';
   dockRoot.innerHTML = dockState.visible ? `<section class="${classes}" aria-label="Bloodline game dock">${compactBar()}${body}${collectionPicker()}${dockMenu()}</section>${reticleMarkup()}` : '';
   syncCaptureClock();
+  syncNativeHitRegions();
 }
 
 function syncCaptureClock() {
@@ -182,11 +223,19 @@ function closeMenus() {
 async function runCommand(type, payload = {}) {
   if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
   const blocking = ['quick-add', 'create-record', 'snapshot', 'live-capture', 'undo-create', 'live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-retry'];
-  if (dockView.pending && (blocking.includes(type) || type === 'live-cancel')) return;
+  if (dockView.pending && blocking.includes(type)) return;
   const operation = { id: ++commandSequence, type };
   if (blocking.includes(type)) {
     dockView.pending = true;
     dockView.pendingCommand = operation;
+    renderDock();
+  } else if (type === 'live-cancel' && dockView.pendingCommand?.type?.startsWith('live-')) {
+    /* An error may arrive before the original Import IPC has settled. Cancellation
+       owns the panel immediately; that operation's identity check rejects its late
+       reply instead of allowing it to reopen or relock the error. Confirmed writes
+       keep their disabled Cancel controls and service-side verification guard. */
+    dockView.pending = false;
+    dockView.pendingCommand = null;
     renderDock();
   }
   try {
@@ -254,6 +303,7 @@ function moveCrop(event) {
   const rect = cropRect();
   const reticle = document.querySelector('#portrait-reticle');
   if (reticle && rect) { reticle.style.setProperty('--crop-x', `${rect.x}px`); reticle.style.setProperty('--crop-y', `${rect.y}px`); reticle.style.setProperty('--crop-size', `${rect.size}px`); }
+  sendNativeHitRegions();
 }
 
 async function endCrop(event) {
@@ -276,13 +326,26 @@ function nudgeCrop(event) {
   void runCommand('crop-change', { crop: dockState.crop });
 }
 
+const dockPointerDowns = new Set();
+let releasedPointerClick = null;
+
 dockRoot.addEventListener('click', (event) => {
+  if (releasedPointerClick && performance.now() <= releasedPointerClick.until
+    && Math.abs(event.clientX - releasedPointerClick.x) <= 2 && Math.abs(event.clientY - releasedPointerClick.y) <= 2) {
+    /* Some Windows/Chromium combinations still synthesize click after an orphaned
+       pointer-up. It belongs to the release command we already dispatched. */
+    releasedPointerClick = null;
+    event.preventDefault();
+    return;
+  }
+  releasedPointerClick = null;
   const button = event.target.closest('[data-command]');
   if (button) { event.preventDefault(); void selectCommand(button); return; }
   if (event.target.closest('.dock-text-input')) return;
   if (!event.target.closest('.popover')) { closeMenus(); renderDock(); }
 });
 dockRoot.addEventListener('pointerdown', (event) => {
+  if (event.button === 0) dockPointerDowns.add(event.pointerId);
   const input = event.target.closest('.dock-text-input');
   if (input) {
     /* Native focus must be requested, but Chromium still owns caret placement and
@@ -295,8 +358,21 @@ dockRoot.addEventListener('pointerdown', (event) => {
   beginCrop(event);
 });
 dockRoot.addEventListener('pointermove', moveCrop);
-dockRoot.addEventListener('pointerup', (event) => { void endCrop(event); });
-dockRoot.addEventListener('pointercancel', (event) => { void endCrop(event); });
+dockRoot.addEventListener('pointerup', (event) => {
+  const hadPointerDown = dockPointerDowns.delete(event.pointerId);
+  void endCrop(event);
+  if (hadPointerDown || event.button !== 0) return;
+  const button = event.target.closest('[data-command]');
+  if (!button || button.disabled) return;
+  /* An inactive focusable:false Electron window answers WM_MOUSEACTIVATE with
+     MA_NOACTIVATEANDEAT. Windows delivers pointer-up but deliberately eats the
+     matching press, so no click is generated. Dispatch that orphaned release once;
+     a normal press/release still uses the native click event above. */
+  releasedPointerClick = { x: event.clientX, y: event.clientY, until: performance.now() + 750 };
+  event.preventDefault();
+  void selectCommand(button);
+});
+dockRoot.addEventListener('pointercancel', (event) => { dockPointerDowns.delete(event.pointerId); void endCrop(event); });
 dockRoot.addEventListener('keydown', (event) => {
   if (event.target.id === 'portrait-reticle') { nudgeCrop(event); return; }
   if (event.key === 'Escape') {
@@ -330,7 +406,12 @@ dockRoot.addEventListener('focusin', (event) => {
 });
 dockRoot.addEventListener('focusout', () => {
   setTimeout(() => {
-    if (document.activeElement?.matches('.dock-text-input')) return;
+    /* Moving from the name field to a button is still interaction inside the dock.
+       Returning CK3's native focus here changes the window between pointer-down and
+       pointer-up, so Chromium drops the click. runCommand restores focus after the
+       button's click has been delivered; a genuinely external focus loss still exits
+       text editing here. */
+    if (document.hasFocus() && dockRoot.contains(document.activeElement)) return;
     if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
   }, 0);
 });
@@ -351,6 +432,7 @@ function dockPointerTargets(event) {
 }
 
 document.addEventListener('mousemove', (event) => {
+  if (!event.buttons) dockPointerDowns.clear();
   const targets = dockPointerTargets(event);
   setDockRevealed(targets.overDock);
   setInteractive(targets.overSurface);
@@ -361,14 +443,17 @@ document.addEventListener('mouseleave', (event) => {
      not only the compact strip, before treating it as a real departure. */
   if (!drag && !dockPointerTargets(event).overSurface) { setInteractive(false); setDockRevealed(false); }
 });
-window.addEventListener('blur', () => { if (!drag) { setInteractive(false); setDockRevealed(false); } });
+window.addEventListener('blur', () => { dockPointerDowns.clear(); if (!drag) { setInteractive(false); setDockRevealed(false); } });
 dockBridge.onState((nextState) => {
   const input = document.activeElement;
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';
   const name = preserveName ? input.value : '';
   const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
-  if ((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0)) {
+  if (((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0))
+    || (nextState.mode === 'error' && dockView.pendingCommand?.type?.startsWith('live-'))) {
+    /* The service publishes a terminal error before its IPC reply reaches the
+       renderer. Both Dismiss and Try again become available at that terminal state. */
     dockView.pending = false;
     dockView.pendingCommand = null;
   }

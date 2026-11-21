@@ -6,6 +6,7 @@ const IDS = { window: 1, character: 2, idler: 3, database: 4, gfx: 5, handler: 6
 const NAMES = {
   window: '.?AVCCharacterWindow@@', character: '.?AVCCharacter@@', idler: '.?AVCInGameInterfaceIdler@@',
   database: '.?AV?$TPdxRefDatabase@VCCharacter@@$07@@', gfx: '.?AVCIngameInterfaceIdlerGfx@@', handler: '.?AVCIngameInterfaceHandler@@',
+  gui: '.?AVCPdxGuiWindow@@',
 };
 function catalog() {
   const colors = ['hair_color', 'skin_color', 'eye_color'];
@@ -127,6 +128,7 @@ class MemoryProcess {
     this.pointer(objects.window, 0, BASE + BigInt(this.pe.vtables.window));
     this.pointer(objects.character, 0, BASE + BigInt(this.pe.vtables.character));
     this.pointer(objects.database, 0, BASE + BigInt(this.pe.vtables.database));
+    this.pointer(objects.gui, 0, BASE + BigInt(this.pe.vtables.gui));
     this.pointer(objects.idler, 0x10, objects.gfx);
     this.pointer(objects.gfx, 0x20, objects.handler);
     this.pointer(objects.handler, 0x30, objects.window);

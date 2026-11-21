@@ -29,6 +29,7 @@ button:disabled { cursor: default; opacity: .42; }
 
 .dock {
   position: absolute;
+  z-index: 3;
   top: 0;
   left: 50%;
   width: min(280px, calc(100vw - 24px));

@@ -27,8 +27,14 @@ function parsePe(buffer) {
     const rawSize = buffer.readUInt32LE(offset + 16);
     const rawOffset = buffer.readUInt32LE(offset + 20);
     const size = Math.min(virtualSize || rawSize, rawSize);
-    if (rawOffset + size > buffer.length || rva + size > sizeOfImage) throw new Error('CK3’s executable sections are truncated.');
-    sections.push({ name: buffer.toString('ascii', offset, offset + 8).replace(/\0.*$/, ''), rva, size, data: buffer.subarray(rawOffset, rawOffset + size), executable: Boolean(buffer.readUInt32LE(offset + 36) & 0x20000000) });
+    const mappedSize = Math.max(virtualSize || rawSize, rawSize);
+    if (rawOffset + size > buffer.length || rva + mappedSize > sizeOfImage) throw new Error('CK3’s executable sections are truncated.');
+    sections.push({ name: buffer.toString('ascii', offset, offset + 8).replace(/\0.*$/, ''), rva, size, mappedSize, data: buffer.subarray(rawOffset, rawOffset + size), executable: Boolean(buffer.readUInt32LE(offset + 36) & 0x20000000) });
+  }
+  const ordered = [...sections].sort((a, b) => a.rva - b.rva);
+  for (const [index, section] of ordered.entries()) {
+    const end = ordered[index + 1]?.rva ?? sizeOfImage;
+    section.mappedSize = Math.min(section.mappedSize, end - section.rva);
   }
   for (const name of ['.text', '.rdata', '.data']) if (!sections.some((section) => section.name === name)) throw new Error(`CK3’s ${name} section is missing.`);
   return { imageBase, sizeOfImage, sections };
@@ -40,6 +46,7 @@ class Ck3LayoutResolver {
     this.base = qword(base);
     this.readMemory = readMemory;
     this.sections = new Map();
+    this.runtimeSections = new Map();
     this.rttiCache = new Map();
     this.vtableCache = new Map();
     this.staticCache = new Map();
@@ -47,7 +54,7 @@ class Ck3LayoutResolver {
 
   section(name) { return this.pe.sections.find((section) => section.name === name); }
   sectionAtRva(rva, length = 1) {
-    return this.pe.sections.find((section) => rva >= section.rva && rva + length <= section.rva + section.size && rva + length >= rva);
+    return this.pe.sections.find((section) => rva >= section.rva && rva + length <= section.rva + section.mappedSize && rva + length >= rva);
   }
   inImage(address, sectionName = '') {
     const rva = Number(qword(address) - this.base);
@@ -62,11 +69,20 @@ class Ck3LayoutResolver {
     this.sections.set(name, data);
     return data;
   }
+  async loadRuntimeSection(name) {
+    if (this.runtimeSections.has(name)) return this.runtimeSections.get(name);
+    const section = this.section(name);
+    if (!section || section.mappedSize > 256 * 1024 * 1024) throw new Error(`CK3’s mapped ${name} section is too large to validate.`);
+    const data = section.mappedSize === section.size ? await this.loadSection(name) : await this.readMemory(this.address(section.rva), section.mappedSize);
+    this.runtimeSections.set(name, data);
+    return data;
+  }
   async readRva(rva, size) {
     const section = this.sectionAtRva(rva, size);
     if (!section) return null;
-    const data = await this.loadSection(section.name);
-    return data.subarray(rva - section.rva, rva - section.rva + size);
+    const offset = rva - section.rva;
+    const data = offset + size > section.size ? await this.loadRuntimeSection(section.name) : await this.loadSection(section.name);
+    return data.subarray(offset, offset + size);
   }
   async pointerRva(rva) { return (await this.readRva(rva, 8))?.readBigUInt64LE(0) ?? null; }
   async pointer(address) {
@@ -132,7 +148,10 @@ class Ck3LayoutResolver {
     if (this.staticCache.has(className)) return this.staticCache.get(className);
     const table = await this.oneVtable(className);
     const section = this.section('.data');
-    const data = await this.loadSection('.data');
+    /* Static singleton pointers can live in zero-initialized BSS beyond the bytes
+       stored in the PE file. Read the mapped section, while keeping RTTI parsing
+       restricted to file-backed data above. */
+    const data = await this.loadRuntimeSection('.data');
     const vtable = this.address(table.rva);
     const candidates = [];
     for (let at = 0; at + 8 <= data.length; at += 8) {

@@ -39,6 +39,8 @@ class FakeWindow extends EventEmitter {
   }
   loadFile() { queueMicrotask(() => this.webContents.emit('ipc-message', {}, 'game-dock:ready')); return Promise.resolve(); }
   setIgnoreMouseEvents(...args) { this.ignoreMouseEvents = args; }
+  setShape(regions) { this.shape = regions; }
+  getBounds() { return { ...this.bounds }; }
   setContentProtection(value) { this.contentProtection = value; }
   setAlwaysOnTop(...args) { this.alwaysOnTop = args; }
   setBounds(value) { this.bounds = value; }
@@ -90,17 +92,32 @@ async function main() {
   assert.equal(window.visible, true);
   assert.equal(window.focusable, false);
   assert.equal(window.contentProtection, true);
-  assert.deepEqual(window.ignoreMouseEvents, [true, { forward: true }]);
+  assert.deepEqual(window.ignoreMouseEvents, process.platform === 'win32' ? [false, { forward: false }] : [true, { forward: true }]);
   assert.equal(window.options.webPreferences.sandbox, true);
   assert.equal(window.options.webPreferences.contextIsolation, true);
   assert.equal(window.options.webPreferences.nodeIntegration, false);
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(window.sent.some((entry) => entry.channel === 'game-dock:state' && entry.value.visible));
+  const ignoreBefore = window.ignoreMouseEvents;
   window.webContents.emit('ipc-message', {}, 'game-dock:interactive', true);
-  assert.equal(window.ignoreMouseEvents[0], false);
   window.webContents.emit('ipc-message', {}, 'game-dock:interactive', false);
-  assert.equal(window.ignoreMouseEvents[0], true);
+  if (dock.nativeHitTesting) {
+    assert.equal(window.ignoreMouseEvents, ignoreBefore, 'Synthetic mouse events cannot change native Windows hit testing.');
+    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', [
+      { x: -10, y: -5, width: 40, height: 20 },
+      { x: 10.2, y: 10.2, width: 80.4, height: 30.4 },
+      { x: 0, y: 0, width: 0, height: 10 },
+      { x: NaN, y: 0, width: 10, height: 10 },
+    ]);
+    assert.deepEqual(window.shape, [{ x: 0, y: 0, width: 30, height: 15 }, { x: 10, y: 10, width: 81, height: 31 }]);
+    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', []);
+    assert.deepEqual(window.shape, [{ x: 0, y: 0, width: 1, height: 1 }], 'An empty region list cannot expose the transparent game window.');
+    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', [{ x: 100, y: 50, width: 400, height: 60 }]);
+    assert.deepEqual(window.shape, [{ x: 100, y: 50, width: 400, height: 60 }]);
+  } else {
+    assert.equal(window.ignoreMouseEvents[0], true);
+  }
 
   window.webContents.emit('ipc-message', {}, 'game-dock:text-input', true);
   assert.equal(window.focused, true);

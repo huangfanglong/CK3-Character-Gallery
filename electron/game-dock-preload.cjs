@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('gameDock', {
     });
   },
   setInteractive: (interactive) => ipcRenderer.send('game-dock:interactive', Boolean(interactive)),
+  setHitRegions: (regions) => ipcRenderer.send('game-dock:hit-regions', regions),
   setTextInput: (active) => ipcRenderer.send('game-dock:text-input', Boolean(active)),
   onState: (callback) => {
     if (typeof callback !== 'function') return () => {};

@@ -7,7 +7,7 @@ function publishDockState(patch = {}) {
   const character = workflow ? characterForPortraitTarget(workflow) : null;
   const statePatch = {
     collections: state.preview ? ['Default'] : state.galleries.map((gallery) => gallery.name),
-    collection: workflow?.galleryName || (state.preview ? 'Default' : state.activeGallery),
+    collection: workflow?.galleryName || state.gameDockPreferences?.collection || (state.preview ? 'Default' : state.activeGallery),
     draftId: workflow?.draftId || null,
     characterId: workflow?.characterId || null,
     characterName: character?.name || workflow?.name || '',

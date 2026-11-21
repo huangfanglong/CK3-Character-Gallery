@@ -152,6 +152,44 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       stalled.service.destroy();
     }
 
+    const cancelling = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    let rejectCancelledImport;
+    let cancelledImport;
+    try {
+      await cancelling.service.setLiveLinkChoice(true);
+      cancelling.bridge.pendingImport = new Promise((_resolve, reject) => { rejectCancelledImport = reject; });
+      cancelledImport = cancelling.service.handleCommand({ operationId: 'cancel-pending-import', type: 'live-import', payload: {} });
+      await new Promise((resolve) => setImmediate(resolve));
+      cancelling.dock.update({ mode: 'error', busy: false, error: 'Synthetic read failure', liveRetry: true });
+      const cancelled = await Promise.race([
+        cancelling.service.handleCommand({ operationId: 'dismiss-pending-import', type: 'live-cancel', payload: {} }),
+        new Promise((_resolve, reject) => setTimeout(() => reject(new Error('Dismiss queued behind its own pending Import.')), 100)),
+      ]);
+      assert.equal(cancelled.ok, true);
+      assert.equal(cancelling.dock.state.mode, 'compact');
+      assert.equal(cancelling.service.mutation, null);
+      assert.equal(cancelling.service.lastLiveCommand, null);
+      assert.equal(cancelling.bridge.calls.filter(([action]) => action === 'cancel').length, 1);
+      cancelling.bridge.pendingImport = null;
+      const renewed = await cancelling.service.handleCommand({ operationId: 'import-after-dismiss', type: 'live-import', payload: {} });
+      assert.equal(renewed.ok, true, 'A dismissed pending Import cannot block its replacement.');
+      assert.equal(cancelling.dock.state.mode, 'draft');
+      rejectCancelledImport(new Error('Late failure after Dismiss.'));
+      assert.equal((await cancelledImport).cancelled, true);
+      assert.equal(cancelling.dock.state.mode, 'draft', 'Late Import errors cannot reopen the dismissed error panel.');
+    } finally {
+      rejectCancelledImport?.(new Error('Test cleanup.'));
+      await cancelledImport;
+      cancelling.service.destroy();
+    }
+
+    const verifying = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    verifying.service.mutationKind = 'live';
+    verifying.dock.update({ mode: 'live-confirm', busy: true });
+    assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-write', type: 'live-cancel', payload: {} })).ok, false, 'A confirmed DNA write cannot be cancelled before verification.');
+    assert.equal(verifying.bridge.calls.some(([action]) => action === 'cancel'), false);
+    verifying.service.destroy();
+
     const synchronized = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
     try {
       await synchronized.service.setLiveLinkChoice(true);

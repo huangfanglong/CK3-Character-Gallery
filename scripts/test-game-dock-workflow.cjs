@@ -173,5 +173,11 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   context.cancelGameDockDraft({ draftId: 'draft-10', operationIds: ['op-20'] });
   assert.equal((await queued).cancelled, true);
   assert.equal(context.state.galleries[0].characters.length, beforeQueuedCancel, 'A command cancelled before queue execution never creates a record.');
-  console.log('Game dock workflow tests passed: creation, Undo, snapshots, safe retry, stalled capture/save cancellation, queued cancellation, late completion isolation, and duplicate prevention.');
+
+  vm.runInContext('dockWorkflow = null; dockActiveCreate = null;', context);
+  context.state.galleries.push({ name: 'Sidecasts', characters: [] });
+  context.state.gameDockPreferences = { collection: 'Sidecasts' };
+  context.publishDockState({ draftId: 'live-import-draft', dnaReady: true, liveImported: true });
+  assert.equal(context.dockUpdates.at(-1).collection, 'Sidecasts', 'An imported draft must keep the dock destination, not switch to the main window gallery.');
+  console.log('Game dock workflow tests passed: creation, Undo, snapshots, safe retry, cancellation, duplicate prevention, and persistent dock destinations.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

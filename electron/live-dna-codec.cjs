@@ -24,8 +24,24 @@ function scriptBlock(tokens, start = 0, nested = false) {
       if (!nested) throw dnaError('a gene file has an unexpected closing brace.');
       return { children: result, next: index + 1 };
     }
-    if (key === '{' || key === '=') throw dnaError('a gene file has invalid syntax.');
-    if (tokens[index + 1] !== '=') throw dnaError(`a gene file has an invalid property near “${key}”.`);
+    if (key === '=') throw dnaError('a gene file has invalid syntax.');
+    if (key === '{') {
+      if (!nested) throw dnaError('a gene file has an unexpected opening brace.');
+      const child = scriptBlock(tokens, index + 1, true);
+      result.push({ children: child.children });
+      index = child.next;
+      continue;
+    }
+    /* Clausewitz gene files contain positional lists and anonymous blocks as well as
+       key/value properties (for example blend_range={ 0.0 0.0 } and age curves).
+       Preserve those values as syntax nodes; only indexed gene templates are consumed
+       by the DNA codec below. Persistent DNA itself retains its separate strict parser. */
+    if (tokens[index + 1] !== '=') {
+      if (!nested) throw dnaError(`a gene file has an invalid property near “${key}”.`);
+      result.push({ value: key.replace(/^"|"$/g, '') });
+      index += 1;
+      continue;
+    }
     if (tokens[index + 2] === '{') {
       const child = scriptBlock(tokens, index + 3, true);
       result.push({ key, children: child.children });
@@ -49,40 +65,62 @@ function directIndex(node) {
   return Number(indexes[0].value);
 }
 
+const GENE_GROUPS = { color_genes: 'color', morph_genes: 'morph', accessory_genes: 'accessory' };
+
 function createGeneCatalog(sources) {
   if (!Array.isArray(sources) || !sources.length) throw dnaError('no installation gene files were supplied.');
   const genes = [];
   const byName = new Map();
+  const specialByName = new Set();
   for (const source of sources) {
-    const kind = source.kind || ({ '00_genes_color.txt': 'color', '01_genes_morph.txt': 'morph', '02_genes_accessories_misc.txt': 'accessory' })[source.name];
     const root = { children: parseGeneScript(source.text) };
-    const expected = { color: 'color_genes', morph: 'morph_genes', accessory: 'accessory_genes' }[kind];
-    if (!expected) throw dnaError(`“${source.name || 'unknown'}” is not a supported raw-DNA gene file.`);
-    const groups = childrenOf(root, expected);
-    if (groups.length !== 1) throw dnaError(`${expected} must occur exactly once in ${source.name || 'the gene file'}.`);
-    for (const node of groups[0].children) {
-      const name = geneName(node.key);
-      if (!name || !node.children) throw dnaError(`an invalid gene occurs in ${source.name}.`);
-      const templates = {};
-      const byIndex = new Map();
-      for (const template of node.children) {
-        if (!template.children) continue;
-        const index = directIndex(template);
-        if (index === null) continue;
-        if (!geneName(template.key) || byIndex.has(index)) throw dnaError(`${name} has ambiguous template indices.`);
-        if (Object.hasOwn(templates, template.key)) throw dnaError(`${name} has a duplicate template name.`);
-        templates[template.key] = index;
-        byIndex.set(index, template.key);
+    const expected = { color: 'color_genes', morph: 'morph_genes', accessory: 'accessory_genes' }[source.kind];
+    const groups = expected ? childrenOf(root, expected) : root.children.filter((child) => GENE_GROUPS[child.key]);
+    if (expected && groups.length !== 1) throw dnaError(`${expected} must occur exactly once in ${source.name || 'the gene file'}.`);
+    for (const group of groups) {
+      const kind = GENE_GROUPS[group.key];
+      if (!group.children) throw dnaError(`${group.key} is not a gene block in ${source.name || 'the gene file'}.`);
+      for (const node of group.children) {
+        const name = geneName(node.key);
+        if (!name || !node.children) throw dnaError(`an invalid gene occurs in ${source.name || 'the gene file'}.`);
+        const templates = {};
+        const byIndex = new Map();
+        for (const template of node.children) {
+          if (!template.children) continue;
+          const index = directIndex(template);
+          if (index === null) continue;
+          if (!geneName(template.key) || byIndex.has(index)) throw dnaError(`${name} has ambiguous template indices.`);
+          if (Object.hasOwn(templates, template.key)) throw dnaError(`${name} has a duplicate template name.`);
+          templates[template.key] = index;
+          byIndex.set(index, template.key);
+        }
+        if (kind !== 'color' && byIndex.size === 0) throw dnaError(`${name} has no indexed templates.`);
+        const gene = { name, color: kind === 'color', templates, byIndex };
+        const previous = byName.get(name);
+        if (previous) {
+          if (previous.color !== gene.color) throw dnaError(`${name} changes its gene representation between overrides.`);
+          /* CK3 replaces an overridden definition in place. Moving it to the end would
+             misalign every following four-byte value in the live positional array. */
+          genes[genes.indexOf(previous)] = gene;
+        } else genes.push(gene);
+        byName.set(name, gene);
       }
-      if (kind !== 'color' && byIndex.size === 0) throw dnaError(`${name} has no indexed templates.`);
-      if (byName.has(name)) throw dnaError(`${name} occurs more than once in the installation catalog.`);
-      const gene = { name, color: kind === 'color', templates, byIndex };
-      genes.push(gene);
-      byName.set(name, gene);
+    }
+    /* special_genes are persistent-text appearance entries, not raw character DNA.
+       Record their names so Apply can explicitly exclude them instead of misclassifying
+       modded hair, clothes, or visual traits as unknown raw genes. */
+    for (const special of childrenOf(root, 'special_genes')) {
+      for (const group of special.children || []) {
+        if (!GENE_GROUPS[group.key]) continue;
+        for (const node of group.children || []) {
+          const name = geneName(node.key);
+          if (name) specialByName.add(name);
+        }
+      }
     }
   }
   if (!genes.length || genes.length > MAX_GENES) throw dnaError('the installation gene count is unsupported.');
-  return { genes, byName, hash: '' };
+  return { genes, byName, specialByName, hash: '' };
 }
 
 function genesBody(text) {
@@ -140,7 +178,7 @@ function persistentDnaToRaw(text, catalog) {
   const unsupported = [];
   const unknown = [];
   for (const name of entries.keys()) {
-    if (!catalog.byName.has(name)) (UNSUPPORTED_GENES.test(name) ? unsupported : unknown).push(name);
+    if (!catalog.byName.has(name)) (UNSUPPORTED_GENES.test(name) || catalog.specialByName?.has(name) ? unsupported : unknown).push(name);
   }
   if (unknown.length) throw dnaError(`this installation does not define ${unknown.slice(0, 8).join(', ')}${unknown.length > 8 ? '…' : ''}. No DNA was changed.`);
   const missing = catalog.genes.filter((gene) => !entries.has(gene.name)).map((gene) => gene.name);

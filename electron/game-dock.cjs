@@ -72,6 +72,8 @@ class GameDock {
     this.loaded = false;
     this.ready = false;
     this.editing = false;
+    this.nativeHitTesting = false;
+    this.hitRegions = [];
     this.focusReturnHwnd = '';
     this.game = null;
     this.started = false;
@@ -202,7 +204,35 @@ class GameDock {
     const bounds = gameDockBounds(this.game);
     if (!bounds) return;
     this.window.setBounds(bounds, false);
+    if (this.nativeHitTesting) this.applyHitRegions(this.hitRegions.length ? this.hitRegions : this.initialHitRegions());
     this.present();
+  }
+
+  initialHitRegions() {
+    const gameBounds = gameDockBounds(this.game);
+    const windowBounds = this.window?.getBounds();
+    if (!gameBounds || !windowBounds) return [{ x: 0, y: 0, width: 1, height: 1 }];
+    const surface = dockSurfaceBounds(gameBounds, 'compact', this.state.position, false);
+    return [{ x: surface.x - gameBounds.x, y: surface.y - gameBounds.y, width: surface.width, height: surface.height }];
+  }
+
+  applyHitRegions(regions) {
+    if (!this.nativeHitTesting || !this.window || this.window.isDestroyed()) return false;
+    const bounds = this.window.getBounds();
+    const normalized = [];
+    for (const region of Array.isArray(regions) ? regions.slice(0, 8) : []) {
+      if (![region?.x, region?.y, region?.width, region?.height].every(Number.isFinite)) continue;
+      const left = Math.max(0, Math.floor(region.x));
+      const top = Math.max(0, Math.floor(region.y));
+      const right = Math.min(bounds.width, Math.ceil(region.x + region.width));
+      const bottom = Math.min(bounds.height, Math.ceil(region.y + region.height));
+      if (right > left && bottom > top) normalized.push({ x: left, y: top, width: right - left, height: bottom - top });
+    }
+    this.hitRegions = normalized;
+    /* An empty set resets Electron's shape to the entire transparent game window.
+       Keep a one-pixel inert region instead while the next renderer state arrives. */
+    this.window.setShape(normalized.length ? normalized : [{ x: 0, y: 0, width: 1, height: 1 }]);
+    return true;
   }
 
   ensureWindow() {
@@ -238,7 +268,12 @@ class GameDock {
       },
     });
     this.window = window;
-    window.setIgnoreMouseEvents(true, { forward: true });
+    /* Windows native shapes make only the actual dock and crop controls clickable.
+       Unlike whole-window setIgnoreMouseEvents toggles, they remain correct after a
+       synthetic mouseleave, a DOM replacement, or a pointer that never moves again. */
+    this.nativeHitTesting = process.platform === 'win32' && typeof window.setShape === 'function';
+    window.setIgnoreMouseEvents(!this.nativeHitTesting, { forward: !this.nativeHitTesting });
+    if (this.nativeHitTesting) this.applyHitRegions(this.initialHitRegions());
     window.setContentProtection(true);
     window.setAlwaysOnTop(true, 'screen-saver');
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -250,7 +285,9 @@ class GameDock {
         this.ready = true;
         this.present();
       } else if (channel === 'game-dock:interactive') {
-        if (!this.destroyed) window.setIgnoreMouseEvents(!payload, { forward: true });
+        if (!this.nativeHitTesting && !this.destroyed) window.setIgnoreMouseEvents(!payload, { forward: true });
+      } else if (channel === 'game-dock:hit-regions') {
+        this.applyHitRegions(payload);
       } else if (channel === 'game-dock:text-input') {
         this.setTextInput(Boolean(payload));
       } else if (channel === 'game-dock:command') {

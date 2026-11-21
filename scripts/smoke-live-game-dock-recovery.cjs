@@ -19,11 +19,16 @@ async function main() {
   const { app, BrowserWindow, screen } = electron;
   await app.whenReady();
   const area = screen.getPrimaryDisplay().workArea;
+  /* Keep every native click over an isolated test window, never the running CK3. */
+  const background = new BrowserWindow({ x: area.x + 60, y: area.y + 60, width: 1200, height: 800, show: false, title: 'Live dock recovery isolation' });
+  await background.loadURL('data:text/html,<body style="background:%2322232b;color:white;font:20px sans-serif">Isolated live dock recovery</body>');
+  background.show();
+  background.focus();
+  const isolatedBounds = background.getContentBounds();
   const game = {
     hwnd: '424242', processId: 1073741822, executable: 'ck3.exe',
     executablePath: path.win32.join('C:', 'fixture', 'ck3.exe'),
-    visible: true, minimized: false, bounds: area,
-    clientBounds: { x: area.x + 30, y: area.y + 30, width: Math.min(1200, area.width - 60), height: Math.min(800, area.height - 60) },
+    visible: true, minimized: false, bounds: isolatedBounds, clientBounds: isolatedBounds,
   };
   const monitor = new EventEmitter();
   monitor.state = game;
@@ -72,11 +77,17 @@ async function main() {
     await delay(100);
     const window = dock.window;
     const ignoreCalls = [];
+    const shapeCalls = [];
     const commands = [];
     const setIgnoreMouseEvents = window.setIgnoreMouseEvents.bind(window);
     window.setIgnoreMouseEvents = (ignore, options) => {
       ignoreCalls.push({ ignore, options, at: Date.now() });
       return setIgnoreMouseEvents(ignore, options);
+    };
+    const setShape = window.setShape.bind(window);
+    window.setShape = (regions) => {
+      shapeCalls.push({ regions, at: Date.now() });
+      return setShape(regions);
     };
     const handleCommand = dock.onCommand;
     dock.onCommand = async (command) => {
@@ -106,27 +117,34 @@ async function main() {
       const commandCount = commands.length;
       const hoverPoint = movePointer(bounds.x + bounds.width / 2, bounds.y + 2);
       let targetPoint = hoverPoint;
+      const nativeReady = (rect = null) => {
+        if (!dock.nativeHitTesting) return ignoreCalls.at(-1)?.ignore === false;
+        return shapeCalls.some((call) => call.at >= started && call.regions.some((region) => {
+          if (!rect) return region.width >= 200 && region.height >= 48;
+          const x = rect.x + rect.width / 2;
+          const y = rect.y + rect.height / 2;
+          return x >= region.x && x < region.x + region.width && y >= region.y && y < region.y + region.height;
+        }));
+      };
       const diagnostics = async () => {
         const actual = { x: 0, y: 0 };
         nativeMouse.getPosition(actual);
         const details = await window.webContents.executeJavaScript(`(() => { const rect = document.querySelector('.dock')?.getBoundingClientRect(); return { dockRect: rect?.toJSON(), view: dockView, state: dockState, interactive, width: innerWidth, height: innerHeight }; })()`);
-        return { bounds, hoverPoint, targetPoint, actual, ignoreCalls: ignoreCalls.filter((call) => call.at >= started), commands: commands.slice(commandCount), details };
+        return { bounds, hoverPoint, targetPoint, actual, ignoreCalls: ignoreCalls.filter((call) => call.at >= started), shapeCalls: shapeCalls.filter((call) => call.at >= started), commands: commands.slice(commandCount), details };
       };
       try {
-        await waitFor(() => ignoreCalls.at(-1)?.ignore === false, 'The main process did not leave the dock clickable after hover.');
+        await waitFor(() => nativeReady(), 'The main process did not expose the dock after hover.');
         await delay(320);
         const rect = await window.webContents.executeJavaScript(`(() => { const button = document.querySelector('${selector}'); if (!button) return null; const rect = button.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, disabled: button.disabled }; })()`);
         assert.ok(rect && !rect.disabled, `${selector} was not available for a native click.`);
         targetPoint = movePointer(bounds.x + rect.x + rect.width / 2, bounds.y + rect.y + rect.height / 2);
-        /* Keep the trusted click close to the verified hover; a long dwell makes
-           this physical-input test capture unrelated desktop mouse movement. */
         await delay(16);
         const actual = { x: 0, y: 0 };
         nativeMouse.getPosition(actual);
         assert.ok(Math.abs(actual.x - targetPoint.x) <= 2 && Math.abs(actual.y - targetPoint.y) <= 2,
           `The physical pointer moved before mouse-down (expected ${targetPoint.x},${targetPoint.y}; got ${actual.x},${actual.y}). Rerun without moving the mouse.`);
-        await waitFor(() => ignoreCalls.at(-1)?.ignore === false, 'The main process re-enabled click-through over the button.');
-        assert.equal(await window.webContents.executeJavaScript('interactive'), true, 'The renderer lost interactivity over the button.');
+        await waitFor(() => nativeReady(rect), 'The native shape does not include the button.');
+        if (!dock.nativeHitTesting) assert.equal(await window.webContents.executeJavaScript('interactive'), true);
         nativeMouse.event(0x0002, 0, 0, 0, 0);
         await delay(40);
         nativeMouse.event(0x0004, 0, 0, 0, 0);
@@ -169,16 +187,24 @@ async function main() {
     assert.match(secondError, /could not be opened for read-only DNA access/i);
 
     if (nativeMouse) {
+      await waitFor(() => service.pending.size === 0 && !service.mutation, 'The final cancellation did not settle.');
+      await delay(100);
       const bounds = window.getBounds();
+      /* Re-hover after pending clears, then verify a definite physical departure. */
+      movePointer(bounds.x + bounds.width / 2, bounds.y + 2);
+      await delay(320);
       movePointer(bounds.x + 24, bounds.y + 120);
-      await waitFor(() => ignoreCalls.at(-1)?.ignore === true, 'Leaving the dock did not restore click-through.');
+      await waitFor(() => dock.nativeHitTesting
+        ? shapeCalls.at(-1)?.regions.every((region) => region.height <= 8)
+        : ignoreCalls.at(-1)?.ignore === true, 'Leaving the dock did not restore its inert hit region.');
       await delay(250);
       assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Leaving the dock did not fold the menu.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height'), 6, 'The resting strip did not return.');
     }
-    console.log('Live dock recovery passed: worker handshake, preference-toggle service path, native Import and Quick Add, and click-through cleanup.');
+    console.log('Live dock recovery passed: worker handshake, preference-toggle service path, native Import and Quick Add, and native-shape cleanup.');
   } finally {
     service.destroy();
+    background.destroy();
     restorePointer();
   }
 }

@@ -76,6 +76,54 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   await assert.rejects(candidateEngine.import(candidateIds.game), /identity can be verified/);
   await candidateEngine.setEnabled(false);
 
+  const mappedTail = liveFixture();
+  const dataHeader = 0x98 + 0xf0 + 2 * 40;
+  mappedTail.pe.buffer.writeUInt32LE(0x1000, dataHeader + 8);
+  mappedTail.pe.buffer.writeUInt32LE(0xb00, dataHeader + 16);
+  const runtimeData = Buffer.alloc(0x1000);
+  const dataMemory = mappedTail.process.memory.find((entry) => entry.address === BASE + BigInt(RVA.data));
+  dataMemory.data.copy(runtimeData, 0, 0, 0xb00);
+  runtimeData.writeBigUInt64LE(0n, 0);
+  runtimeData.writeBigUInt64LE(mappedTail.process.objects.idler, 0xe00);
+  dataMemory.data = runtimeData;
+  const tailResolver = new Ck3LayoutResolver(mappedTail.pe.buffer, BASE, (address, size) => {
+    const opened = mappedTail.process.open(1, 'fixture', false);
+    return mappedTail.process.read(opened.handle, address, size);
+  });
+  assert.equal(await tailResolver.findStatic('.?AVCInGameInterfaceIdler@@'), RVA.data + 0xe00, 'Singleton discovery includes the zero-initialized mapped tail.');
+  assert.equal(await tailResolver.pointerRva(RVA.data + 0xe00), mappedTail.process.objects.idler, 'Pointer reads cross the file-backed boundary safely.');
+  assert.equal((await tailResolver.resolve()).windowVtableRva, mappedTail.pe.vtables.window);
+
+  const heap = liveFixture();
+  heap.process.patch(BASE + BigInt(RVA.data), 0, 0, 8);
+  const heapWindows = [heap.process.objects.window];
+  heap.process.findVtableInstances = async (_handle, addresses) => new Map([
+    [addresses[0].toString(16), heapWindows],
+    [addresses[1].toString(16), [heap.process.objects.database]],
+  ]);
+  const heapEngine = new LiveGameEngine({ process: heap.process, readFile: async () => heap.pe.buffer });
+  heapEngine.loadCatalog = async () => heap.catalog;
+  await heapEngine.setEnabled(true);
+  assert.equal((await heapEngine.import(heap.game)).target.id, 1, 'A fully validated heap fallback can recover the live window.');
+  const staleWindow = 0x5700000n;
+  heap.process.add(staleWindow, Buffer.alloc(0x1000));
+  heap.process.pointer(staleWindow, 0, BASE + BigInt(heap.pe.vtables.window));
+  heapWindows.push(staleWindow);
+  assert.equal((await heapEngine.import(heap.game)).target.id, 1, 'A stale vtable candidate without a valid visible identity is ignored.');
+  const secondWindow = 0x5800000n;
+  const secondGui = 0x5900000n;
+  heap.process.add(secondWindow, Buffer.alloc(0x1000));
+  heap.process.add(secondGui, Buffer.alloc(0x1000));
+  heap.process.pointer(secondWindow, 0, BASE + BigInt(heap.pe.vtables.window));
+  heap.process.pointer(secondWindow, 0x60, secondGui);
+  heap.process.patch(secondWindow, 0xc8, 1, 4);
+  heap.process.pointer(secondGui, 0, BASE + BigInt(heap.pe.vtables.gui));
+  heap.process.memory.find((entry) => entry.address === secondGui).data.writeFloatLE(1, 0x108);
+  heapWindows.push(secondWindow);
+  await assert.rejects(heapEngine.import(heap.game), /more than one possible selected character/);
+  assert.equal(heap.process.writeCalls.length, 0, 'Mapped-tail and heap-fallback verification are read-only.');
+  await heapEngine.setEnabled(false);
+
   const selection = { id: 'card-1', name: 'Archived Aella', dna: imported.dna.replace('gene_shape_0={ "shape_pos" 103', 'gene_shape_0={ "shape_pos" 211'), modified: 5 };
   const original = fixture.process.dna();
   const prepared = await engine.prepareApply(fixture.game, selection);

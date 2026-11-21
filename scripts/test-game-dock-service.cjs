@@ -98,15 +98,19 @@ function fixture(options = {}) {
   const stored = fixture({ preferencesPath });
   try {
     await stored.service.loadPreferences();
+    stored.service.preferences.liveLink = { decision: 'enabled', enabled: true };
     stored.service.preferencesChanged({ enabled: false, position: 'left', collection: 'Court' });
     stored.service.preferencesChanged({ enabled: false, position: 'right', collection: 'Court' });
     await stored.service.preferencesSaveQueue;
     const saved = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
-    assert.deepEqual(saved, { enabled: false, position: 'right', collection: 'Court', liveLink: { decision: 'undecided', enabled: false } }, 'Queued writes must persist the latest preferences.');
+    assert.deepEqual(saved, { enabled: false, position: 'right', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } }, 'Queued writes must persist the latest preferences.');
 
     const restarted = fixture({ preferencesPath, preferences: undefined });
-    await restarted.service.loadPreferences();
-    assert.deepEqual(restarted.service.preferences, saved, 'A restart must load the saved dock preferences.');
+    const [rendererPreferences, startupPreferences] = await Promise.all([restarted.service.loadPreferences(), restarted.service.loadPreferences()]);
+    assert.deepEqual(rendererPreferences, saved, 'The renderer must wait for the saved preferences.');
+    assert.deepEqual(startupPreferences, saved, 'Concurrent startup must not receive defaults while the same read is pending.');
+    restarted.service.syncLiveState();
+    assert.equal(restarted.dock.state.liveEnabled, true, 'The live controls must receive the saved opt-in on startup.');
     restarted.service.destroy();
     stored.service.destroy();
   } finally {
@@ -143,6 +147,20 @@ function fixture(options = {}) {
   assert.equal((await creatingCapture).cancelled, true);
   assert.equal(capturePending.dock.state.mode, 'compact');
   capturePending.service.destroy();
+
+  const framing = fixture();
+  framing.dock.state.draftId = 'draft-framing';
+  assert.equal(framing.service.updateCapture({ dockDraftId: 'draft-framing' }, { state: 'armed' }), true);
+  assert.equal(framing.dock.state.mode, 'framing', 'Arming the stream must not replace the framing controls with recording controls.');
+  assert.equal(framing.dock.state.capture, null, 'An armed stream is not an active recording.');
+  assert.equal(framing.dock.state.busy, true, 'Framing stays busy until the renderer publishes a ready crop.');
+  framing.service.updateFromRenderer({ draftId: 'draft-framing', mode: 'framing', busy: false, capture: null, crop: { centerX: .5, centerY: .5, size: .5 }, sourceSize: { width: 2560, height: 1440 } });
+  assert.equal(framing.dock.state.busy, false);
+  assert.equal(framing.dock.state.capture, null);
+  framing.service.updateCapture({ dockDraftId: 'draft-framing' }, { state: 'recording', startedAt: 100 });
+  assert.equal(framing.dock.state.mode, 'capture');
+  assert.equal(framing.dock.state.capture.state, 'recording', 'Actual recording status still opens the recording controls.');
+  framing.service.destroy();
 
   const timedOut = fixture({ autoRespond: false, rendererCommandTimeoutMs: 20 });
   timedOut.setClipboard(validDna);

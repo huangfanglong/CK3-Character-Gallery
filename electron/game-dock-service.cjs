@@ -27,6 +27,7 @@ class GameDockService {
     this.preferences = normalizeDockPreferences(options.preferences);
     this.preferencesPath = options.preferencesPath || '';
     this.preferencesLoaded = Boolean(options.preferences);
+    this.preferencesPromise = null;
     this.preferencesSaveQueue = Promise.resolve();
     this.pending = new Map();
     this.pendingRenderer = new Map();
@@ -45,18 +46,26 @@ class GameDockService {
     this.liveApply = null;
     this.lastLiveCommand = null;
     this.liveQueue = Promise.resolve();
+    this.liveMutationType = '';
   }
 
   async loadPreferences() {
     if (this.preferencesLoaded) return this.preferences;
-    this.preferencesLoaded = true;
-    if (!this.preferencesPath) return this.preferences;
-    try {
-      this.preferences = normalizeDockPreferences(JSON.parse(await fs.readFile(this.preferencesPath, 'utf8')));
-    } catch (error) {
-      if (error.code !== 'ENOENT') this.logger.error('Game dock preferences could not be read:', error);
-    }
-    return this.preferences;
+    /* The renderer requests preferences while start() is still awaiting the same disk
+       read. Share that promise: a read in progress is not a loaded default preference. */
+    if (this.preferencesPromise) return this.preferencesPromise;
+    this.preferencesPromise = (async () => {
+      try {
+        if (this.preferencesPath) this.preferences = normalizeDockPreferences(JSON.parse(await fs.readFile(this.preferencesPath, 'utf8')));
+      } catch (error) {
+        if (error.code !== 'ENOENT') this.logger.error('Game dock preferences could not be read:', error);
+      } finally {
+        this.preferencesLoaded = true;
+      }
+      return this.preferences;
+    })();
+    try { return await this.preferencesPromise; }
+    finally { this.preferencesPromise = null; }
   }
 
   async savePreferences() {
@@ -173,6 +182,7 @@ class GameDockService {
     if (this.mutationKind === 'live') {
       this.mutation = null;
       this.mutationKind = '';
+      this.liveMutationType = '';
     }
   }
 
@@ -303,6 +313,18 @@ class GameDockService {
       this.dock.update({ collection: payload.collection });
       return { ok: true };
     }
+    if (type === 'live-cancel') {
+      /* A confirmed write/restore must finish verification, but a pending read or an
+         already-reported error must never queue its Dismiss button behind itself. */
+      if (this.mutationKind === 'live' && this.dock.state.busy && ['live-confirm', 'live-result'].includes(this.dock.state.mode)) {
+        return { ok: false, error: 'Wait for the DNA write to finish verifying.' };
+      }
+      this.retireLiveOperations();
+      this.clearLiveState();
+      this.dock.retirePendingCommands?.();
+      void this.liveBridge.cancel().catch((error) => this.logger.error('Live Game Link cancellation failed:', error));
+      return { ok: true, cancelled: true };
+    }
     if (LIVE_COMMANDS.has(type)) {
       if (this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
       const revision = this.liveRevision;
@@ -310,11 +332,13 @@ class GameDockService {
       this.liveQueue = operation.catch(() => {});
       this.mutation = operation;
       this.mutationKind = 'live';
+      this.liveMutationType = type;
       try { return await operation; }
       finally {
         if (this.mutation === operation) {
           this.mutation = null;
           this.mutationKind = '';
+          this.liveMutationType = '';
         }
       }
     }
@@ -523,8 +547,12 @@ class GameDockService {
       this.dock.update({ mode: 'success', capture: null, crop: null, message: 'Portrait and DNA saved.', undoUntil: Date.now() + 12_000, busy: false });
     } else if (status?.state === 'failed') {
       this.dock.update({ mode: 'error', capture: null, error: String(status.message || 'The portrait could not be captured.').slice(0, 256), busy: false });
+    } else if (status?.state === 'armed') {
+      /* Armed means the stream is ready to frame, not that a recording has started.
+         Keep the opening state until createFromDock publishes its crop and clears busy. */
+      this.dock.update({ mode: 'framing', capture: null, busy: true });
     } else if (status?.state) {
-      this.dock.update({ mode: 'capture', capture: { state: status.state === 'armed' ? 'armed' : status.state, startedAt: status.startedAt || 0, deadline: status.deadline || 0 }, busy: false });
+      this.dock.update({ mode: 'capture', capture: { state: status.state, startedAt: status.startedAt || 0, deadline: status.deadline || 0 }, busy: false });
     }
     return true;
   }

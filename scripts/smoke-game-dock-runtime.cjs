@@ -35,11 +35,13 @@ if (!electron.app) {
     let stalledLiveImport = null;
     let stalledLiveOperationId = '';
     let holdNextLiveImport = false;
+    let dismissalCount = 0;
     dock = new GameDock({
       BrowserWindow, screen, monitor,
       htmlPath: path.join(__dirname, '..', 'electron', 'game-dock.html'),
       preloadPath: path.join(__dirname, '..', 'electron', 'game-dock-preload.cjs'),
       onCommand: async ({ operationId, type, payload }) => {
+        if (type === 'dismiss') dismissalCount += 1;
         if (type === 'select-collection') { dock.setPreferences({ collection: payload.collection }); dock.update({ collection: payload.collection }); }
         if (type === 'set-position') dock.setPreferences({ position: payload.position });
         if (type === 'quick-add') dock.update({ mode: 'draft', dnaReady: true, characterName: '' });
@@ -149,12 +151,24 @@ if (!electron.app) {
       const nameSelection = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({active:document.activeElement?.id,start:document.querySelector('#character-name').selectionStart,end:document.querySelector('#character-name').selectionEnd})`));
       assert.equal(nameSelection.active, 'character-name');
       assert.ok(nameSelection.end > nameSelection.start, `Native pointer drag must select the character name (${JSON.stringify(nameSelection)}).`);
-      await window.webContents.executeJavaScript(`{ const input = document.querySelector('#character-name'); input.setSelectionRange(input.value.length,input.value.length); document.querySelector('[data-command=create-record][data-frame=true]').click(); }`);
+      await window.webContents.executeJavaScript(`document.querySelector('#character-name').setSelectionRange(document.querySelector('#character-name').value.length,document.querySelector('#character-name').value.length)`);
+      const createRect = await window.webContents.executeJavaScript(`document.querySelector('[data-command=create-record][data-frame=true]').getBoundingClientRect().toJSON()`);
+      const createX = Math.round(createRect.x + createRect.width / 2);
+      const createY = Math.round(createRect.y + createRect.height / 2);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: createX, y: createY });
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: createX, y: createY, button: 'left', clickCount: 1 });
+      await delay(30);
+      assert.equal(dock.editing, true, 'Focusing Create & frame must not return native focus to CK3 between press and release.');
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: createX, y: createY, button: 'left', clickCount: 1 });
       await delay(80);
       assert.equal(dock.state.characterName, 'Ragnhild of Jorvik');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=open-collections]").disabled'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("#portrait-reticle") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll(".crop-handle").length'), 4);
+      dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: 1 }, sourceSize: { width: 1600, height: 900 }, capture: null });
+      await delay(30);
+      const overlapHit = await window.webContents.executeJavaScript(`(()=>{const rect=document.querySelector('[data-command=reset-crop]').getBoundingClientRect();return document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)?.closest('[data-command]')?.dataset.command;})()`);
+      assert.equal(overlapHit, 'reset-crop', 'A full-height portrait reticle must not cover the dock controls.');
       for (const handle of ['north-west', 'north-east', 'south-east', 'south-west']) {
         dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: 1600, height: 900 }, capture: null });
         await delay(20);
@@ -192,6 +206,10 @@ if (!electron.app) {
       dock.update({ mode: 'error', error: 'The CK3 window is no longer available.' });
       await delay(30);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".dock-body").textContent'), /no longer available/);
+      await window.webContents.executeJavaScript(`(()=>{const button=document.querySelector('.capture-actions [data-command=dismiss]');const rect=button.getBoundingClientRect();const x=rect.x+rect.width/2;const y=rect.y+rect.height/2;button.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,button:0,buttons:0,pointerId:91,clientX:x,clientY:y}));button.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));})()`);
+      await delay(50);
+      assert.equal(dock.state.mode, 'compact', 'An orphaned pointer release dismisses the inactive Windows dock.');
+      assert.equal(dismissalCount, 1, 'A synthesized click following the release fallback must not dispatch twice.');
       dock.update({ mode: 'compact', error: '', capture: null, liveEnabled: true, liveCanApply: true, liveSelectedName: 'Archived Aella', liveUndoUntil: 0 });
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), false);
