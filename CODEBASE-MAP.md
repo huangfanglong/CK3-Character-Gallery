@@ -453,34 +453,12 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                           RECENT COMMITS REVIEWED                            │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  The map previously covered the new-feat-july line through 0431179. The      │
-│  commits below are the dev-line work added after that point (on top of the   │
-│  v3.1.0 release, d88375a):                                                   │
+├──────────────────────────────────────────────────────────────────────────────┤                                           
 │                                                                              │
 │  736b09b  General UI clean up.                                               │
 │  42c5537  Lazy render 48 cards at a time; fix black animated portraits.      │
 │  f0a8866  Fix dock crop drag when Windows swallows the initial pointerdown.  │
 │  1ffc261  Fix dock gene parsing, discovery, preference, focus, click bugs.   │
-│  d518247  Add Live Game Link for DNA import/apply.                           │
-│  ec25655  Add the dynamic-island game dock overlay over CK3.                 │
-│  f91e504  Seamless inline collection renaming.                               │
-│  fa566d6  Quick Look proportions, larger text, inline gallery renaming.      │
-│  1c7f1ed  Larger portraits; fix animation, overflow, and click behavior.     │
-│  b7c8d28  Add the interactive comparison tray.                               │
-│  d5cc0ea  Add physical drag ordering.                                        │
-│  d3e07f6  Animate collection transitions.                                    │
-│  4eeee82  Adapt the liquid command dock.                                     │
-│  5b6f511  Add shared-element Quick Look motion.                              │
-│  87c52e9  Add the optional living contact sheet.                             │
-│  2d93076  Complete optical navigation and dialogs.                           │
-│  1f63f49  Add shared-context character Quick Look.                           │
-│  267e8ab  Introduce the Optical Archive library.                             │
-│  ed78bbd  Isolate local design tooling from app checks.                      │
-│                                                                              │
-│  Release 3.1.0 (2026-07-31): animated GIF/WebM, live capture, Smart Loop,    │
-│  and independent character name/title appearance customization.              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
