@@ -89,9 +89,10 @@ function animateQuickLookOpen(snapshot, destination) {
   const container = portraitMotionContainer(destination);
   const media = container?.querySelector('.portrait-image, .portrait-placeholder');
   if (!snapshot || !container || !media) return Promise.resolve();
+  // Remove the panel's translated entrance before measuring the shared-element destination.
+  container.closest('.quick-overlay')?.classList.add('shared-element-active');
   const target = container.getBoundingClientRect();
   if (!target.width || !target.height) return Promise.resolve();
-  container.closest('.quick-overlay')?.classList.add('shared-element-active');
   const flight = createPortraitFlight(snapshot);
   media.style.opacity = '0';
   const cleanup = flight.cleanup;
