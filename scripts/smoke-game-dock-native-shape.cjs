@@ -129,6 +129,36 @@ if (!electron.app) {
       const nativeIgnore = window.setIgnoreMouseEvents.bind(window);
       const ignoreCalls = [];
       window.setIgnoreMouseEvents = (...args) => { ignoreCalls.push(args); return nativeIgnore(...args); };
+      const nativeDrag = async (start, dx, dy) => {
+        await move(start.x, start.y);
+        mouse.event(0x0002, 0, 0, 0, 0);
+        await delay(50);
+        for (let step = 1; step <= 8; step += 1) await move(start.x + dx * step / 8, start.y + dy * step / 8);
+        mouse.event(0x0004, 0, 0, 0, 0);
+        await delay(150);
+      };
+
+      /* The first press on a new focusable:false window is the one Windows may eat.
+         Exercise real native move and resize before any dock button has been used. */
+      dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: bounds.width, height: bounds.height }, capture: null, busy: false });
+      await delay(120);
+      let cropBefore = await window.webContents.executeJavaScript('({ ...dockState.crop })');
+      let cropRect = await window.webContents.executeJavaScript('cropRect()');
+      const moveBounds = window.getBounds();
+      await nativeDrag({ x: moveBounds.x + cropRect.x + cropRect.size / 2, y: moveBounds.y + cropRect.y + cropRect.size / 2 }, 48, 32);
+      let cropAfter = await window.webContents.executeJavaScript('({ ...dockState.crop })');
+      assert.notDeepEqual(cropAfter, cropBefore, 'The first native crop drag must move the frame.');
+      assert.ok(commands.some((command) => command.type === 'crop-change'), 'Native crop movement must persist on release.');
+
+      cropBefore = cropAfter;
+      cropRect = await window.webContents.executeJavaScript('cropRect()');
+      const resizeBounds = window.getBounds();
+      await nativeDrag({ x: resizeBounds.x + cropRect.x, y: resizeBounds.y + cropRect.y }, 36, 24);
+      cropAfter = await window.webContents.executeJavaScript('({ ...dockState.crop })');
+      assert.ok(cropAfter.size < cropBefore.size, 'The first native corner drag must resize the frame.');
+      assert.equal(await window.webContents.executeJavaScript('drag'), null, 'Crop drag state must be released.');
+      dock.update({ mode: 'compact', crop: null, sourceSize: null, capture: null, busy: false });
+      await delay(80);
 
       await nativeClick('[data-command=live-import]');
       await waitFor(() => dock.state.mode === 'error', 'Import error');

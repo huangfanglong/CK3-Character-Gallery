@@ -189,6 +189,45 @@ if (!electron.app) {
         })()`));
         for (const key of ['centerX', 'centerY', 'size']) assert.ok(Math.abs(dragResult.actual[key] - dragResult.expected[key]) < 0.000001, `${handle} drag used the wrong source pointer (${JSON.stringify(dragResult)}).`);
       }
+      for (const [index, part] of ['move', 'north-west'].entries()) {
+        dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: 1600, height: 900 }, capture: null });
+        await delay(20);
+        const pointerId = 70 + index;
+        const recovered = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+          const reticle=document.querySelector('#portrait-reticle');
+          reticle.setPointerCapture=()=>{};
+          const rect=cropRect();
+          const part=${JSON.stringify(part)};
+          const x=part==='move'?rect.x+rect.size/2:rect.x;
+          const y=part==='move'?rect.y+rect.size/2:rect.y;
+          const hoverTarget=part==='move'?reticle:document.querySelector('[data-crop-handle=north-west]');
+          hoverTarget.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:${pointerId},buttons:0,clientX:x,clientY:y}));
+          /* Deliberately omit pointerdown: Windows ate it for the inactive dock. */
+          reticle.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:${pointerId},buttons:1,clientX:x+12,clientY:y+9}));
+          const recoveredHandle=drag?.handle;
+          const scale=dockState.sourceSize.width/dockDisplayGeometry().width;
+          const expected=normalizedCaptureCrop(drag.handle
+            ? resizeCaptureCrop(drag.crop,drag.handle,{x:drag.initialPointer.x+12*scale,y:drag.initialPointer.y+9*scale},1600,900,40)
+            : moveCaptureCrop(drag.crop,12*scale,9*scale,1600,900),1600,900);
+          const actual={...dockState.crop};
+          reticle.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:${pointerId},button:0,buttons:0,clientX:x+12,clientY:y+9}));
+          return JSON.stringify({actual,expected,recoveredHandle});
+        })()`));
+        assert.equal(recovered.recoveredHandle, part === 'move' ? '' : 'north-west', 'Recovery must preserve the hovered crop target.');
+        for (const key of ['centerX', 'centerY', 'size']) assert.ok(Math.abs(recovered.actual[key] - recovered.expected[key]) < 0.000001, `${part} without pointerdown was not recovered (${JSON.stringify(recovered)}).`);
+      }
+      const externalDrag = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const reticle=document.querySelector('#portrait-reticle');
+        const rect=cropRect();
+        const before={...dockState.crop};
+        document.querySelector('.dock').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:88,buttons:0,clientX:20,clientY:20}));
+        reticle.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:88,buttons:1,clientX:rect.x+30,clientY:rect.y+30}));
+        const result={started:Boolean(drag),before,after:{...dockState.crop}};
+        reticle.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:88,button:0,buttons:0,clientX:rect.x+30,clientY:rect.y+30}));
+        return JSON.stringify(result);
+      })()`));
+      assert.equal(externalDrag.started, false, 'A drag without a crop hover must remain CK3 input.');
+      assert.deepEqual(externalDrag.after, externalDrag.before);
 
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-capture]").click()');
       await delay(50);

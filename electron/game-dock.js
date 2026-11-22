@@ -276,17 +276,19 @@ function dockSourcePoint(clientX, clientY) {
   return { x: (clientX - display.x) * scale, y: (clientY - display.y) * scale };
 }
 
-function beginCrop(event) {
+function beginCrop(event, origin = null) {
   if (dockState.capture || dockState.mode !== 'framing' || !dockState.crop || !dockState.sourceSize) return;
   const reticle = event.target.closest('#portrait-reticle');
   if (!reticle) return;
   event.preventDefault();
   reticle.setPointerCapture(event.pointerId);
+  const startX = origin?.x ?? event.clientX;
+  const startY = origin?.y ?? event.clientY;
   drag = {
-    pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-    initialPointer: dockSourcePoint(event.clientX, event.clientY),
+    pointerId: event.pointerId, startX, startY,
+    initialPointer: dockSourcePoint(startX, startY),
     crop: restoredCaptureCrop(dockState.crop, dockState.sourceSize.width, dockState.sourceSize.height),
-    handle: event.target.dataset.cropHandle || '',
+    handle: origin?.handle ?? (event.target.dataset.cropHandle || ''),
   };
 }
 
@@ -328,6 +330,7 @@ function nudgeCrop(event) {
 
 const dockPointerDowns = new Set();
 let releasedPointerClick = null;
+let cropHover = null;
 
 dockRoot.addEventListener('click', (event) => {
   if (releasedPointerClick && performance.now() <= releasedPointerClick.until
@@ -357,9 +360,30 @@ dockRoot.addEventListener('pointerdown', (event) => {
   }
   beginCrop(event);
 });
-dockRoot.addEventListener('pointermove', moveCrop);
+dockRoot.addEventListener('pointermove', (event) => {
+  const reticle = event.target.closest('#portrait-reticle');
+  if (!event.buttons) {
+    cropHover = reticle ? {
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      handle: event.target.dataset.cropHandle || '',
+    } : null;
+  } else if (!drag && (event.buttons & 1) && !dockPointerDowns.has(event.pointerId)
+    && reticle && cropHover?.pointerId === event.pointerId) {
+    /* WM_MOUSEACTIVATE can eat the crop's pointer-down while its later moves still
+       carry the primary button. Recover from the last hover so the first movement
+       and the originally hovered corner are not lost. A drag that began in CK3 has
+       no crop hover and remains game input. */
+    beginCrop(event, cropHover);
+    if (drag) dockPointerDowns.add(event.pointerId);
+  }
+  moveCrop(event);
+});
+dockRoot.addEventListener('pointerout', (event) => {
+  if (event.target.closest('#portrait-reticle') && !event.relatedTarget?.closest?.('#portrait-reticle')) cropHover = null;
+});
 dockRoot.addEventListener('pointerup', (event) => {
   const hadPointerDown = dockPointerDowns.delete(event.pointerId);
+  cropHover = null;
   void endCrop(event);
   if (hadPointerDown || event.button !== 0) return;
   const button = event.target.closest('[data-command]');
@@ -372,7 +396,7 @@ dockRoot.addEventListener('pointerup', (event) => {
   event.preventDefault();
   void selectCommand(button);
 });
-dockRoot.addEventListener('pointercancel', (event) => { dockPointerDowns.delete(event.pointerId); void endCrop(event); });
+dockRoot.addEventListener('pointercancel', (event) => { dockPointerDowns.delete(event.pointerId); cropHover = null; void endCrop(event); });
 dockRoot.addEventListener('keydown', (event) => {
   if (event.target.id === 'portrait-reticle') { nudgeCrop(event); return; }
   if (event.key === 'Escape') {
