@@ -131,8 +131,8 @@ function mainMarkup(characters) {
     <section class="archive-heading"><div><p class="eyebrow">${state.preview ? 'DESIGN PREVIEW' : 'CHARACTER ARCHIVE'} / ${archiveIndex}</p>${titleMarkup}${subtitleMarkup}</div><button class="new-record heading-new" data-action="new-character">${icon('plus')} New character</button></section>
     <section class="library-toolbar" aria-label="Current view"><div class="view-label">${icon('grid')}<strong>${viewLabel}</strong><span>${characters.length}</span></div><div class="view-hint">${state.query ? `Matching “${escapeHtml(state.query)}”` : 'Select a portrait for Quick Look'}<span>↗</span></div></section>
     ${state.view === 'table' ? `<section class="table-view"><div class="table-header"><span>PORTRAIT</span><span>CHARACTER</span><span>TAGS</span><span>STATUS</span><span></span></div>${renderedCharacters.length ? renderedCharacters.map(tableMarkup).join('') : emptyResultsMarkup()}</section>` : `<section class="card-grid ${state.view === 'compact' ? 'compact' : ''} ${state.livingContact ? 'living' : ''}">${renderedCharacters.length ? renderedCharacters.map((character, index) => cardMarkup(character, index, characters.length > 1 && !state.allGalleries && !state.preview && !state.batchMode)).join('') : emptyResultsMarkup()}</section>`}
-    ${characters.length > visibleLimit ? `<div class="load-more"><button data-action="show-more">Show 48 more ${icon('chevron')}</button><span>Rendering ${renderedCharacters.length} of ${characters.length} to keep scrolling fluid</span></div>` : ''}
-    <footer class="archive-footer"><span><span class="keyboard-dot"></span> Paste an in-game screenshot anywhere to add a portrait</span><span>Bloodline / Optical Archive</span></footer>
+    ${characters.length > visibleLimit ? `<div class="load-more" data-load-more><span>More portraits appear as you scroll · ${renderedCharacters.length} of ${characters.length}</span></div>` : ''}
+    <footer class="archive-footer"><span><span class="keyboard-dot"></span> Paste an in-game screenshot anywhere to add a portrait</span>></footer>
     ${commandDockMarkup(characters)}
     ${comparisonTrayMarkup()}
   </main>`;

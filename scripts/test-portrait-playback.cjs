@@ -46,6 +46,7 @@ function root(videos) {
 function main() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'portrait-playback.js'), 'utf8');
   const documentListeners = new Map();
+  const windowListeners = new Map();
   const fakeDocument = {
     hidden: false,
     addEventListener(type, listener) { documentListeners.set(type, listener); },
@@ -57,7 +58,11 @@ function main() {
       geometry.styleReads += 1;
       return { overflow: element.overflow || 'visible', overflowX: element.overflowX || element.overflow || 'visible', overflowY: element.overflowY || element.overflow || 'visible' };
     },
-    window: { innerWidth: 1000, innerHeight: 1000 },
+    window: {
+      innerWidth: 1000,
+      innerHeight: 1000,
+      addEventListener(type, listener) { windowListeners.set(type, listener); },
+    },
     console,
   });
   vm.runInContext(`${source}; globalThis.__portraitPlayback = { portraitObserver, portraitVideos, syncPortraitPlayback };`, context);
@@ -142,6 +147,30 @@ function main() {
   staleEntry.setBounds({ top: 1200, right: 100, bottom: 1300, left: 0, width: 100, height: 100 });
   portraitObserver.callback([{ target: staleEntry, isIntersecting: true, intersectionRatio: 1 }]);
   assert.equal(staleEntry.paused, true, 'A stale visible observer entry must not restart an offscreen card.');
+
+  const windowFocus = windowListeners.get('focus');
+  assert.equal(typeof windowFocus, 'function', 'Portrait playback should recover when the app window regains focus.');
+  const focusReturning = video({ bounds: { top: 1200, right: 100, bottom: 1300, left: 0, width: 100, height: 100 } });
+  const focusOffscreen = video();
+  syncPortraitPlayback(root([focusReturning, focusOffscreen]));
+  focusReturning.setBounds({ top: 0, right: 100, bottom: 100, left: 0, width: 100, height: 100 });
+  focusOffscreen.setBounds({ top: 1200, right: 100, bottom: 1300, left: 0, width: 100, height: 100 });
+  focusOffscreen.pause();
+  portraitObserver.queue([
+    { target: focusReturning, isIntersecting: false, intersectionRatio: 0 },
+    { target: focusOffscreen, isIntersecting: true, intersectionRatio: 1 },
+  ]);
+  // Alt–Tab can restore focus while document.hidden remains false throughout.
+  windowFocus();
+  assert.equal(context.document.hidden, false, 'The focus regression must not rely on a visibility transition.');
+  assert.equal(focusReturning.paused, false, 'Focus restoration should resume a retained portrait that is now visible.');
+  assert.equal(focusOffscreen.paused, true, 'Focus restoration must keep a newly offscreen portrait paused.');
+  assert.equal(portraitObserver.takeRecords().length, 0, 'Focus restoration should discard stale queued observer records.');
+  syncPortraitPlayback(root([focusReturning, focusOffscreen]), true);
+  const focusBlockedGeometry = { ...geometry };
+  windowFocus();
+  assert.equal(focusReturning.paused, true, 'Focus restoration must not resume portraits behind a modal.');
+  assert.deepEqual(geometry, focusBlockedGeometry, 'Focus restoration should avoid geometry work while modal playback is blocked.');
 
   portraitVideos.delete(staleEntry);
   const detached = video({ connected: false });

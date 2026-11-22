@@ -135,13 +135,17 @@ function setPortraitPlaybackActive(container, active) {
   }
 }
 
-document.addEventListener('visibilitychange', () => {
+function refreshForegroundPortraitPlayback() {
   if (!document.hidden) {
-    // Foreground geometry replaces observer state accumulated while hidden.
+    // Alt–Tab can focus the window without a document visibility change.
+    // Recalculate now so stale observer state cannot leave visible portraits paused.
     portraitObserver.takeRecords();
     if (!portraitPlaybackBlocked) {
       for (const video of viewportPortraitVideos) portraitVisibility.set(video, isPortraitInViewport(video));
     }
   }
   for (const video of portraitVideos) applyPortraitPlayback(video);
-});
+}
+
+document.addEventListener('visibilitychange', refreshForegroundPortraitPlayback);
+window.addEventListener('focus', refreshForegroundPortraitPlayback);

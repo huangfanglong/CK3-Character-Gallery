@@ -239,6 +239,25 @@ function characterForPortraitTarget(target) {
   return state.galleries.find((gallery) => gallery.name === target.galleryName)?.characters.find((character) => character.id === target.characterId) || null;
 }
 
+let portraitLoadMoreObserver = null;
+
+function syncPortraitLoadMore() {
+  portraitLoadMoreObserver?.disconnect();
+  portraitLoadMoreObserver = null;
+  const sentinel = app.querySelector('[data-load-more]');
+  const scrollContainer = app.querySelector('.main-content');
+  if (!sentinel || !scrollContainer) return;
+  portraitLoadMoreObserver = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting && entry.target === sentinel)) return;
+    if (!sentinel.isConnected || app.querySelector('[data-load-more]') !== sentinel) return;
+    const total = visibleCharacters().length;
+    if (state.visibleLimit >= total) return;
+    state.visibleLimit = Math.min(total, state.visibleLimit + 48);
+    render();
+  }, { root: scrollContainer, rootMargin: '0px 0px 640px 0px', threshold: 0.01 });
+  portraitLoadMoreObserver.observe(sentinel);
+}
+
 function render(scope = 'all') {
   if (scope === 'selection') return renderSelection();
   if (scope === 'context') return renderContextMenu();
@@ -247,6 +266,7 @@ function render(scope = 'all') {
   const characters = visibleCharacters();
   morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
   syncCharacterAppearance(app);
+  syncPortraitLoadMore();
   syncPortraitPlayback(app, Boolean(state.modal), true);
   syncGalleryBatchSelection();
   syncCollectionIndicator();
@@ -1177,7 +1197,6 @@ function action(name) {
     focusWithoutScroll(app.querySelector('[data-action="toggle-living"]'));
     return;
   }
-  if (name === 'show-more') { state.visibleLimit += 48; return render(); }
   if (name === 'clear-gallery-search') { state.galleryQuery = ''; render(); document.querySelector('#collection-search-input')?.focus(); return; }
   if (name === 'toggle-sidebar') { document.querySelector('.sidebar')?.classList.toggle('is-open'); return; }
   if (name === 'open-folder') return desktop?.openFolder(state.dataDirectory);

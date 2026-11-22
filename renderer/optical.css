@@ -298,10 +298,8 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .filter-tag-option { border: 0; border-radius: 7px; background: #efedf4; color: #7c768c; font-family: var(--sans); }
 .filter-tag-option.active { background: var(--accent-soft); color: #5d4dc1; }
 .filter-panel-foot { background: #f4f3f8; color: #858692; font-family: var(--sans); }
-.load-more { position: relative; z-index: 1; display: flex; align-items: center; flex-direction: column; gap: 9px; padding: 34px 0 8px; }
-.load-more button { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 15px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.55); color: #62636f; font-size: 10px; font-weight: 650; }
-.load-more button:hover { background: white; }
-.load-more span { color: #9b9ca7; font-size: 8px; }
+.load-more { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; min-height: 24px; padding: 28px 0 8px; pointer-events: none; }
+.load-more span { color: #71717d; font-size: 12px; }
 .archive-footer { position: relative; z-index: 1; margin-top: 38px; padding: 14px 0 0; border-top: 1px solid var(--line); color: #a1a2ad; font: 500 7px var(--sans); letter-spacing: .05em; }
 .keyboard-dot { background: #62ae83; }
 .empty-results { border: 1px dashed #d4d1dc; border-radius: 18px; background: rgba(255,255,255,.25); }
