@@ -408,7 +408,8 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │    smoke-renderer.cjs, smoke-main-shutdown.cjs,                              │
 │    smoke-capture-hud-runtime.cjs, smoke-capture-ui-runtime.cjs,              │
 │    smoke-capture-loop-runtime.cjs, smoke-packaged-portrait-worker.cjs,       │
-│    smoke-game-dock-runtime.cjs, smoke-windows-game-monitor-runtime.cjs,      │
+│    smoke-game-dock-runtime.cjs, smoke-game-dock-native-shape.cjs,            │
+│    smoke-live-game-dock-recovery.cjs, smoke-windows-game-monitor-runtime.cjs, │
 │    and smoke-packaged-game-dock.cjs. The dock/monitor runtime smokes are     │
 │    documented manual checks and are not part of CI.                          │
 │                                                                              │

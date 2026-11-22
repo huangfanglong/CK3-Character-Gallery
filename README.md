@@ -163,8 +163,12 @@ Run the game dock unit and interactive Windows runtime checks:
 ```bash
 npm run test:game-dock
 npm run test:game-dock-runtime
+npm run test:game-dock-native-shape
+npm run test:live-dock-recovery
 npm run test:windows-monitor-runtime
 ```
+
+The native-shape and live-recovery checks move the Windows pointer inside an isolated test window. Avoid using the mouse while they run. Both use synthetic CK3 targets and do not access or modify a running game.
 
 After building the Windows package, verify its native integrations:
 

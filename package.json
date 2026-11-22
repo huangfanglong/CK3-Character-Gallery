@@ -19,6 +19,8 @@
     "test:capture-ui-runtime": "electron scripts/smoke-capture-ui-runtime.cjs",
     "test:capture-loop-runtime": "electron scripts/smoke-capture-loop-runtime.cjs",
     "test:game-dock-runtime": "electron scripts/smoke-game-dock-runtime.cjs",
+    "test:game-dock-native-shape": "electron scripts/smoke-game-dock-native-shape.cjs",
+    "test:live-dock-recovery": "electron scripts/smoke-live-game-dock-recovery.cjs",
     "test:windows-monitor-runtime": "electron scripts/smoke-windows-game-monitor-runtime.cjs",
     "test:package-portrait-worker": "node scripts/smoke-packaged-portrait-worker.cjs",
     "test:package-game-dock": "node scripts/smoke-packaged-game-dock.cjs",
