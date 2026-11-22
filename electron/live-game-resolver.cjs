@@ -5,7 +5,6 @@ const CHARACTER_DATABASE = '.?AV?$TPdxRefDatabase@VCCharacter@@$07@@';
 const WINDOW_CLASS = '.?AVCCharacterWindow@@';
 const IDLER_CLASS = '.?AVCInGameInterfaceIdler@@';
 function qword(value) { return BigInt.asUintN(64, BigInt(value)); }
-function unique(values) { return [...new Set(values)]; }
 function uint32(value) { return Number(BigInt.asUintN(32, BigInt(value))); }
 
 function parsePe(buffer) {
@@ -240,7 +239,7 @@ class Ck3LayoutResolver {
         }
       } catch { /* Other virtual methods need not use the supported instruction subset. */ }
     }
-    const distinct = unique(candidates).sort((a, b) => a - b);
+    const distinct = [...new Set(candidates)].sort((a, b) => a - b);
     /* Different window modes can carry the shown ID in different fields. Static
        analysis proposes candidates; the engine must validate exactly one against
        the character's database identity on every read, never just use the first. */
@@ -269,7 +268,7 @@ class Ck3LayoutResolver {
         if ((high - low) / 16 + 1 >= 1000) tokens.push(Number(data.readBigUInt64LE(entry)));
       }
     }
-    const distinct = unique(tokens);
+    const distinct = [...new Set(tokens)];
     if (distinct.length !== 1) throw new Error(`CK3’s “${keyword}” save token could not be uniquely resolved.`);
     return distinct[0];
   }
@@ -379,4 +378,4 @@ class Ck3LayoutResolver {
   }
 }
 
-module.exports = { Ck3LayoutResolver, parsePe, CHARACTER_DATABASE, WINDOW_CLASS, IDLER_CLASS, uint32 };
+module.exports = { Ck3LayoutResolver, CHARACTER_DATABASE, WINDOW_CLASS, IDLER_CLASS, uint32 };

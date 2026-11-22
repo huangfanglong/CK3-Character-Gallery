@@ -21,7 +21,7 @@ let childError = null;
 child.once('error', (error) => { childError = error; });
 child.stderr?.on('data', (chunk) => childStderr.push(chunk));
 const childClose = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const { setTimeout: delay } = require('node:timers/promises');
 
 function stderrText() {
   return Buffer.concat(childStderr).toString('utf8').trim();

@@ -110,7 +110,6 @@ function normalizedCharacter(character) {
     status: character.dna?.trim() ? 'ready' : 'draft',
     title: character.title === 'Uncatalogued character' ? '' : character.title || '',
     variants: character.variants || character.images?.length || 0,
-    color: character.color || colorFor(character.name),
   };
   const nameColor = normalizeAppearanceColor(character.nameColor);
   const titleColor = normalizeAppearanceColor(character.titleColor);
@@ -119,11 +118,6 @@ function normalizedCharacter(character) {
   if (titleColor) normalized.titleColor = titleColor; else delete normalized.titleColor;
   if (titleGlowColor) normalized.titleGlowColor = titleGlowColor; else delete normalized.titleGlowColor;
   return normalized;
-}
-
-function colorFor(name = '') {
-  const colors = ['rust', 'violet', 'olive', 'ochre', 'blue', 'plum'];
-  return colors[[...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % colors.length];
 }
 
 function visibleCharacters() {
@@ -193,7 +187,6 @@ function icon(name) {
     more: '<circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle>',
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"></path>',
     download: '<path d="M12 4v11M8 11l4 4 4-4M5 20h14"></path>',
-    folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>',
     check: '<path d="m5 12 4 4L19 6"></path>',
     edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"></path>',
     palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h3a6 6 0 0 0 0-12z"></path><circle cx="7.5" cy="10.5" r=".8"></circle><circle cx="9" cy="6.8" r=".8"></circle><circle cx="13" cy="6" r=".8"></circle>',
@@ -869,7 +862,6 @@ const REORDERABLE_LISTS = [
     itemSelector: '.character-card',
     key: (item) => item.dataset.characterId,
     canStart: (event) => !event.target.closest('button'),
-    onStart: () => {},
     insertAfter: (event, dragged, target) => {
       const targetRect = target.getBoundingClientRect();
       const draggedRect = dragged.getBoundingClientRect();
@@ -905,7 +897,7 @@ function installReorderDelegation() {
       if (items.length < 2) return;
       if (!config.canStart(event)) { event.preventDefault(); return; }
       reorderSession = { config, container, item, initialOrder: items.map(config.key), committed: false };
-      config.onStart(item);
+      config.onStart?.(item);
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', config.key(item));
       container.classList.add('is-reordering');
@@ -1146,6 +1138,12 @@ function restoreSelectionFocus() {
   }
 }
 
+function saveLibraryWithToast() {
+  return saveLibrary()
+    .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })
+    .catch((error) => showToast(readableError(error, 'The archive could not be saved.'), 'info'));
+}
+
 function action(name) {
   if (state.liveLinkConsentPending && !['live-link-accept', 'live-link-decline'].includes(name)) return;
   if (name === 'live-link-accept') return setLiveGameLinkChoice(true);
@@ -1203,9 +1201,7 @@ function action(name) {
   if (name === 'clear-gallery-search') { state.galleryQuery = ''; render(); document.querySelector('#collection-search-input')?.focus(); return; }
   if (name === 'toggle-sidebar') { document.querySelector('.sidebar')?.classList.toggle('is-open'); return; }
   if (name === 'open-folder') return desktop?.openFolder(state.dataDirectory);
-  if (name === 'save-library') return saveLibrary()
-    .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })
-    .catch((error) => showToast(readableError(error, 'The archive could not be saved.'), 'info'));
+  if (name === 'save-library') return saveLibraryWithToast();
   if (name === 'exit') return desktop?.quit();
   if (name === 'duplicate-shortcut') return duplicateSelectedCharacter();
   if (name === 'add-variant') return chooseImage();
@@ -1344,9 +1340,7 @@ function installKeyboardShortcuts() {
     }
     if (command && key === 's') {
       event.preventDefault();
-      saveLibrary()
-        .then((saved) => { if (saved) showToast('Archive saved.', 'success'); })
-        .catch((error) => showToast(readableError(error, 'The archive could not be saved.'), 'info'));
+      saveLibraryWithToast();
       return;
     }
     if (command && key === 'd') {
@@ -1456,12 +1450,9 @@ async function openClipboardFile(file) {
       if (!desktop) throw new Error('Animated clipboard portraits are only available in the desktop app.');
       return desktop.prepareImageData(dataUrl);
     }
-    const dimensions = await new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-      image.onerror = reject;
-      image.src = dataUrl;
-    });
+    const bitmap = await createImageBitmap(file);
+    const dimensions = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
     return { dataUrl, ...dimensions };
   });
   if (source) openClipboardSource(source, target);

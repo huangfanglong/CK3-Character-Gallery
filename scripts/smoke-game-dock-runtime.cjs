@@ -13,7 +13,7 @@ if (!electron.app) {
 } else {
   const { app, BrowserWindow, screen } = electron;
   const { GameDock } = require('../electron/game-dock.cjs');
-  const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const { setTimeout: delay } = require('node:timers/promises');
 
   async function main() {
     const display = screen.getPrimaryDisplay();

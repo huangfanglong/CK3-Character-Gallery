@@ -131,7 +131,7 @@ class LiveGameBridge {
 }
 
 function sanitizeResult(action, result) {
-  if (action === 'set-enabled' || action === 'close' || action === 'cancel') return true;
+  if (action === 'set-enabled' || action === 'cancel') return true;
   if (action === 'import') {
     if (typeof result?.dna !== 'string' || !result.dna.includes('genes=') && !/\bgenes\s*=\s*\{/.test(result.dna)) throw new Error('The imported DNA response is invalid.');
     return { dna: result.dna, target: targetResult(result.target), geneCount: Number(result.geneCount) };
@@ -153,7 +153,6 @@ function reportResult(report) {
     geneCount: Number(report?.geneCount) || 0,
     catalogHash: typeof report?.catalogHash === 'string' ? report.catalogHash : '',
     excluded: Array.isArray(report?.excluded) ? report.excluded.filter((name) => typeof name === 'string').slice(0, 100) : [],
-    remapped: [],
     message: typeof report?.message === 'string' ? report.message.slice(0, 600) : '',
   };
 }

@@ -151,9 +151,6 @@ async function importCollection() {
   if (!selection) return;
   const folder = typeof selection === 'string' ? selection : selection.folder;
   let suggestedName = typeof selection === 'string' ? '' : selection.suggestedName;
-  if (suggestedName) {
-    const base = suggestedName; let suffix = 2;
-    while (state.galleries.some((gallery) => gallery.name.toLowerCase() === suggestedName.toLowerCase())) suggestedName = `${base} (${suffix++})`;
-  }
+  if (suggestedName) suggestedName = uniqueCollectionName(suggestedName);
   showImportModal(folder, suggestedName);
 }

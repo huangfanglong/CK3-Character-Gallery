@@ -408,8 +408,7 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │    smoke-renderer.cjs, smoke-main-shutdown.cjs,                              │
 │    smoke-capture-hud-runtime.cjs, smoke-capture-ui-runtime.cjs,              │
 │    smoke-capture-loop-runtime.cjs, smoke-packaged-portrait-worker.cjs,       │
-│    smoke-game-dock-runtime.cjs, smoke-game-dock-native-shape.cjs,            │
-│   smoke-live-game-dock-recovery.cjs, smoke-windows-game-monitor-runtime.cjs, │
+│    smoke-game-dock-runtime.cjs, smoke-windows-game-monitor-runtime.cjs,      │
 │    and smoke-packaged-game-dock.cjs. The dock/monitor runtime smokes are     │
 │    documented manual checks and are not part of CI.                          │
 │                                                                              │
@@ -448,17 +447,6 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │  Window close -> destroy dock and HUD -> release owner-scoped capture/source │
 │    state -> bounded portrait-preview drain -> app quit even if native        │
 │    cleanup fails.                                                            │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                           RECENT COMMITS REVIEWED                            │
-├──────────────────────────────────────────────────────────────────────────────┤                                           
-│                                                                              │
-│  736b09b  General UI clean up.                                               │
-│  42c5537  Lazy render 48 cards at a time; fix black animated portraits.      │
-│  f0a8866  Fix dock crop drag when Windows swallows the initial pointerdown.  │
-│  1ffc261  Fix dock gene parsing, discovery, preference, focus, click bugs.   │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```

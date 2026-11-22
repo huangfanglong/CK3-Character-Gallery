@@ -202,7 +202,7 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   fixture.process.patch(fixture.process.objects.dna, 0, Buffer.from([88]), 1);
   await assert.rejects(engine.confirmApply(fixture.game, sameSelection.token), /changed after the preview/);
 
-  assert.deepEqual(sanitizeResult('prepare-apply', { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella' }, report: { geneCount: 24, message: 'Safe' }, raw: original }), { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, catalogHash: '', excluded: [], remapped: [], message: 'Safe' } });
+  assert.deepEqual(sanitizeResult('prepare-apply', { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella' }, report: { geneCount: 24, message: 'Safe' }, raw: original }), { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, catalogHash: '', excluded: [], message: 'Safe' } });
   await engine.setEnabled(false);
   assert.equal(fixture.process.handles.size, 0);
 

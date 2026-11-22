@@ -50,11 +50,6 @@ function dockHitRegions(gameBounds, mode = 'compact', position = 'center', crop 
   return regions;
 }
 
-function pointInRegions(point, regions) {
-  return regions.some((region) => point.x >= region.x && point.y >= region.y
-    && point.x < region.x + region.width && point.y < region.y + region.height);
-}
-
 class GameDock {
   constructor(options) {
     this.BrowserWindow = options.BrowserWindow;
@@ -69,7 +64,6 @@ class GameDock {
     this.logger = options.logger || console;
     this.preferences = normalizeDockPreferences(options.preferences);
     this.window = null;
-    this.loaded = false;
     this.ready = false;
     this.editing = false;
     this.nativeHitTesting = false;
@@ -237,7 +231,6 @@ class GameDock {
 
   ensureWindow() {
     if (this.window && !this.window.isDestroyed()) return;
-    this.loaded = false;
     this.ready = false;
     const window = new this.BrowserWindow({
       width: 800,
@@ -281,7 +274,6 @@ class GameDock {
     window.webContents.on('ipc-message', (event, channel, payload) => {
       if (this.window !== window || event?.senderFrame !== event.sender?.mainFrame) return;
       if (channel === 'game-dock:ready') {
-        this.loaded = true;
         this.ready = true;
         this.present();
       } else if (channel === 'game-dock:interactive') {
@@ -299,7 +291,7 @@ class GameDock {
     });
     window.on('blur', this.handleBlur);
     window.on('closed', () => {
-      if (this.window === window) { this.window = null; this.loaded = false; this.ready = false; this.editing = false; }
+      if (this.window === window) { this.window = null; this.ready = false; this.editing = false; }
     });
     window.loadFile(this.htmlPath).catch((error) => this.logger.error('Game dock could not load:', error));
   }
@@ -371,7 +363,6 @@ class GameDock {
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
     this.ready = false;
-    this.loaded = false;
     this.editing = false;
     this.game = null;
     this.state.visible = false;
@@ -385,7 +376,5 @@ module.exports = {
   dockSurfaceBounds,
   gameDockBounds,
   normalizeDockPreferences,
-  normalizeLiveLinkPreferences,
-  pointInRegions,
   shouldShowDock,
 };

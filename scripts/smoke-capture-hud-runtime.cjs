@@ -4,7 +4,7 @@ const path = require('node:path');
 const { app, BrowserWindow, screen } = require('electron');
 const { CaptureHud } = require('../electron/capture-hud.cjs');
 
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const { setTimeout: delay } = require('node:timers/promises');
 
 async function waitForHud(hud) {
   const deadline = Date.now() + 5000;

@@ -63,14 +63,13 @@ function modDescriptorPath(userDataDirectory, entry) {
   if (normalized.split(path.sep).includes('..')) throw catalogError('CK3’s enabled-mod list contains an unsafe descriptor path.');
   const root = path.resolve(userDataDirectory);
   const resolved = path.resolve(root, normalized);
-  if (resolved !== root && !resolved.toLowerCase().startsWith(`${root.toLowerCase()}${path.sep}`)) throw catalogError('CK3’s enabled-mod descriptor is outside its user-data folder.');
+  if (!pathWithin(root, resolved)) throw catalogError('CK3’s enabled-mod descriptor is outside its user-data folder.');
   return resolved;
 }
 
 function pathWithin(root, candidate) {
-  const normalizedRoot = path.resolve(root).toLowerCase();
-  const normalizedCandidate = path.resolve(candidate).toLowerCase();
-  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`);
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
 function expectedModRoots(baseDirectory, userDataDirectory) {
@@ -190,4 +189,4 @@ async function loadEffectiveGeneCatalog(executablePath, options = {}) {
   return catalog;
 }
 
-module.exports = { defaultUserDataDirectories, findBaseGeneDirectory, loadEffectiveGeneCatalog, modDescriptorPath };
+module.exports = { loadEffectiveGeneCatalog, modDescriptorPath };

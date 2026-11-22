@@ -8,7 +8,7 @@ const { parsePersistentDna } = require('./live-dna-codec.cjs');
 const { LiveGameBridge } = require('./live-game-bridge.cjs');
 
 const MUTATING_COMMANDS = new Set(['quick-add', 'create-record', 'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'undo-create', 'finish-without-portrait', 'retry']);
-const LIVE_COMMANDS = new Set(['live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-cancel', 'live-retry']);
+const LIVE_COMMANDS = new Set(['live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-retry']);
 
 class GameDockService {
   constructor(options) {
@@ -46,7 +46,6 @@ class GameDockService {
     this.liveApply = null;
     this.lastLiveCommand = null;
     this.liveQueue = Promise.resolve();
-    this.liveMutationType = '';
   }
 
   async loadPreferences() {
@@ -182,7 +181,6 @@ class GameDockService {
     if (this.mutationKind === 'live') {
       this.mutation = null;
       this.mutationKind = '';
-      this.liveMutationType = '';
     }
   }
 
@@ -332,13 +330,11 @@ class GameDockService {
       this.liveQueue = operation.catch(() => {});
       this.mutation = operation;
       this.mutationKind = 'live';
-      this.liveMutationType = type;
       try { return await operation; }
       finally {
         if (this.mutation === operation) {
           this.mutation = null;
           this.mutationKind = '';
-          this.liveMutationType = '';
         }
       }
     }
@@ -376,14 +372,6 @@ class GameDockService {
     const stale = () => revision !== this.liveRevision;
     if (stale()) return { ok: true, cancelled: true };
     const { type } = command;
-    if (type === 'live-cancel') {
-      await this.liveBridge.cancel();
-      if (stale()) return { ok: true, cancelled: true };
-      this.liveApply = null;
-      this.lastLiveCommand = null;
-      this.clearLiveState();
-      return { ok: true };
-    }
     if (type === 'live-retry') {
       if (!this.lastLiveCommand) throw new Error('Start the live-game action again.');
       command = { ...this.lastLiveCommand, operationId: command.operationId };
@@ -459,7 +447,7 @@ class GameDockService {
     try {
       const result = await operation;
       if (result.cancelled || this.mutation !== operation) return { ok: true, cancelled: true };
-      if (result.ok && ['quick-add', 'create-record', 'finish-without-portrait', 'dismiss'].includes(command.type)) this.clearDraft(false);
+      if (result.ok && ['quick-add', 'create-record', 'finish-without-portrait'].includes(command.type)) this.clearDraft(false);
       return result;
     } finally {
       if (this.mutation === operation) {

@@ -70,7 +70,6 @@ function dockIcon(name) {
     check: '<path d="m5 12 4 4L19 6"/>',
     camera: '<path d="M4 7h4l2-3h4l2 3h4v12H4z"/><circle cx="12" cy="13" r="4"/>',
     record: '<circle cx="12" cy="12" r="6"/>',
-    undo: '<path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 0 12" transform="translate(0 -3)"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6 1c0 2-2.3 2-2.3 4M12 17h.01"/>',
     download: '<path d="M12 3v12m-5-5 5 5 5-5M5 20h14"/>',
     apply: '<path d="M12 21V9m-5 5 5-5 5 5M5 4h14"/>',

@@ -223,16 +223,15 @@ function persistentDnaToRaw(text, catalog) {
     }
   }
   const raw = Buffer.from(bytes);
-  return { raw, report: conversionReport(catalog, unsupported, []) };
+  return { raw, report: conversionReport(catalog, unsupported) };
 }
 
-function conversionReport(catalog, unsupported, remapped) {
+function conversionReport(catalog, unsupported) {
   const excluded = [...new Set(unsupported)];
   return {
     geneCount: catalog.genes.length,
     catalogHash: catalog.hash || '',
     excluded,
-    remapped,
     message: `${catalog.genes.length} genes mapped to this installation. Hair, beard, clothing, and other special appearance entries are not part of CK3’s raw DNA array${excluded.length ? `; ${excluded.length} such entr${excluded.length === 1 ? 'y was' : 'ies were'} excluded` : ''}.`,
   };
 }
@@ -257,4 +256,4 @@ function rawToPersistentDna(raw, catalog, options = {}) {
   return `ruler_designer_live={${type}\n\tgenes={\n${lines.join('\n')}\n\t}\n}`;
 }
 
-module.exports = { createGeneCatalog, parseGeneScript, parsePersistentDna, persistentDnaToRaw, rawToPersistentDna, UNSUPPORTED_GENES };
+module.exports = { createGeneCatalog, parseGeneScript, parsePersistentDna, persistentDnaToRaw, rawToPersistentDna };

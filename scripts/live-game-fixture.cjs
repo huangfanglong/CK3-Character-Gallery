@@ -2,7 +2,6 @@ const { createGeneCatalog, rawToPersistentDna } = require('../electron/live-dna-
 
 const BASE = 0x140000000n;
 const RVA = { text: 0x1000, rdata: 0x2000, data: 0x9000 };
-const IDS = { window: 1, character: 2, idler: 3, database: 4, gfx: 5, handler: 6 };
 const NAMES = {
   window: '.?AVCCharacterWindow@@', character: '.?AVCCharacter@@', idler: '.?AVCInGameInterfaceIdler@@',
   database: '.?AV?$TPdxRefDatabase@VCCharacter@@$07@@', gfx: '.?AVCIngameInterfaceIdlerGfx@@', handler: '.?AVCIngameInterfaceHandler@@',
@@ -174,4 +173,4 @@ function liveFixture() {
   return { pe, process, catalog: genes, game: { pid: 42, executablePath: 'C:\\fixture\\ck3.exe' } };
 }
 
-module.exports = { liveFixture, BASE, RVA, IDS };
+module.exports = { liveFixture, BASE, RVA };

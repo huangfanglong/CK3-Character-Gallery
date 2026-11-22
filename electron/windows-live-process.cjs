@@ -117,4 +117,4 @@ class WindowsLiveProcess {
   }
 }
 
-module.exports = { WindowsLiveProcess, createLiveProcessApi, READ_ACCESS, WRITE_ACCESS, SCAN_CHUNK_SIZE };
+module.exports = { WindowsLiveProcess };

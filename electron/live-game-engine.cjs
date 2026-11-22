@@ -8,9 +8,6 @@ const { WindowsLiveProcess } = require('./windows-live-process.cjs');
 const { rawToPersistentDna, persistentDnaToRaw } = require('./live-dna-codec.cjs');
 const { loadEffectiveGeneCatalog } = require('./live-game-catalog.cjs');
 
-/* Kept for callers that displayed the original supported-file list. Catalog loading
-   now discovers every effective raw-gene file instead of using this legacy subset. */
-const GENE_FILES = ['00_genes_color.txt', '01_genes_morph.txt', '02_genes_accessories_misc.txt'];
 function fingerprintOf(target) { return `${target.pid}:${target.id}:${target.character}:${target.window}:${target.dnaPointer}:${target.geneCount}:${target.catalogHash}:${target.exeHash}`; }
 function validGame(game) {
   if (!Number.isInteger(game?.pid) || game.pid <= 0 || typeof game?.executablePath !== 'string' || !/^[a-z]:[\\/].*\\ck3\.exe$/i.test(game.executablePath)) throw new Error('Focus CK3 before using Live Game Link.');
@@ -305,4 +302,4 @@ class LiveGameEngine {
   cancel() { this.pending = null; }
 }
 
-module.exports = { LiveGameEngine, fingerprintOf, publicTarget, sameBytes, GENE_FILES };
+module.exports = { LiveGameEngine };

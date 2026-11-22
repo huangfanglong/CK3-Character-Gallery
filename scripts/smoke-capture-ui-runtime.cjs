@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const { setTimeout: delay } = require('node:timers/promises');
 
 async function waitForPreview(window) {
   const deadline = Date.now() + 5000;

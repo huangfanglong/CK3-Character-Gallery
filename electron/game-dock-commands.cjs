@@ -67,7 +67,7 @@ function normalizeGameDockState(patch) {
     state.position = patch.position;
   }
   if ('shortcut' in patch) state.shortcut = text(patch.shortcut, 'shortcut', 60);
-  for (const key of ['undoUntil']) if (key in patch) state[key] = Number.isFinite(patch[key]) ? Math.max(0, patch[key]) : 0;
+  if ('undoUntil' in patch) state.undoUntil = Number.isFinite(patch.undoUntil) ? Math.max(0, patch.undoUntil) : 0;
   if ('crop' in patch) state.crop = patch.crop === null ? null : normalizedCrop(patch.crop);
   if ('sourceSize' in patch) {
     if (patch.sourceSize === null) state.sourceSize = null;

@@ -33,5 +33,5 @@
     } catch { return false; }
   }
 
-  return { hasBalancedBraces, isValidCk3Dna };
+  return { isValidCk3Dna };
 }));

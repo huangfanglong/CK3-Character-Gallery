@@ -12,7 +12,6 @@ async function execute(message) {
   if (engine.error) throw engine.error;
   const { action } = message;
   if (action === 'set-enabled') return engine.setEnabled(message.enabled);
-  if (action === 'close') { engine.close(); return true; }
   if (action === 'import') return engine.import(message.game);
   if (action === 'prepare-apply') return engine.prepareApply(message.game, message.selection);
   if (action === 'confirm-apply') return engine.confirmApply(message.game, message.token);
@@ -28,7 +27,4 @@ if (parentPort) {
     task.then((result) => parentPort.postMessage({ id: message.id, ok: true, result }))
       .catch((error) => parentPort.postMessage({ id: message.id, ok: false, error: String(error.message || error).slice(0, 600) }));
   });
-  parentPort.postMessage({ ready: true });
 }
-
-module.exports = { execute };

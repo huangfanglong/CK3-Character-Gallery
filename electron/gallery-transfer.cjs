@@ -252,6 +252,4 @@ module.exports = {
   exportPathFor,
   importGalleryFromFolder,
   readGalleryInfo,
-  resolveGalleryFolder,
-  safeFolderName,
 };

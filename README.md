@@ -6,9 +6,9 @@
 
 CK3 Character Gallery is a local desktop archive for Crusader Kings III character DNA and portraits. I use it to keep faces, DNA strings, tags, and reference notes together instead of digging through screenshots and text files later.
 
-Version 3 is currently an Electron with a portrait-first archive. The v2 Python/Tkinter application is preserved on the `archive/v2` branch.
+Version 4 is currently an Electron with a portrait-first archive. The v2 Python/Tkinter application is preserved on the `archive/v2` branch.
 
-## What's New in 3.1
+## Highlights
 
 ### Live CK3 Portraits
 
@@ -51,7 +51,7 @@ Live Game Link is a separate, persistent opt-in chosen on first launch or under 
 
 Open **View → Game dock guide** or **Help → CK3 game dock guide** for these instructions inside the app.
 
-## Run v3
+## Run
 
 You need Node.js 22.12 or newer.
 
@@ -114,7 +114,7 @@ On macOS, the command shortcuts also respond to `Command` though I don't have a 
 
 ## Local Data
 
-Currently, similar to v2, v3 reads and writes the local archive at:
+The app reads and writes the local archive at:
 
 ```text
 character_gallery_data/
@@ -128,7 +128,7 @@ Writes to `galleries.json` use a temporary file followed by a rename.
 
 A packaged Electron build uses `character_gallery_data` under Electron's application data directory. Supports importing and exporting galleries. Backward compatible with v2's gallery export.
 
-See [CHANGELOG.md](CHANGELOG.md) for the v3 change history.
+See [CHANGELOG.md](CHANGELOG.md) for the change history.
 
 ## Checks
 
@@ -142,12 +142,6 @@ Audit installed dependency licenses:
 
 ```bash
 npm run licenses:check
-```
-
-Run the JavaScript syntax checks:
-
-```bash
-npm run test:smoke
 ```
 
 Run the Electron renderer smoke test:
@@ -195,7 +189,7 @@ The renderer smoke test opens Electron and checks the archive, combinable filter
 
 ## Contributing
 
-Bug reports and pull requests are welcome. For v3 changes, include the renderer smoke test when the behavior can be exercised through the UI. Prefer to include a test for everything to prevent regression.
+Bug reports and pull requests are welcome. For changes, include the renderer smoke test when the behavior can be exercised through the UI. Prefer to include a test for everything to prevent regression.
 
 ## License
 
