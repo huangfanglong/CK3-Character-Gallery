@@ -154,6 +154,19 @@ class LiveGameEngine {
     return result;
   }
   async readTarget(handle, session) {
+    const cachedHeap = session.heapObjects;
+    try { return await this.readTargetOnce(handle, session); }
+    catch (error) {
+      const staleCandidates = /character database is unavailable|character window is closed|identity can be verified/.test(error.message);
+      if (!cachedHeap || !staleCandidates) throw error;
+      /* CK3 can recreate its UI/database objects while the executable layout stays
+         unchanged. Retry once with fresh heap candidates; never retry ambiguous identity. */
+      session.heapObjects = null;
+      try { return await this.readTargetOnce(handle, session); }
+      catch (retryError) { session.heapObjects = null; throw retryError; }
+    }
+  }
+  async readTargetOnce(handle, session) {
     const { layout, catalog, resolver } = session;
     const read = (address, size) => this.process.read(handle, address, size);
     const pointer = async (address) => (await read(address, 8)).readBigUInt64LE(0);

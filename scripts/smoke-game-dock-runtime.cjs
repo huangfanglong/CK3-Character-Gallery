@@ -237,6 +237,10 @@ if (!electron.app) {
       await window.webContents.executeJavaScript('document.querySelector("[data-command=toggle-capture]").click()');
       await delay(50);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".capture-copy strong").textContent'), /smooth loop/);
+      await window.webContents.executeJavaScript(`dockState.capture.state='recording';dockState.shortcut='"><img id="dock-shortcut-injection" src=x>';renderDock()`);
+      assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector("#dock-shortcut-injection"))'), false, 'Capture shortcuts must not be parsed as dock HTML.');
+      assert.match(await window.webContents.executeJavaScript('document.querySelector(".capture-copy span").textContent'), /Press .* to stop/);
+      await window.webContents.executeJavaScript("dockState.capture.state='matching';delete dockState.shortcut;renderDock()");
 
       dock.update({ mode: 'success', capture: null, crop: null, message: 'Portrait and DNA saved.', undoUntil: Date.now() + 10_000 });
       await delay(30);
@@ -245,10 +249,15 @@ if (!electron.app) {
       dock.update({ mode: 'error', error: 'The CK3 window is no longer available.' });
       await delay(30);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".dock-body").textContent'), /no longer available/);
-      await window.webContents.executeJavaScript(`(()=>{const button=document.querySelector('.capture-actions [data-command=dismiss]');const rect=button.getBoundingClientRect();const x=rect.x+rect.width/2;const y=rect.y+rect.height/2;button.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,button:0,buttons:0,pointerId:91,clientX:x,clientY:y}));button.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));})()`);
+      const dismissalBaseline = dismissalCount;
+      await window.webContents.executeJavaScript(`(()=>{const button=document.querySelector('.capture-actions [data-command=dismiss]');const rect=button.getBoundingClientRect();button.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,button:0,buttons:0,pointerId:90,clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2}));})()`);
+      await delay(30);
+      assert.equal(dock.state.mode, 'error', 'A release without a matching dock hover remains CK3 input.');
+      assert.equal(dismissalCount, dismissalBaseline);
+      await window.webContents.executeJavaScript(`(()=>{const button=document.querySelector('.capture-actions [data-command=dismiss]');const rect=button.getBoundingClientRect();const x=rect.x+rect.width/2;const y=rect.y+rect.height/2;button.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,button:0,buttons:0,pointerId:91,clientX:x,clientY:y}));button.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,button:0,buttons:0,pointerId:91,clientX:x,clientY:y}));button.dispatchEvent(new PointerEvent('click',{bubbles:true,cancelable:true,button:0,pointerId:91,clientX:x,clientY:y}));})()`);
       await delay(50);
-      assert.equal(dock.state.mode, 'compact', 'An orphaned pointer release dismisses the inactive Windows dock.');
-      assert.equal(dismissalCount, 1, 'A synthesized click following the release fallback must not dispatch twice.');
+      assert.equal(dock.state.mode, 'compact', 'A recent matching hover preserves the inactive Windows release fallback.');
+      assert.equal(dismissalCount, dismissalBaseline + 1, 'A synthesized click following the release fallback must not dispatch twice.');
       dock.update({ mode: 'compact', error: '', capture: null, liveEnabled: true, liveCanApply: true, liveSelectedName: 'Archived Aella', liveUndoUntil: 0 });
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), false);

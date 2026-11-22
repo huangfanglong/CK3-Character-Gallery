@@ -122,7 +122,7 @@ function captureMarkup() {
   const recording = capture.state === 'recording';
   const matching = capture.state === 'matching';
   const label = recording ? 'Recording live portrait' : matching ? 'Finding a smooth loop' : capture.state === 'saving' ? 'Saving portrait' : 'Preparing capture';
-  const detail = recording ? `Press ${shortcutLabel(dockState.shortcut)} to stop` : matching ? 'Press again to finish now' : 'Keep CK3 visible for a moment';
+  const detail = recording ? `Press ${dockEscape(shortcutLabel(dockState.shortcut))} to stop` : matching ? 'Press again to finish now' : 'Keep CK3 visible for a moment';
   return `<div class="dock-body"><div class="capture-state"><span class="capture-indicator"></span><div class="capture-copy"><strong>${label}</strong><span>${detail}</span></div><span class="spacer"></span><time class="capture-time" id="capture-time">${elapsedLabel(capture.startedAt)}</time>${recording || matching ? `<button class="primary-button danger-button" data-command="toggle-capture">${matching ? 'Finish now' : 'Stop'}</button>` : ''}<button class="icon-button" data-command="cancel-capture" aria-label="Cancel capture">${dockIcon('close')}</button></div></div>`;
 }
 
@@ -329,25 +329,34 @@ function nudgeCrop(event) {
 }
 
 const dockPointerDowns = new Set();
-let releasedPointerClick = null;
+const dockPointerHovers = new Map();
+const releasedPointerClicks = new Map();
 let cropHover = null;
 
+function pruneDockPointerState(now = performance.now()) {
+  for (const [pointerId, hover] of dockPointerHovers) if (now > hover.until) dockPointerHovers.delete(pointerId);
+  for (const [pointerId, click] of releasedPointerClicks) if (now > click.until) releasedPointerClicks.delete(pointerId);
+}
+
 dockRoot.addEventListener('click', (event) => {
-  if (releasedPointerClick && performance.now() <= releasedPointerClick.until
-    && Math.abs(event.clientX - releasedPointerClick.x) <= 2 && Math.abs(event.clientY - releasedPointerClick.y) <= 2) {
+  pruneDockPointerState();
+  const released = releasedPointerClicks.get(event.pointerId);
+  if (released && Math.abs(event.clientX - released.x) <= 2 && Math.abs(event.clientY - released.y) <= 2) {
     /* Some Windows/Chromium combinations still synthesize click after an orphaned
-       pointer-up. It belongs to the release command we already dispatched. */
-    releasedPointerClick = null;
+       pointer-up. Suppress only the click from that same physical pointer. */
+    releasedPointerClicks.delete(event.pointerId);
     event.preventDefault();
     return;
   }
-  releasedPointerClick = null;
+  releasedPointerClicks.delete(event.pointerId);
   const button = event.target.closest('[data-command]');
   if (button) { event.preventDefault(); void selectCommand(button); return; }
   if (event.target.closest('.dock-text-input')) return;
   if (!event.target.closest('.popover')) { closeMenus(); renderDock(); }
 });
 dockRoot.addEventListener('pointerdown', (event) => {
+  releasedPointerClicks.delete(event.pointerId);
+  dockPointerHovers.delete(event.pointerId);
   if (event.button === 0) dockPointerDowns.add(event.pointerId);
   const input = event.target.closest('.dock-text-input');
   if (input) {
@@ -361,42 +370,62 @@ dockRoot.addEventListener('pointerdown', (event) => {
   beginCrop(event);
 });
 dockRoot.addEventListener('pointermove', (event) => {
+  pruneDockPointerState();
   const reticle = event.target.closest('#portrait-reticle');
   if (!event.buttons) {
+    const button = event.target.closest('[data-command]');
+    dockPointerHovers.set(event.pointerId, {
+      button: button && !button.disabled ? button : null,
+      x: event.clientX, y: event.clientY, until: performance.now() + 750,
+    });
     cropHover = reticle ? {
       pointerId: event.pointerId, x: event.clientX, y: event.clientY,
       handle: event.target.dataset.cropHandle || '',
     } : null;
-  } else if (!drag && (event.buttons & 1) && !dockPointerDowns.has(event.pointerId)
-    && reticle && cropHover?.pointerId === event.pointerId) {
-    /* WM_MOUSEACTIVATE can eat the crop's pointer-down while its later moves still
-       carry the primary button. Recover from the last hover so the first movement
-       and the originally hovered corner are not lost. A drag that began in CK3 has
-       no crop hover and remains game input. */
-    beginCrop(event, cropHover);
-    if (drag) dockPointerDowns.add(event.pointerId);
+  } else {
+    dockPointerHovers.delete(event.pointerId);
+    if (!drag && (event.buttons & 1) && !dockPointerDowns.has(event.pointerId)
+      && reticle && cropHover?.pointerId === event.pointerId) {
+      /* WM_MOUSEACTIVATE can eat the crop's pointer-down while its later moves still
+         carry the primary button. Recover from the last hover so the first movement
+         and the originally hovered corner are not lost. A drag that began in CK3 has
+         no crop hover and remains game input. */
+      beginCrop(event, cropHover);
+      if (drag) dockPointerDowns.add(event.pointerId);
+    }
   }
   moveCrop(event);
 });
 dockRoot.addEventListener('pointerout', (event) => {
+  if (!event.relatedTarget) dockPointerHovers.delete(event.pointerId);
   if (event.target.closest('#portrait-reticle') && !event.relatedTarget?.closest?.('#portrait-reticle')) cropHover = null;
 });
 dockRoot.addEventListener('pointerup', (event) => {
+  const now = performance.now();
+  pruneDockPointerState(now);
   const hadPointerDown = dockPointerDowns.delete(event.pointerId);
+  const hover = dockPointerHovers.get(event.pointerId);
+  dockPointerHovers.delete(event.pointerId);
   cropHover = null;
   void endCrop(event);
   if (hadPointerDown || event.button !== 0) return;
   const button = event.target.closest('[data-command]');
-  if (!button || button.disabled) return;
+  if (!button || button.disabled || hover?.button !== button || now > hover.until
+    || Math.abs(event.clientX - hover.x) > 4 || Math.abs(event.clientY - hover.y) > 4) return;
   /* An inactive focusable:false Electron window answers WM_MOUSEACTIVATE with
-     MA_NOACTIVATEANDEAT. Windows delivers pointer-up but deliberately eats the
-     matching press, so no click is generated. Dispatch that orphaned release once;
-     a normal press/release still uses the native click event above. */
-  releasedPointerClick = { x: event.clientX, y: event.clientY, until: performance.now() + 750 };
+     MA_NOACTIVATEANDEAT. Dispatch an orphaned release only when this pointer just
+     hovered the same button; a drag that began in CK3 remains game input. */
+  releasedPointerClicks.set(event.pointerId, { x: event.clientX, y: event.clientY, until: now + 750 });
   event.preventDefault();
   void selectCommand(button);
 });
-dockRoot.addEventListener('pointercancel', (event) => { dockPointerDowns.delete(event.pointerId); cropHover = null; void endCrop(event); });
+dockRoot.addEventListener('pointercancel', (event) => {
+  dockPointerDowns.delete(event.pointerId);
+  dockPointerHovers.delete(event.pointerId);
+  releasedPointerClicks.delete(event.pointerId);
+  cropHover = null;
+  void endCrop(event);
+});
 dockRoot.addEventListener('keydown', (event) => {
   if (event.target.id === 'portrait-reticle') { nudgeCrop(event); return; }
   if (event.key === 'Escape') {

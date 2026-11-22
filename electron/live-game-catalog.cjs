@@ -67,13 +67,45 @@ function modDescriptorPath(userDataDirectory, entry) {
   return resolved;
 }
 
+function pathWithin(root, candidate) {
+  const normalizedRoot = path.resolve(root).toLowerCase();
+  const normalizedCandidate = path.resolve(candidate).toLowerCase();
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+function expectedModRoots(baseDirectory, userDataDirectory) {
+  const installationDirectory = path.dirname(path.resolve(baseDirectory, '..', '..'));
+  const roots = [installationDirectory];
+  if (userDataDirectory) roots.push(path.resolve(userDataDirectory));
+  const commonDirectory = path.dirname(installationDirectory);
+  if (path.basename(commonDirectory).toLowerCase() === 'common' && path.basename(path.dirname(commonDirectory)).toLowerCase() === 'steamapps') {
+    roots.push(path.join(path.dirname(commonDirectory), 'workshop'));
+  }
+  return roots;
+}
+
+function resolveModRoot(descriptor, descriptorPath, allowedRoots) {
+  const normalized = descriptor.root.replaceAll('/', path.sep).replaceAll('\\', path.sep);
+  if (normalized.split(path.sep).includes('..')) {
+    throw catalogError(`the enabled mod descriptor “${path.basename(descriptorPath)}” contains an unsafe installation path.`);
+  }
+  const absolute = path.isAbsolute(descriptor.root);
+  const root = absolute ? path.normalize(descriptor.root) : path.resolve(path.dirname(descriptorPath), normalized);
+  /* Absolute paths are CK3's explicit mechanism for both Workshop and local
+     development mods. Relative paths, however, must remain in a known mod root. */
+  if (!absolute && !allowedRoots.some((allowed) => pathWithin(allowed, root))) {
+    throw catalogError(`the enabled mod descriptor “${path.basename(descriptorPath)}” points outside the installation, user-data, or Workshop mod folders.`);
+  }
+  return root;
+}
+
 function descriptorProperties(text, descriptorPath) {
   if (text.length > MAX_MOD_CONFIG_BYTES) throw catalogError(`the mod descriptor “${path.basename(descriptorPath)}” is too large.`);
   const properties = parseGeneScript(text);
   const roots = properties.filter((property) => property.key === 'path' && typeof property.value === 'string');
   if (roots.length !== 1 || !roots[0].value.trim()) throw catalogError(`the enabled mod descriptor “${path.basename(descriptorPath)}” has no unique installation path.`);
   const replacesGenes = properties.some((property) => property.key === 'replace_path' && typeof property.value === 'string'
-    && property.value.valueOf().replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase() === 'common/genes');
+    && ['common', 'common/genes'].includes(property.value.valueOf().replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()));
   return { root: roots[0].value.trim(), replacesGenes };
 }
 
@@ -123,6 +155,7 @@ async function loadEffectiveGeneCatalog(executablePath, options = {}) {
   let enabledCount = 0;
   if (active) {
     identities.push(active.identity);
+    const allowedModRoots = expectedModRoots(baseDirectory, active.directory);
     for (const entry of active.entries) {
       const descriptorPath = modDescriptorPath(active.directory, entry);
       let text;
@@ -132,7 +165,7 @@ async function loadEffectiveGeneCatalog(executablePath, options = {}) {
         throw error;
       }
       const descriptor = descriptorProperties(text, descriptorPath);
-      const root = path.isAbsolute(descriptor.root) ? path.normalize(descriptor.root) : path.resolve(path.dirname(descriptorPath), descriptor.root);
+      const root = resolveModRoot(descriptor, descriptorPath, allowedModRoots);
       identities.push(`${entry}\0${text}`);
       enabledCount += 1;
       if (descriptor.replacesGenes) files.clear();

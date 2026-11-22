@@ -21,7 +21,11 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
 
 (async () => {
   const fixture = liveFixture();
-  const resolver = new Ck3LayoutResolver(fixture.pe.buffer, BASE, (address, size) => fixture.process.read(fixture.process.open(1, 'fixture', false).handle, address, size));
+  const fixtureReads = [];
+  const resolver = new Ck3LayoutResolver(fixture.pe.buffer, BASE, (address, size) => {
+    fixtureReads.push({ address, size });
+    return fixture.process.read(fixture.process.open(1, 'fixture', false).handle, address, size);
+  });
   const layout = await resolver.resolve();
   assert.equal(layout.windowVtableRva, fixture.pe.vtables.window);
   assert.equal((await resolver.vtables('.?AVCCharacterWindow@@')).length, 2);
@@ -29,7 +33,11 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   assert.deepEqual(layout.idOffsets, [0xc8, 0xf8]);
   assert.equal(layout.dnaOffset, 0x160);
   assert.equal(await resolver.keywordToken('dna'), 0x500);
+  const staticReadStart = fixtureReads.length;
   assert.equal(await resolver.findStatic('.?AVCInGameInterfaceIdler@@'), RVA.data);
+  const staticReads = fixtureReads.slice(staticReadStart);
+  assert.ok(staticReads.some((read) => read.size === 0x1000), 'Static discovery validates candidates by memory page.');
+  assert.equal(staticReads.some((read) => read.address === fixture.process.objects.idler && read.size === 8), false, 'Static discovery must not issue one tiny read per candidate.');
   assert.equal(await resolver.findStatic('.?AV?$TPdxRefDatabase@VCCharacter@@$07@@'), RVA.data + 8);
   const ambiguous = liveFixture();
   ambiguous.pe.buffer.writeBigUInt64LE(0x5000000n, 0x7400 + 0x20);
@@ -123,6 +131,37 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   await assert.rejects(heapEngine.import(heap.game), /more than one possible selected character/);
   assert.equal(heap.process.writeCalls.length, 0, 'Mapped-tail and heap-fallback verification are read-only.');
   await heapEngine.setEnabled(false);
+
+  const recoveredHeap = liveFixture();
+  recoveredHeap.process.patch(BASE + BigInt(RVA.data), 0, 0, 8);
+  let recoveredWindows = [recoveredHeap.process.objects.window];
+  let heapScans = 0;
+  recoveredHeap.process.findVtableInstances = async (_handle, addresses) => {
+    heapScans += 1;
+    return new Map([
+      [addresses[0].toString(16), recoveredWindows],
+      [addresses[1].toString(16), [recoveredHeap.process.objects.database]],
+    ]);
+  };
+  const recoveredEngine = new LiveGameEngine({ process: recoveredHeap.process, readFile: async () => recoveredHeap.pe.buffer });
+  recoveredEngine.loadCatalog = async () => recoveredHeap.catalog;
+  await recoveredEngine.setEnabled(true);
+  assert.equal((await recoveredEngine.import(recoveredHeap.game)).target.id, 1);
+  recoveredHeap.process.pointer(recoveredHeap.process.objects.window, 0, 0);
+  const replacementWindow = 0x5a00000n;
+  const replacementGui = 0x5b00000n;
+  recoveredHeap.process.add(replacementWindow, Buffer.alloc(0x1000));
+  recoveredHeap.process.add(replacementGui, Buffer.alloc(0x1000));
+  recoveredHeap.process.pointer(replacementWindow, 0, BASE + BigInt(recoveredHeap.pe.vtables.window));
+  recoveredHeap.process.pointer(replacementWindow, 0x60, replacementGui);
+  recoveredHeap.process.patch(replacementWindow, 0xc8, 1, 4);
+  recoveredHeap.process.pointer(replacementGui, 0, BASE + BigInt(recoveredHeap.pe.vtables.gui));
+  recoveredHeap.process.memory.find((entry) => entry.address === replacementGui).data.writeFloatLE(1, 0x108);
+  recoveredWindows = [replacementWindow];
+  assert.equal((await recoveredEngine.import(recoveredHeap.game)).target.id, 1, 'A stale cached heap object triggers one fresh scan instead of disabling later imports.');
+  assert.equal(heapScans, 2);
+  assert.equal(recoveredHeap.process.writeCalls.length, 0);
+  await recoveredEngine.setEnabled(false);
 
   const selection = { id: 'card-1', name: 'Archived Aella', dna: imported.dna.replace('gene_shape_0={ "shape_pos" 103', 'gene_shape_0={ "shape_pos" 211'), modified: 5 };
   const original = fixture.process.dna();

@@ -26,7 +26,7 @@ Note: If you are going to use animated portraits for a large collection expect t
 
 ### CK3 Game Dock (Windows)
 
-The game dock is a separate, content-protected overlay that appears as a thin 6 px strip at the top edge of CK3 while the visible game window is in the foreground. Hover over the strip to unfold the controls; move away to collapse them. Open menus and active capture workflows stay visible. It does not inject into CK3, read game memory, modify game files, or require the gallery window to stay visible.
+The game dock is a separate, content-protected overlay that appears as a thin 6 px strip at the top edge of CK3 while the visible game window is in the foreground. Hover over the strip to unfold the controls; move away to collapse them. Open menus and active capture workflows stay visible. By itself, the dock does not inject into CK3, read game memory, modify game files, or require the gallery window to stay visible. Process memory is accessed only through the separately enabled Live Game Link described below.
 
 **Setup**
 
@@ -44,6 +44,10 @@ The game dock is a separate, content-protected overlay that appears as a thin 6 
 5. A successful quick add offers **View in gallery** and a 12-second **Undo**. Undo refuses to remove the record if it has changed elsewhere.
 
 The dock reads clipboard text only when you choose Quick add or while a visible new-record draft is waiting for DNA. It keeps no clipboard history, sends no telemetry, and stores its enabled/position/collection preferences locally in `ui-settings.json`; those preferences are not included in collection exports. Closing the Bloodline main window closes the dock and exits the app—there is no background tray mode.
+
+**Optional Live Game Link**
+
+Live Game Link is a separate, persistent opt-in chosen on first launch or under **File → Live Game Link**. **Import** opens CK3 read-only to derive persistent DNA from the open character window and verify it against the installation's effective base-game/mod gene catalog. **Apply** first presents a preview and writes only after explicit confirmation; **Undo** is a separate confirmed action available briefly. Enabling the feature alone performs no process access, and ordinary Quick add/portrait capture does not read or write game memory. Unsupported layouts, ambiguous character identities, and incompatible gene catalogs are currently refused rather than guessed. *TODO: better universal/adaptable support for all game versions and mods?
 
 Open **View → Game dock guide** or **Help → CK3 game dock guide** for these instructions inside the app.
 

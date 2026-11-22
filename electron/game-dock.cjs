@@ -279,7 +279,7 @@ class GameDock {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('ipc-message', (event, channel, payload) => {
-      if (this.window !== window) return;
+      if (this.window !== window || event?.senderFrame !== event.sender?.mainFrame) return;
       if (channel === 'game-dock:ready') {
         this.loaded = true;
         this.ready = true;

@@ -11,8 +11,16 @@ assert.equal(boundsFromRect({ left: 0, top: 0, right: 0, bottom: 100 }), null);
 function fakeApi() {
   const listeners = [];
   const koffi = {
-    register(callback) { listeners.push(callback); return callback; },
+    registrations: 0,
+    failRegistrationAt: 0,
+    register(callback) {
+      this.registrations += 1;
+      if (this.registrations === this.failRegistrationAt) throw new Error('registration failed');
+      listeners.push(callback);
+      return callback;
+    },
     unregister(callback) { const index = listeners.indexOf(callback); if (index >= 0) listeners.splice(index, 1); },
+    listenerCount() { return listeners.length; },
   };
   return {
     koffi,
@@ -66,7 +74,14 @@ assert.equal(monitor.restoreFocus('1'), true);
 monitor.stop();
 assert.equal(monitor.started, false);
 assert.equal(monitor.state, null);
+assert.equal(api.koffi.listenerCount(), 0);
+
+const partialRegistration = fakeApi();
+partialRegistration.koffi.failRegistrationAt = 2;
+const failedMonitor = new WindowsGameMonitor({ api: partialRegistration, reconcileIntervalMs: 60_000 });
+assert.equal(failedMonitor.start(), false);
+assert.equal(partialRegistration.koffi.listenerCount(), 0, 'A failed second registration must release the first native callback.');
 
 const unsupported = new WindowsGameMonitor({ platform: 'darwin' });
 assert.equal(unsupported.start(), false);
-console.log('Windows game monitor tests passed: executable matching, stable state, focus transitions, bounds, and cleanup.');
+console.log('Windows game monitor tests passed: executable matching, stable state, focus transitions, bounds, partial-registration cleanup, and cleanup.');

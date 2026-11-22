@@ -11,11 +11,34 @@ function geneName(value) { return /^[a-z][a-z0-9_]{0,119}$/.test(value) ? value 
 
 function scriptTokens(text) {
   if (typeof text !== 'string' || text.length > 8_000_000) throw dnaError('a gene file is empty or too large.');
-  const tokens = text.replace(/^\uFEFF/, '').replace(/#[^\r\n]*/g, '').match(/"[^"\r\n]*"|[{}=]|[^\s{}="]+/g) || [];
+  const source = text.replace(/^\uFEFF/, '');
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '#') {
+      while (index < source.length && source[index] !== '\n' && source[index] !== '\r') index++;
+      continue;
+    }
+    if (/\s/.test(character)) { index++; continue; }
+    if (['{', '}', '='].includes(character)) { tokens.push(character); index++; continue; }
+    if (character === '"') {
+      const start = ++index;
+      while (index < source.length && !['"', '\r', '\n'].includes(source[index])) index++;
+      if (source[index] !== '"') throw dnaError('a gene file has an unclosed quoted value.');
+      tokens.push(`"${source.slice(start, index)}"`);
+      index++;
+      continue;
+    }
+    const start = index;
+    while (index < source.length && !/\s/.test(source[index]) && !['{', '}', '=', '"', '#'].includes(source[index])) index++;
+    tokens.push(source.slice(start, index));
+  }
   return tokens;
 }
 
-function scriptBlock(tokens, start = 0, nested = false) {
+function scriptBlock(tokens, start = 0, nested = false, depth = 0) {
+  if (depth > 64) throw dnaError('a gene file is nested too deeply (maximum 64 levels).');
   const result = [];
   let index = start;
   while (index < tokens.length) {
@@ -27,7 +50,7 @@ function scriptBlock(tokens, start = 0, nested = false) {
     if (key === '=') throw dnaError('a gene file has invalid syntax.');
     if (key === '{') {
       if (!nested) throw dnaError('a gene file has an unexpected opening brace.');
-      const child = scriptBlock(tokens, index + 1, true);
+      const child = scriptBlock(tokens, index + 1, true, depth + 1);
       result.push({ children: child.children });
       index = child.next;
       continue;
@@ -43,7 +66,7 @@ function scriptBlock(tokens, start = 0, nested = false) {
       continue;
     }
     if (tokens[index + 2] === '{') {
-      const child = scriptBlock(tokens, index + 3, true);
+      const child = scriptBlock(tokens, index + 3, true, depth + 1);
       result.push({ key, children: child.children });
       index = child.next;
     } else {
@@ -130,15 +153,18 @@ function genesBody(text) {
   let depth = 1;
   let quote = false;
   for (let i = open.index + open[0].length; i < text.length; i++) {
-    if (text[i] === '"') quote = !quote;
-    if (quote || text[i] === '#') {
-      if (text[i] === '#') while (i < text.length && text[i] !== '\n') i++;
+    if (!quote && text[i] === '#') {
+      while (i < text.length && text[i] !== '\n' && text[i] !== '\r') i++;
       continue;
     }
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}' && --depth === 0) {
-      if (depth !== 0) throw dnaError('the genes block is malformed.');
-      return text.slice(open.index + open[0].length, i);
+    if (text[i] === '"') { quote = !quote; continue; }
+    if (quote) continue;
+    if (text[i] === '{') {
+      depth++;
+      if (depth > 64) throw dnaError('the genes block is nested too deeply (maximum 64 levels).');
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) return text.slice(open.index + open[0].length, i);
     }
   }
   throw dnaError('the genes block is not closed.');

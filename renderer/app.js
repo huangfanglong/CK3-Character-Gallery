@@ -327,13 +327,16 @@ function closeQuickLook() {
 function navigateQuickLook(direction) {
   const records = visibleCharacters();
   const index = records.findIndex((character) => character.id === state.activeId);
-  const next = records[index + direction];
+  const nextIndex = index + direction;
+  const next = records[nextIndex];
   if (!next) return;
   const origin = capturePortraitMotion(app.querySelector('.quick-sheet .inspector-portrait'));
+  const needsGrowth = nextIndex >= state.visibleLimit;
+  if (needsGrowth) state.visibleLimit = Math.min(records.length, Math.max(nextIndex + 1, state.visibleLimit + 48));
   quickLookReturnId ||= state.activeId;
   bindCharacterGallery(next.id);
   resetSelection(next.id);
-  render('selection');
+  render(needsGrowth ? 'all' : 'selection');
   void animateQuickLookNavigation(origin, app.querySelector('.quick-sheet .inspector-portrait'), direction);
   focusWithoutScroll(app.querySelector(`[data-action="${direction < 0 ? 'previous' : 'next'}-character"]`));
 }

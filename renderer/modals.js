@@ -31,7 +31,11 @@ function trapLiveLinkConsentFocus(event) {
     const index = controls.indexOf(document.activeElement);
     const next = event.shiftKey ? (index <= 0 ? controls.length - 1 : index - 1) : (index + 1) % controls.length;
     controls[next].focus();
-  } else if (event.key !== 'Tab') event.preventDefault();
+  } else if (event.key !== 'Tab') {
+    const button = event.target instanceof Element ? event.target.closest('.live-link-consent button:not(:disabled)') : null;
+    if (button && (event.key === 'Enter' || event.key === ' ')) button.click();
+    event.preventDefault();
+  }
   return true;
 }
 

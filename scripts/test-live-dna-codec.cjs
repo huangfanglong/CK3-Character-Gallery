@@ -61,4 +61,9 @@ assert.deepEqual(specialConversion.report.excluded, ['modded_silver_hair'], 'Mod
 assert.equal(specialConversion.raw.length, 80);
 assert.throws(() => persistentDnaToRaw(moddedSpecialDna.replace('modded_silver_hair', 'unknown_modded_gene'), moddedSpecialCatalog), /does not define/);
 assert.throws(() => parsePersistentDna(dna(moddedSpecialCatalog).replace('"shape_pos" 144', '"shape_pos" { 0.0 0.0 }')), /gene|property|block/i);
-console.log('Live DNA codec tests passed: catalog-order independence, template remapping, strict unknown handling, raw-only conversion, modded special-gene exclusion, and appearance exclusions.');
+const quotedHashCatalog = createGeneCatalog([{ name: 'quoted-hash.txt', text: 'morph_genes={gene_shape_0={shape_pos={index=1 note="value # not a comment"}}} # actual comment\n' }]);
+assert.equal(quotedHashCatalog.byName.get('gene_shape_0').templates.shape_pos, 1, 'A hash inside a quoted installation value is not a comment.');
+const quotedHashDna = dna(oldCatalog).replace('gene_shape_0={ "shape_pos"', 'gene_shape_0={ "shape#pos"');
+assert.equal(parsePersistentDna(quotedHashDna).entries.get('gene_shape_0').parts[0].template, 'shape#pos', 'Quoted hashes cannot hide the persistent genes-block closing brace.');
+assert.throws(() => createGeneCatalog([{ name: 'deep.txt', text: `${'a={'.repeat(5000)}${'}'.repeat(5000)}` }]), /Live DNA:.*nested|Live DNA:.*depth/i, 'Hostile nesting returns a bounded domain error instead of RangeError.');
+console.log('Live DNA codec tests passed: catalog-order independence, template remapping, strict unknown handling, raw-only conversion, modded special-gene exclusion, quoted hashes, bounded nesting, and appearance exclusions.');

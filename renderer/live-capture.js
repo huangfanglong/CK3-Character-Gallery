@@ -115,7 +115,7 @@ function liveCaptureNumberControl(input, target, label, disabled = '') {
 function renderLiveCaptureModal() {
   const capture = state.captureSession;
   if (!capture) return;
-  const sources = capture.sources.map((source) => `<button class="capture-source ${source.id === capture.selectedSourceId ? 'selected' : ''}" data-capture-source="${escapeHtml(source.id)}"><img src="${source.thumbnail}" alt=""/><span>${escapeHtml(source.name)}</span></button>`).join('');
+  const sources = capture.sources.map((source) => `<button class="capture-source ${source.id === capture.selectedSourceId ? 'selected' : ''}" data-capture-source="${escapeHtml(source.id)}"><img src="${escapeHtml(source.thumbnail)}" alt=""/><span>${escapeHtml(source.name)}</span></button>`).join('');
   const shortcutOptions = LIVE_CAPTURE_SHORTCUTS.map(([value, label]) => `<option value="${value}"${capture.shortcut === value ? ' selected' : ''}>${label}</option>`).join('');
   const canFrame = capture.phase === 'ready';
   const shortcutLocked = !['loading', 'select-source', 'empty', 'error'].includes(capture.phase);

@@ -33,11 +33,13 @@ class FakeWindow extends EventEmitter {
     this.bounds = { x: 0, y: 0, width: options.width, height: options.height };
     this.sent = [];
     this.webContents = new EventEmitter();
+    this.webContents.mainFrame = {};
+    this.webContents.trustedEvent = { sender: this.webContents, senderFrame: this.webContents.mainFrame };
     this.webContents.send = (channel, value) => this.sent.push({ channel, value });
     this.webContents.setWindowOpenHandler = () => {};
     this.webContents.isDestroyed = () => this.destroyed;
   }
-  loadFile() { queueMicrotask(() => this.webContents.emit('ipc-message', {}, 'game-dock:ready')); return Promise.resolve(); }
+  loadFile() { queueMicrotask(() => this.webContents.emit('ipc-message', this.webContents.trustedEvent, 'game-dock:ready')); return Promise.resolve(); }
   setIgnoreMouseEvents(...args) { this.ignoreMouseEvents = args; }
   setShape(regions) { this.shape = regions; }
   getBounds() { return { ...this.bounds }; }
@@ -99,27 +101,36 @@ async function main() {
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(window.sent.some((entry) => entry.channel === 'game-dock:state' && entry.value.visible));
+  const trustedEvent = window.webContents.trustedEvent;
+  const foreignFrameEvent = { sender: window.webContents, senderFrame: {} };
   const ignoreBefore = window.ignoreMouseEvents;
-  window.webContents.emit('ipc-message', {}, 'game-dock:interactive', true);
-  window.webContents.emit('ipc-message', {}, 'game-dock:interactive', false);
+  const shapeBefore = window.shape;
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:interactive', true);
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:hit-regions', [{ x: 0, y: 0, width: 500, height: 500 }]);
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:text-input', true);
+  assert.equal(window.ignoreMouseEvents, ignoreBefore, 'A child frame cannot alter dock hit testing.');
+  assert.deepEqual(window.shape, shapeBefore, 'A child frame cannot replace native hit regions.');
+  assert.equal(window.focused, false, 'A child frame cannot activate dock text input.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:interactive', true);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:interactive', false);
   if (dock.nativeHitTesting) {
     assert.equal(window.ignoreMouseEvents, ignoreBefore, 'Synthetic mouse events cannot change native Windows hit testing.');
-    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', [
+    window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [
       { x: -10, y: -5, width: 40, height: 20 },
       { x: 10.2, y: 10.2, width: 80.4, height: 30.4 },
       { x: 0, y: 0, width: 0, height: 10 },
       { x: NaN, y: 0, width: 10, height: 10 },
     ]);
     assert.deepEqual(window.shape, [{ x: 0, y: 0, width: 30, height: 15 }, { x: 10, y: 10, width: 81, height: 31 }]);
-    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', []);
+    window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', []);
     assert.deepEqual(window.shape, [{ x: 0, y: 0, width: 1, height: 1 }], 'An empty region list cannot expose the transparent game window.');
-    window.webContents.emit('ipc-message', {}, 'game-dock:hit-regions', [{ x: 100, y: 50, width: 400, height: 60 }]);
+    window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [{ x: 100, y: 50, width: 400, height: 60 }]);
     assert.deepEqual(window.shape, [{ x: 100, y: 50, width: 400, height: 60 }]);
   } else {
     assert.equal(window.ignoreMouseEvents[0], true);
   }
 
-  window.webContents.emit('ipc-message', {}, 'game-dock:text-input', true);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:text-input', true);
   assert.equal(window.focused, true);
   monitor.state = null;
   monitor.emit('change', null);
@@ -130,11 +141,11 @@ async function main() {
 
   monitor.state = game;
   monitor.emit('change', game);
-  window.webContents.emit('ipc-message', {}, 'game-dock:text-input', true);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:text-input', true);
   monitor.state = null;
   monitor.emit('change', null);
   assert.equal(window.visible, true, 'The editing exception survives the Windows foreground update.');
-  window.webContents.emit('ipc-message', {}, 'game-dock:text-input', false);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:text-input', false);
   assert.deepEqual(monitor.restoreFocusCalls, ['42'], 'Finishing text entry restores the original CK3 HWND even after the dock became foreground.');
   assert.equal(window.focusable, false);
 
@@ -142,14 +153,12 @@ async function main() {
   assert.equal(dock.gameLosses[0].previous.hwnd, '42');
   assert.equal(dock.gameLosses[0].current, null);
   assert.equal(dock.gameLosses[1].previous.hwnd, '42');
-  const mainFrame = {};
-  const trustedEvent = { senderFrame: mainFrame, sender: { mainFrame } };
-  window.webContents.emit('ipc-message', {}, 'game-dock:command', { operationId: 'untrusted', type: 'select-collection', payload: { collection: 'Court' } });
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:command', { operationId: 'untrusted', type: 'select-collection', payload: { collection: 'Court' } });
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:command', { operationId: 'operation-1', type: 'select-collection', payload: { collection: 'Court' } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(commands.length, 1);
   assert.equal(commands[0].type, 'select-collection');
-  assert.ok(window.sent.some((entry) => entry.channel === 'game-dock:result' && entry.value.operationId === 'untrusted' && !entry.value.ok));
+  assert.equal(window.sent.some((entry) => entry.channel === 'game-dock:result' && entry.value.operationId === 'untrusted'), false, 'Foreign frames receive no trusted command response.');
   assert.ok(window.sent.some((entry) => entry.channel === 'game-dock:result' && entry.value.operationId === 'operation-1' && entry.value.ok));
 
   const moved = { ...game, clientBounds: { ...game.clientBounds, x: 120 } };

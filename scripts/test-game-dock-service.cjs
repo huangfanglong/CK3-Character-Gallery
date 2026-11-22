@@ -172,6 +172,16 @@ function fixture(options = {}) {
   assert.equal(timedOut.dock.state.mode, 'error');
   timedOut.service.destroy();
 
+  const trusted = fixture({ autoRespond: false });
+  trusted.setClipboard(validDna);
+  const trustedCommand = trusted.service.handleCommand({ operationId: 'op-sender-trust', type: 'quick-add', payload: {} });
+  assert.equal(trusted.service.completeRendererResult({ sender: { id: 999, mainFrame: trusted.contents.mainFrame }, senderFrame: trusted.contents.mainFrame }, 'op-sender-trust', { ok: true }), false, 'A foreign webContents cannot settle a renderer command.');
+  assert.equal(trusted.service.completeRendererResult({ sender: trusted.contents, senderFrame: {} }, 'op-sender-trust', { ok: true }), false, 'A child frame cannot settle a renderer command.');
+  assert.equal(trusted.service.pendingRenderer.has('op-sender-trust'), true);
+  assert.equal(trusted.service.completeRendererResult({ sender: trusted.contents, senderFrame: trusted.contents.mainFrame }, 'op-sender-trust', { ok: true }), true);
+  assert.equal((await trustedCommand).ok, true);
+  trusted.service.destroy();
+
   blocked.service.destroy();
   valid.service.destroy();
   fast.service.destroy();

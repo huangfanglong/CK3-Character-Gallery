@@ -154,10 +154,26 @@ class Ck3LayoutResolver {
     const data = await this.loadRuntimeSection('.data');
     const vtable = this.address(table.rva);
     const candidates = [];
+    const pages = new Map();
     for (let at = 0; at + 8 <= data.length; at += 8) {
       const object = data.readBigUInt64LE(at);
-      if (object < 0x10000n || object === vtable || (object >= this.base && object < this.base + BigInt(this.pe.sizeOfImage))) continue;
-      if (await this.pointer(object) === vtable) candidates.push(section.rva + at);
+      if (object < 0x10000n || object >= 0x0000800000000000n || object % 8n !== 0n || object === vtable
+        || (object >= this.base && object < this.base + BigInt(this.pe.sizeOfImage))) continue;
+      const page = object & ~0xfffn;
+      const key = page.toString(16);
+      if (!pages.has(key)) pages.set(key, { page, candidates: [] });
+      pages.get(key).candidates.push({ rva: section.rva + at, offset: Number(object - page) });
+    }
+    /* Validate all candidate objects on a memory page with one bounded read. x64 C++
+       objects are eight-byte aligned and cannot straddle a page, so this preserves
+       every real candidate without hundreds of thousands of tiny RPM calls. */
+    for (const { page, candidates: pointers } of pages.values()) {
+      let memory;
+      try { memory = await this.readMemory(page, 0x1000); }
+      catch { continue; } // An unreadable page cannot contain a verified live object.
+      for (const candidate of pointers) {
+        if (memory.readBigUInt64LE(candidate.offset) === vtable) candidates.push(candidate.rva);
+      }
     }
     if (candidates.length !== 1) throw new Error(`CK3’s ${className} static object is ${candidates.length ? 'ambiguous' : 'not initialized yet'}.`);
     const rva = candidates[0];

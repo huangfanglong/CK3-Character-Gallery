@@ -124,16 +124,12 @@ class WindowsGameMonitor extends EventEmitter {
         this.api = createWindowsApi(this.koffi);
       }
       this.started = true;
-      this.callbacks = [
-        this.api.koffi.register(() => this.refresh(), this.api.callbackType),
-        this.api.koffi.register((_hook, _event, hwnd) => {
-          if (this.state && handleKey(hwnd) === this.state.hwnd) this.refresh();
-        }, this.api.callbackType),
-      ];
-      this.hooks = [
-        this.api.setWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, null, this.callbacks[0], 0, 0, WINEVENT_OUTOFCONTEXT),
-        this.api.setWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, null, this.callbacks[1], 0, 0, WINEVENT_OUTOFCONTEXT),
-      ];
+      this.callbacks.push(this.api.koffi.register(() => this.refresh(), this.api.callbackType));
+      this.callbacks.push(this.api.koffi.register((_hook, _event, hwnd) => {
+        if (this.state && handleKey(hwnd) === this.state.hwnd) this.refresh();
+      }, this.api.callbackType));
+      this.hooks.push(this.api.setWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, null, this.callbacks[0], 0, 0, WINEVENT_OUTOFCONTEXT));
+      this.hooks.push(this.api.setWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, null, this.callbacks[1], 0, 0, WINEVENT_OUTOFCONTEXT));
       if (this.hooks.some((hook) => !hook)) throw new Error('Windows foreground event hooks could not be installed.');
       this.reconcileTimer = setInterval(() => this.refresh(), this.reconcileIntervalMs);
       this.reconcileTimer.unref?.();
