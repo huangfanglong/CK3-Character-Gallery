@@ -231,6 +231,13 @@ class LiveGameEngine {
     }
     return { pid: session.identity.pid, id, character, window, dnaPointer, geneCount, catalogHash: catalog.hash, exeHash: session.exeHash, name, raw };
   }
+  async detect(game) {
+    this.game = validGame(game);
+    return this.withProcess(false, async ({ handle }, session) => {
+      const target = await this.readTarget(handle, session);
+      return { target: publicTarget(target) };
+    });
+  }
   async import(game) {
     this.game = validGame(game);
     this.pending = null;

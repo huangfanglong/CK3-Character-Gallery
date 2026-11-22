@@ -97,6 +97,8 @@ class GameDock {
       liveEnabled: this.preferences.liveLink.enabled,
       liveSelectedName: '',
       liveCanApply: false,
+      liveTargetAvailable: false,
+      liveDetectedName: '',
       liveTargetName: '',
       liveReport: '',
       liveUndoUntil: 0,

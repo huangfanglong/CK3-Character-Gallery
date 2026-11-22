@@ -46,6 +46,11 @@ class GameDockService {
     this.liveApply = null;
     this.lastLiveCommand = null;
     this.liveQueue = Promise.resolve();
+    this.serviceStarted = false;
+    this.liveTargetTimer = null;
+    this.liveTargetProbe = null;
+    this.liveTargetProbeSequence = 0;
+    this.liveTargetGameKey = '';
   }
 
   async loadPreferences() {
@@ -102,9 +107,12 @@ class GameDockService {
       try { await this.liveBridge.setEnabled(true); }
       catch (error) { this.logger.error('Live Game Link could not start:', error); }
     }
+    this.serviceStarted = true;
     this.syncLiveState();
     if (!this.preferences.enabled) return false;
-    return this.dock.start();
+    const started = this.dock.start();
+    this.syncLiveTargetPolling();
+    return started;
   }
 
   preferencesChanged(preferences) {
@@ -188,6 +196,80 @@ class GameDockService {
     if (!this.dock) return;
     this.dock.syncPreferences?.({ liveLink: this.preferences.liveLink });
     this.dock.update({ liveEnabled: this.preferences.liveLink.enabled, liveSelectedName: this.selection?.name || '', liveCanApply: Boolean(this.selection) });
+    this.syncLiveTargetPolling();
+  }
+
+  syncLiveTargetPolling() {
+    const active = Boolean(this.serviceStarted && !this.destroyed && this.preferences.liveLink.enabled && this.dock);
+    if (active && !this.liveTargetTimer) {
+      this.liveTargetTimer = this.setInterval(() => { void this.refreshLiveTarget(); }, 1000);
+      this.liveTargetTimer?.unref?.();
+    }
+    if (!active) {
+      if (this.liveTargetTimer) this.clearInterval(this.liveTargetTimer);
+      this.liveTargetTimer = null;
+      ++this.liveTargetProbeSequence;
+      this.liveTargetProbe = null;
+      this.liveTargetGameKey = '';
+      this.publishLiveTarget(null);
+      return;
+    }
+    void this.refreshLiveTarget();
+  }
+
+  async refreshLiveTarget() {
+    if (!this.serviceStarted || this.destroyed || !this.preferences.liveLink.enabled || !this.dock) {
+      this.publishLiveTarget(null);
+      return false;
+    }
+    const dock = this.dock;
+    const game = dock.game;
+    if (!dock.state.visible || !dock.state.connected || !game?.processId || game.executable !== 'ck3.exe' || !game.executablePath) {
+      this.publishLiveTarget(null);
+      return false;
+    }
+    /* Expanded panels and mutations retain the last known identity but do not compete
+       with an in-flight DNA operation. Hidden or disconnected docks never touch CK3. */
+    if (dock.state.mode !== 'compact' || dock.state.busy || this.mutation || this.liveTargetProbe) return false;
+    const identity = { pid: game.processId, executablePath: game.executablePath };
+    const gameKey = `${identity.pid}:${identity.executablePath.toLowerCase()}`;
+    const revision = this.liveRevision;
+    const sequence = ++this.liveTargetProbeSequence;
+    const probe = (async () => {
+      await this.ensureLiveBridge();
+      return this.liveBridge.detect(identity);
+    })();
+    this.liveTargetProbe = probe;
+    this.liveTargetGameKey = gameKey;
+    try {
+      const result = await probe;
+      const current = dock.game;
+      const currentKey = current?.processId && current.executablePath ? `${current.processId}:${current.executablePath.toLowerCase()}` : '';
+      const usable = this.serviceStarted && !this.destroyed && this.preferences.liveLink.enabled && this.dock === dock
+        && dock.state.visible && dock.state.connected && dock.state.mode === 'compact' && !dock.state.busy && !this.mutation
+        && current?.executable === 'ck3.exe' && currentKey === gameKey && this.liveTargetGameKey === gameKey;
+      if (sequence !== this.liveTargetProbeSequence || revision !== this.liveRevision) return false;
+      this.publishLiveTarget(usable ? result?.target : null);
+      return Boolean(usable && result?.target);
+    } catch {
+      /* A closed window and a temporarily unreadable game are ordinary detection
+         states. Keep the controls disabled and let the next quiet poll recover. */
+      if (sequence === this.liveTargetProbeSequence && revision === this.liveRevision) this.publishLiveTarget(null);
+      return false;
+    } finally {
+      if (this.liveTargetProbe === probe) {
+        this.liveTargetProbe = null;
+        this.liveTargetGameKey = '';
+      }
+    }
+  }
+
+  publishLiveTarget(target) {
+    if (!this.dock) return;
+    const available = Boolean(target && Number.isInteger(target.id) && target.id >= 0 && typeof target.name === 'string');
+    const name = available ? target.name : '';
+    if (this.dock.state.liveTargetAvailable === available && this.dock.state.liveDetectedName === name) return;
+    this.dock.update({ liveTargetAvailable: available, liveDetectedName: name });
   }
 
   setEnabled(enabled) {
@@ -523,6 +605,7 @@ class GameDockService {
   }
 
   notifyGameLoss() {
+    this.publishLiveTarget(null);
     const contents = this.getMainContents();
     const draftId = this.dock?.state.draftId || '';
     const operationIds = [...this.pendingRenderer].filter(([, request]) => request.draftId === draftId).map(([operationId]) => operationId);
@@ -548,6 +631,12 @@ class GameDockService {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.serviceStarted = false;
+    if (this.liveTargetTimer) this.clearInterval(this.liveTargetTimer);
+    this.liveTargetTimer = null;
+    ++this.liveTargetProbeSequence;
+    this.liveTargetProbe = null;
+    this.liveTargetGameKey = '';
     this.setDraftActive(false);
     this.draftDna = '';
     this.selection = null;

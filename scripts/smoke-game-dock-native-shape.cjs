@@ -120,6 +120,7 @@ if (!electron.app) {
 
     try {
       dock.setLibrary(['Court'], 'Court');
+      dock.update({ liveTargetAvailable: true, liveDetectedName: 'Aella' });
       dock.start();
       await waitFor(() => dock.ready, 'dock ready');
       window = dock.window;
@@ -192,9 +193,19 @@ if (!electron.app) {
       assert.equal(await window.webContents.executeJavaScript('dockView.pending'), false);
       assert.equal(ignoreCalls.length, 0, 'Native shapes never toggle whole-window click-through.');
       assert.ok(report.shapes.some((regions) => regions.some((region) => region.height >= 48)), 'Expanded native regions reached Windows.');
+
+      await hover();
+      const collapseStart = report.shapes.length;
+      const departureBounds = window.getBounds();
+      await move(departureBounds.x + 24, departureBounds.y + 120);
+      await window.webContents.executeJavaScript('document.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true, clientX: 24, clientY: 120 }))');
+      assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Leaving the expanded dock must begin its collapse.');
+      assert.ok(report.shapes.slice(collapseStart).some((regions) => regions.some((region) => region.height > 8)), 'The native shape clipped the dock to its resting height before the exit transition could render.');
+      await waitFor(() => report.shapes.at(-1)?.every((region) => region.height <= 8), 'Collapsed dock did not reach its resting native shape');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height'), 6, 'The collapsed dock did not reach its resting visual height.');
       report.passed = true;
       await snapshot('all native controls passed');
-      console.log('Native dock input passed: stationary Dismiss, X, Try again, and menu clicks after synthetic mouseleave; pending-error recovery also passed.');
+      console.log('Native dock input passed: stationary Dismiss, X, Try again, and menu clicks after synthetic mouseleave; pending-error recovery and animated collapse also passed.');
     } finally {
       const reportPath = path.join(__dirname, '..', 'reference', 'dock-native-shape-verification.json');
       fs.mkdirSync(path.dirname(reportPath), { recursive: true });

@@ -1,7 +1,7 @@
 const dockRoot = document.querySelector('#game-dock');
 const announcer = document.querySelector('#announcer');
 const dockBridge = window.gameDock;
-let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveSelectedName: '', liveTargetName: '', liveReport: '', liveUndoUntil: 0, liveRetry: false, busy: false, commandEpoch: 0 };
+let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveReport: '', liveUndoUntil: 0, liveRetry: false, busy: false, commandEpoch: 0 };
 let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
 let commandSequence = 0;
 let interactive = false;
@@ -15,13 +15,15 @@ function sendNativeHitRegions() {
   const regions = [];
   for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
     let rect = element.getBoundingClientRect();
-    if (element.classList.contains('dock') && dockState.mode === 'compact') {
+    if (element.classList.contains('dock') && dockState.mode === 'compact' && dockView.revealed) {
       /* Claim the final compact bounds as reveal starts, not only after its CSS
-         transition. Otherwise a fast pointer leaves the temporary native region. */
+         transition. Otherwise a fast pointer leaves the temporary native region.
+         During collapse, retain the element's animated bounds instead: native
+         window shapes clip rendering too, so forcing 6px here hides the exit. */
       const available = Math.max(120, window.innerWidth - 24);
-      const width = dockView.revealed ? Math.min(680, available) : Math.min(280, available);
+      const width = Math.min(680, available);
       const x = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
-      rect = { x, y: 0, width, height: dockView.revealed ? 48 : 6 };
+      rect = { x, y: 0, width, height: 48 };
     }
     if (!(rect.width > 0 && rect.height > 0)) continue;
     /* Include crop handles outside the reticle and its label below. These are real
@@ -147,7 +149,12 @@ function errorMarkup() {
 function compactBar() {
   const unavailable = dockView.pending || dockState.busy || !dockState.connected || dockState.mode !== 'compact';
   const destinationDisabled = dockView.pending || dockState.busy || !['compact', 'draft'].includes(dockState.mode);
-  const liveControls = dockState.liveEnabled ? `<span class="divider"></span><button class="live-button" data-command="live-import" title="Import persistent DNA from the character open in CK3" aria-label="Import DNA from CK3"${unavailable ? ' disabled' : ''}>${dockIcon('download')}<span>Import</span></button><button class="live-button" data-command="live-prepare-apply" title="${dockState.liveCanApply ? `Apply ${dockEscape(dockState.liveSelectedName)} to the character open in CK3` : 'Select a gallery character with persistent DNA first'}" aria-label="Apply selected gallery DNA to CK3"${unavailable || !dockState.liveCanApply ? ' disabled' : ''}>${dockIcon('apply')}<span>Apply</span></button>` : '';
+  const targetName = dockState.liveDetectedName || 'the character open in CK3';
+  const importTitle = dockState.liveTargetAvailable ? `Import persistent DNA from ${targetName}` : 'Open a character window in CK3 to import DNA';
+  const applyTitle = !dockState.liveTargetAvailable ? 'Open a character window in CK3 to apply DNA'
+    : !dockState.liveCanApply ? 'Select a gallery character with persistent Ruler Designer DNA in Bloodline'
+      : `Apply ${dockState.liveSelectedName} to ${targetName} in CK3`;
+  const liveControls = dockState.liveEnabled ? `<span class="divider"></span><button class="live-button" data-command="live-import" title="${dockEscape(importTitle)}" aria-label="Import DNA from CK3"${unavailable || !dockState.liveTargetAvailable ? ' disabled' : ''}>${dockIcon('download')}<span>Import</span></button><button class="live-button" data-command="live-prepare-apply" title="${dockEscape(applyTitle)}" aria-label="Apply selected gallery DNA to CK3"${unavailable || !dockState.liveTargetAvailable || !dockState.liveCanApply ? ' disabled' : ''}>${dockIcon('apply')}<span>Apply</span></button>` : '';
   return `<div class="dock-bar">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${unavailable ? ' disabled' : ''}>${dockIcon('plus')} Quick add</button>${liveControls}<span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}"><span class="dna-dot"></span>${dockState.liveImported ? 'Persistent DNA' : dockState.dnaReady ? 'DNA copied' : 'CK3 ready'}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
 }
 

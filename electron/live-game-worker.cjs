@@ -12,6 +12,7 @@ async function execute(message) {
   if (engine.error) throw engine.error;
   const { action } = message;
   if (action === 'set-enabled') return engine.setEnabled(message.enabled);
+  if (action === 'detect') return engine.detect(message.game);
   if (action === 'import') return engine.import(message.game);
   if (action === 'prepare-apply') return engine.prepareApply(message.game, message.selection);
   if (action === 'confirm-apply') return engine.confirmApply(message.game, message.token);

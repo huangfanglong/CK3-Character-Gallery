@@ -4,6 +4,7 @@ const { EventEmitter } = require('node:events');
 const electron = require('electron');
 const { GameDock } = require('../electron/game-dock.cjs');
 const { GameDockService } = require('../electron/game-dock-service.cjs');
+const { LiveGameBridge } = require('../electron/live-game-bridge.cjs');
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -43,8 +44,12 @@ async function main() {
     preferences: { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } },
     logger: { error() {} },
   });
+  const liveBridge = new LiveGameBridge({ logger: { error() {} } });
+  /* Only target detection is synthetic. Worker startup and Import still cross the
+     real bridge and fail at the intentionally nonexistent CK3 process boundary. */
+  liveBridge.detect = async () => ({ target: { id: 1, name: 'Aella', nameIsKey: true } });
   const service = new GameDockService({
-    dock, clipboard: { readText: () => '' }, getMainContents: () => contents,
+    dock, liveBridge, clipboard: { readText: () => '' }, getMainContents: () => contents,
     createId: () => 'draft-recovery', logger: { error() {} },
     preferences: { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } },
   });

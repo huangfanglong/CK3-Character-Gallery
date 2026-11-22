@@ -24,6 +24,14 @@ async function runningBridge() {
   await assert.rejects(confirmation, /interrupted during a write.*unconfirmed/);
   assert.equal(disabled.worker.terminated, true);
 
+  const detecting = await runningBridge();
+  const detection = detecting.bridge.detect({ pid: 42, executablePath: 'C:\\fixture\\ck3.exe' });
+  const detectRequest = detecting.worker.messages.find((message) => message.action === 'detect');
+  assert.ok(detectRequest, 'Detect is sent through the worker bridge.');
+  detecting.worker.emit('message', { id: detectRequest.id, ok: true, result: { target: { id: 1, name: 'Aella' }, raw: Buffer.alloc(80) } });
+  assert.deepEqual(await detection, { target: { id: 1, name: 'Aella', nameIsKey: true } }, 'Detection returns only the sanitized target.');
+  await detecting.bridge.close();
+
   const crashed = await runningBridge();
   const undo = crashed.bridge.undo({ pid: 42, executablePath: 'C:\\fixture\\ck3.exe' });
   crashed.worker.emit('error', new Error('Synthetic worker crash'));

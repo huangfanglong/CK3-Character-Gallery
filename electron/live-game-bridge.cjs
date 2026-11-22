@@ -103,6 +103,7 @@ class LiveGameBridge {
       worker.postMessage({ id, action, ...payload });
     });
   }
+  detect(game) { return this.request('detect', { game }); }
   import(game) { return this.request('import', { game }); }
   prepareApply(game, selection) { return this.request('prepare-apply', { game, selection }); }
   confirmApply(game, token) { return this.request('confirm-apply', { game, token }); }
@@ -132,6 +133,7 @@ class LiveGameBridge {
 
 function sanitizeResult(action, result) {
   if (action === 'set-enabled' || action === 'cancel') return true;
+  if (action === 'detect') return { target: targetResult(result?.target) };
   if (action === 'import') {
     if (typeof result?.dna !== 'string' || !result.dna.includes('genes=') && !/\bgenes\s*=\s*\{/.test(result.dna)) throw new Error('The imported DNA response is invalid.');
     return { dna: result.dna, target: targetResult(result.target), geneCount: Number(result.geneCount) };

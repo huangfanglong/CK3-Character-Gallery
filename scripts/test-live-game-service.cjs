@@ -24,6 +24,12 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       this.enabled = value;
       return value;
     },
+    async detect() {
+      this.calls.push(['detect']);
+      if (!this.enabled) throw new Error('Live Game Link is turned off.');
+      if (this.targetClosed) throw new Error('The CK3 character window is closed.');
+      return { target: { id: 1, name: 'Aella', nameIsKey: true } };
+    },
     async import() {
       this.calls.push(['import']);
       if (!this.enabled) throw new Error('Live Game Link is turned off.');
@@ -62,6 +68,33 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     await app.service.setLiveLinkChoice(true);
     assert.equal(app.bridge.enabled, true);
     assert.equal(app.bridge.calls.some(([action]) => action === 'import'), false, 'Consent alone performs no game access.');
+    assert.equal(app.bridge.calls.some(([action]) => action === 'detect'), false, 'Consent alone does not probe a game process.');
+
+    app.service.serviceStarted = true;
+    app.dock.state.mode = 'compact';
+    app.dock.state.liveRetry = false;
+    app.dock.state.error = '';
+    app.dock.state.visible = true;
+    app.dock.state.connected = true;
+    assert.equal(await app.service.refreshLiveTarget(), true);
+    assert.equal(app.dock.state.liveTargetAvailable, true);
+    assert.equal(app.dock.state.liveDetectedName, 'Aella');
+    app.bridge.targetClosed = true;
+    assert.equal(await app.service.refreshLiveTarget(), false);
+    assert.equal(app.dock.state.liveTargetAvailable, false, 'A closed character window disables live actions without opening an error.');
+    assert.equal(app.dock.state.mode, 'compact');
+    assert.equal(app.dock.state.error || '', '');
+    const hiddenDetections = app.bridge.calls.filter(([action]) => action === 'detect').length;
+    app.dock.state.visible = false;
+    assert.equal(await app.service.refreshLiveTarget(), false);
+    assert.equal(app.bridge.calls.filter(([action]) => action === 'detect').length, hiddenDetections, 'A hidden dock performs no game detection.');
+    app.dock.state.visible = true;
+    app.bridge.targetClosed = false;
+    assert.equal(await app.service.refreshLiveTarget(), true, 'Detection recovers when the character window reopens.');
+    app.service.serviceStarted = false;
+    app.service.syncLiveTargetPolling();
+    assert.equal(app.dock.state.liveTargetAvailable, false);
+
     app.bridge.failImport = true;
     assert.equal((await app.service.handleCommand({ operationId: 'import-fail', type: 'live-import', payload: {} })).ok, false);
     assert.equal(app.dock.state.liveRetry, true);
