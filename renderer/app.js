@@ -307,12 +307,10 @@ function renderSelection() {
 
 function closeQuickLook() {
   const returnId = quickLookReturnId || state.activeId;
-  const origin = capturePortraitMotion(app.querySelector('.quick-sheet .inspector-portrait'));
   quickLookReturnId = null;
   resetSelection();
   render('selection');
   const returnTarget = app.querySelector(`[data-character-id="${CSS.escape(returnId || '')}"]`);
-  void animateQuickLookClose(origin, returnTarget);
   focusWithoutScroll(returnTarget || app.querySelector('#search-input'));
   if (returnTarget && !returnTarget.matches(':hover')) suppressPortraitFocusPlayback(returnTarget);
 }
@@ -568,12 +566,10 @@ function handleDelegatedClick(event) {
 
 function selectCharacterElement(element, event) {
   if (state.batchMode || event.ctrlKey || event.metaKey) return toggleBatchSelection(element.dataset.characterId, event.ctrlKey || event.metaKey);
-  const origin = capturePortraitMotion(element);
   quickLookReturnId = element.dataset.characterId;
   bindCharacterGallery(element.dataset.characterId);
   resetSelection(element.dataset.characterId);
   render('selection');
-  void animateQuickLookOpen(origin, app.querySelector('.quick-sheet .inspector-portrait'));
   focusWithoutScroll(app.querySelector('.quick-sheet [data-action="close-inspector"]'));
 }
 
