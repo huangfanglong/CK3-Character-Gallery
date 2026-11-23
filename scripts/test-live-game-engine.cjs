@@ -183,6 +183,28 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   assert.deepEqual(fixture.process.dna(), original);
   await assert.rejects(engine.undoApply(fixture.game), /expired/);
 
+  const base64Dna = require('../electron/live-dna-codec.cjs').persistentDnaToRaw(selection.dna, fixture.catalog).raw.toString('base64');
+  const base64Prepared = await engine.prepareApply(fixture.game, { id: 'clipboard', name: 'Base64 clipboard DNA', dna: base64Dna, modified: 0 });
+  assert.match(base64Prepared.report.message, /positional genes.*game version and enabled mods/i);
+  const beforeBase64Apply = fixture.process.dna();
+  await engine.confirmApply(fixture.game, base64Prepared.token);
+  assert.notDeepEqual(fixture.process.dna(), beforeBase64Apply, 'Base64 clipboard DNA reaches the same guarded fixture write path.');
+  await engine.undoApply(fixture.game);
+  assert.deepEqual(fixture.process.dna(), beforeBase64Apply, 'Base64 Apply supports the same verified rollback.');
+
+  const partialPersistentDna = selection.dna
+    .replace(/gene_shape_19=\{[^\n]+\}/, '')
+    .replace('\n\t}', '\n\tretired_mod_gene={ "shape_pos" 1 "shape_pos" 1 }\n\t}');
+  const partialPrepared = await engine.prepareApply(fixture.game, { ...selection, dna: partialPersistentDna });
+  assert.match(partialPrepared.report.message, /23 supplied genes.*1 unknown gene was ignored.*1 missing gene retains/);
+  const beforePartialApply = fixture.process.dna();
+  await engine.confirmApply(fixture.game, partialPrepared.token);
+  assert.notDeepEqual(fixture.process.dna(), beforePartialApply);
+  const preservedIndex = fixture.catalog.genes.findIndex((gene) => gene.name === 'gene_shape_19');
+  assert.deepEqual(fixture.process.dna().subarray(preservedIndex * 4, preservedIndex * 4 + 4), beforePartialApply.subarray(preservedIndex * 4, preservedIndex * 4 + 4), 'The live engine preserves genes missing from an older persistent record.');
+  await engine.undoApply(fixture.game);
+  assert.deepEqual(fixture.process.dna(), beforePartialApply);
+
   const changedTarget = await engine.prepareApply(fixture.game, selection);
   fixture.process.patch(fixture.process.objects.window, 0xc8, 2, 4);
   const beforeRejectedWrite = fixture.process.writeCalls.length;

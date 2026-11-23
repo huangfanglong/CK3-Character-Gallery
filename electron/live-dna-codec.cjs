@@ -199,19 +199,31 @@ function byte(value, label) {
   return value;
 }
 
-function persistentDnaToRaw(text, catalog) {
+function persistentDnaToRaw(text, catalog, options = {}) {
   const { entries } = parsePersistentDna(text);
-  const unsupported = [];
-  const unknown = [];
-  for (const name of entries.keys()) {
-    if (!catalog.byName.has(name)) (UNSUPPORTED_GENES.test(name) || catalog.specialByName?.has(name) ? unsupported : unknown).push(name);
+  const baseRaw = options.baseRaw;
+  if (baseRaw !== undefined && (!Buffer.isBuffer(baseRaw) || baseRaw.length !== catalog.genes.length * 4)) {
+    throw dnaError('the selected character’s current DNA has the wrong length. No DNA was changed.');
   }
-  if (unknown.length) throw dnaError(`this installation does not define ${unknown.slice(0, 8).join(', ')}${unknown.length > 8 ? '…' : ''}. No DNA was changed.`);
+  const unsupported = [];
+  const ignored = [];
+  for (const name of entries.keys()) {
+    if (!catalog.byName.has(name)) (UNSUPPORTED_GENES.test(name) || catalog.specialByName?.has(name) ? unsupported : ignored).push(name);
+  }
   const missing = catalog.genes.filter((gene) => !entries.has(gene.name)).map((gene) => gene.name);
-  if (missing.length) throw dnaError(`the persistent DNA is missing ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}. No DNA was changed.`);
+  /* CK3's portrait editor reads persistent DNA by gene name rather than requiring the
+     exact active catalog. Keep this path equally tolerant, but make missing genes an
+     explicit patch over the previewed target instead of inventing default values. */
+  if (missing.length && !baseRaw) throw dnaError(`the persistent DNA is missing ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}; the selected character’s current DNA is required to preserve those genes. No DNA was changed.`);
+  const preserved = [];
   const bytes = [];
-  for (const gene of catalog.genes) {
+  for (const [index, gene] of catalog.genes.entries()) {
     const entry = entries.get(gene.name);
+    if (!entry) {
+      preserved.push(gene.name);
+      bytes.push(...baseRaw.subarray(index * 4, index * 4 + 4));
+      continue;
+    }
     if (entry.color !== gene.color) throw dnaError(`${gene.name} has the wrong gene representation.`);
     if (gene.color) bytes.push(...entry.parts.map((part) => part.value));
     else {
@@ -223,17 +235,48 @@ function persistentDnaToRaw(text, catalog) {
     }
   }
   const raw = Buffer.from(bytes);
-  return { raw, report: conversionReport(catalog, unsupported) };
+  return { raw, report: conversionReport(catalog, unsupported, { ignored, preserved }) };
 }
 
-function conversionReport(catalog, unsupported) {
+function conversionReport(catalog, unsupported, { ignored = [], preserved = [] } = {}) {
   const excluded = [...new Set(unsupported)];
+  const details = ['Hair, beard, clothing, and other special appearance entries are not part of CK3’s raw DNA array'];
+  if (excluded.length) details.push(`${excluded.length} special appearance entr${excluded.length === 1 ? 'y was' : 'ies were'} excluded`);
+  if (ignored.length) details.push(`${ignored.length} unknown gene${ignored.length === 1 ? ' was' : 's were'} ignored`);
+  if (preserved.length) details.push(`${preserved.length} missing gene${preserved.length === 1 ? ' retains' : 's retain'} the selected character’s current values`);
   return {
     geneCount: catalog.genes.length,
     catalogHash: catalog.hash || '',
     excluded,
-    message: `${catalog.genes.length} genes mapped to this installation. Hair, beard, clothing, and other special appearance entries are not part of CK3’s raw DNA array${excluded.length ? `; ${excluded.length} such entr${excluded.length === 1 ? 'y was' : 'ies were'} excluded` : ''}.`,
+    message: `${catalog.genes.length - preserved.length} supplied genes mapped to this installation. ${details.join('; ')}.`,
   };
+}
+
+function decodeBase64Dna(text) {
+  if (typeof text !== 'string' || text.length > MAX_DNA_LENGTH) throw dnaError('the Base64 DNA is empty or too large.');
+  const compact = text.trim().replace(/\s+/g, '');
+  if (compact.length < 80 || compact.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) throw dnaError('the Base64 DNA is invalid or incomplete.');
+  let raw;
+  try { raw = Buffer.from(compact.padEnd(Math.ceil(compact.length / 4) * 4, '='), 'base64'); }
+  catch { throw dnaError('the Base64 DNA could not be decoded.'); }
+  if (raw.length < 80 || raw.length > MAX_GENES * 4 || raw.length % 4 !== 0) throw dnaError('the Base64 DNA must contain complete four-byte gene entries.');
+  return raw;
+}
+
+function base64DnaToRaw(text, catalog) {
+  const raw = decodeBase64Dna(text);
+  if (raw.length !== catalog.genes.length * 4) throw dnaError(`the Base64 DNA contains ${raw.length / 4} genes, but this installation requires ${catalog.genes.length}. No DNA was changed.`);
+  for (const [index, gene] of catalog.genes.entries()) {
+    if (gene.color) continue;
+    if (!gene.byIndex.has(raw[index * 4]) || !gene.byIndex.has(raw[index * 4 + 2])) throw dnaError(`${gene.name} uses a template index that this installation does not define. No DNA was changed.`);
+  }
+  const report = conversionReport(catalog, []);
+  report.message = `${catalog.genes.length} positional genes read from Base64 DNA. Base64 does not identify gene names or templates, so confirm that it matches this game version and enabled mods. Hair, beard, clothing, and other special appearance entries are not included.`;
+  return { raw, report };
+}
+
+function dnaToRaw(text, catalog, options = {}) {
+  return /\bgenes\s*=\s*\{/.test(text) ? persistentDnaToRaw(text, catalog, options) : base64DnaToRaw(text, catalog);
 }
 
 function rawToPersistentDna(raw, catalog, options = {}) {
@@ -256,4 +299,4 @@ function rawToPersistentDna(raw, catalog, options = {}) {
   return `ruler_designer_live={${type}\n\tgenes={\n${lines.join('\n')}\n\t}\n}`;
 }
 
-module.exports = { createGeneCatalog, parseGeneScript, parsePersistentDna, persistentDnaToRaw, rawToPersistentDna };
+module.exports = { createGeneCatalog, parseGeneScript, parsePersistentDna, persistentDnaToRaw, decodeBase64Dna, base64DnaToRaw, dnaToRaw, rawToPersistentDna };

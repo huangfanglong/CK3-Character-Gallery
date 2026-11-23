@@ -44,9 +44,10 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
   };
   const contents = { id: 7, isDestroyed: () => false, send() {} };
   const options = loadSaved ? {} : { preferences };
-  const service = new GameDockService({ dock, liveBridge: bridge, preferencesPath, clipboard: { readText: () => '' }, getMainContents: () => contents, createId: () => 'draft-live', ...options });
+  let clipboardText = '';
+  const service = new GameDockService({ dock, liveBridge: bridge, preferencesPath, clipboard: { readText: () => clipboardText }, getMainContents: () => contents, createId: () => 'draft-live', ...options });
   service.mainWindowWebContentsId = contents.id;
-  return { dock, bridge, service, dna };
+  return { dock, bridge, service, dna, setClipboard(value) { clipboardText = value; } };
 }
 
 (async () => {
@@ -124,6 +125,43 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     await app.service.handleCommand({ operationId: 'undo', type: 'live-undo', payload: {} });
     assert.equal(app.dock.state.liveUndoUntil, 0);
     assert.match(app.dock.state.message, /restored and verified/);
+
+    app.service.syncSelection(null);
+    app.setClipboard(app.dna);
+    app.service.syncClipboardDna(true);
+    assert.equal(app.dock.state.liveSelectedName, '');
+    assert.equal(app.dock.state.liveCanApply, true, 'Persistent clipboard DNA enables Apply without a gallery selection.');
+    assert.equal(app.dock.state.liveApplySource, 'clipboard');
+    assert.equal(app.dock.state.liveClipboardFormat, 'persistent');
+    await app.service.handleCommand({ operationId: 'prepare-persistent-clipboard', type: 'live-prepare-apply', payload: {} });
+    assert.equal(app.dock.state.mode, 'live-confirm');
+    const persistentSource = app.bridge.calls.filter(([action]) => action === 'prepare').at(-1)[1];
+    assert.equal(persistentSource.id, 'clipboard');
+    assert.equal(persistentSource.name, 'Persistent clipboard DNA');
+    assert.equal(persistentSource.dna, app.dna);
+    const changedClipboard = app.dna.replace('gene_shape_0={ "shape_pos" 103', 'gene_shape_0={ "shape_pos" 104');
+    assert.notEqual(changedClipboard, app.dna);
+    app.setClipboard(changedClipboard);
+    const confirmCount = app.bridge.calls.filter(([action]) => action === 'confirm').length;
+    const staleClipboard = await app.service.handleCommand({ operationId: 'confirm-stale-clipboard', type: 'live-confirm-apply', payload: {} });
+    assert.equal(staleClipboard.ok, false);
+    assert.match(staleClipboard.error, /clipboard DNA changed/);
+    assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, confirmCount, 'Changed clipboard DNA is refused before the fixture write.');
+    await app.service.handleCommand({ operationId: 'cancel-stale-clipboard', type: 'live-cancel', payload: {} });
+
+    app.setClipboard(liveFixture().process.dna().toString('base64'));
+    app.service.syncClipboardDna(true);
+    assert.equal(app.dock.state.liveClipboardFormat, 'base64');
+    assert.equal(app.dock.state.liveCanApply, true, 'Base64 clipboard DNA enables Apply without a gallery selection.');
+    await app.service.handleCommand({ operationId: 'prepare-base64-clipboard', type: 'live-prepare-apply', payload: {} });
+    const base64Source = app.bridge.calls.filter(([action]) => action === 'prepare').at(-1)[1];
+    assert.equal(base64Source.id, 'clipboard');
+    assert.equal(base64Source.name, 'Base64 clipboard DNA');
+    await app.service.handleCommand({ operationId: 'confirm-base64-clipboard', type: 'live-confirm-apply', payload: {} });
+    assert.equal(app.dock.state.mode, 'live-result');
+    await app.service.handleCommand({ operationId: 'cancel-base64-result', type: 'live-cancel', payload: {} });
+    app.setClipboard('');
+    app.service.syncClipboardDna(true);
 
     app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: Buffer.alloc(80, 65).toString('base64') });
     assert.equal(app.service.selection, null);

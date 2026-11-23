@@ -8,13 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [4.0.0] - 2026-11-21
 
 ### Added
-- Optical Archive library: refreshed visual design with an overall more refined UI, Manrope variable typography, larger text, optical navigation and dialogs, animated collection transitions, and an in-game dock/dynamic island to make adding characters easier.
+- Refreshed visual design with an overall more refined UI, Manrope variable typography, larger text, optical navigation and dialogs, animated collection transitions, and an in-game dock/dynamic island to make adding characters easier.
 - Interactive comparison tray for comparing multiple characters' portraits and DNA, with per-record variant selection, tabs, and zoom.
 - Optional living contact sheet feature toggle that only plays animated portraits on hover/focus.
 - Physical drag ordering for cards and collections, and seamless inline renaming for collections and galleries.
 - Automatic render/lazy load as you scroll: large collections render 48 cards at a time and load more on demand.
 - CK3 Game Dock (Windows): an overlay strip on the foreground CK3 window. Hover to unfold the controls, quick-add a character from copied DNA, frame and save a 450 x 450 snapshot or live WebM portrait, and undo within 12 seconds. Preferences are stored locally in `ui-settings.json` and are not included in collection exports. `Ctrl+Alt+G` starts, stops, or finishes a dock recording.
-- Live Game Link (Windows, opt-in): import persistent DNA from the character currently open in CK3, or apply a selected gallery record's DNA back to the game after an explicit confirmation. Writes are verified with fingerprint and current-value checks, read-back, rollback, and a guarded undo.
+- Live Game Link (Windows, opt-in): import persistent DNA from the character currently open in CK3, or apply a persistent/Base64 DNA blob, a selected gallery record's DNA to a selected character in-game.
+- Animated distortion effect to the Quick Look panel when copying DNA from a selected portrait
 
 ### Fixed
 - Character title glow is no longer clipped by hidden overflow text rectangle box.

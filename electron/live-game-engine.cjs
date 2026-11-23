@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { Ck3LayoutResolver, CHARACTER_DATABASE, WINDOW_CLASS, IDLER_CLASS, uint32 } = require('./live-game-resolver.cjs');
 const { WindowsLiveProcess } = require('./windows-live-process.cjs');
-const { rawToPersistentDna, persistentDnaToRaw } = require('./live-dna-codec.cjs');
+const { rawToPersistentDna, dnaToRaw } = require('./live-dna-codec.cjs');
 const { loadEffectiveGeneCatalog } = require('./live-game-catalog.cjs');
 
 function fingerprintOf(target) { return `${target.pid}:${target.id}:${target.character}:${target.window}:${target.dnaPointer}:${target.geneCount}:${target.catalogHash}:${target.exeHash}`; }
@@ -254,7 +254,7 @@ class LiveGameEngine {
     if (typeof selection?.dna !== 'string' || typeof selection.id !== 'string' || !selection.id || typeof selection.name !== 'string' || !Number.isFinite(selection.modified)) throw new Error('Select a saved gallery character with persistent Ruler Designer DNA.');
     return this.withProcess(false, async ({ handle }, session) => {
       const target = await this.readTarget(handle, session);
-      const converted = persistentDnaToRaw(selection.dna, session.catalog);
+      const converted = dnaToRaw(selection.dna, session.catalog, { baseRaw: target.raw });
       if (sameBytes(target.raw, converted.raw)) throw new Error('The selected CK3 character already has this DNA. Nothing needs to be applied.');
       const token = crypto.randomUUID();
       this.pending = { token, target, raw: converted.raw, original: target.raw, selection: { ...selection }, report: converted.report, fingerprint: fingerprintOf(target), createdAt: this.now() };

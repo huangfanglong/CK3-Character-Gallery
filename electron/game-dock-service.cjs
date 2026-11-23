@@ -4,7 +4,7 @@ const { WindowsGameMonitor } = require('./windows-game-monitor.cjs');
 const { GameDock, normalizeDockPreferences } = require('./game-dock.cjs');
 const { normalizeGameDockCommand, normalizeGameDockState } = require('./game-dock-commands.cjs');
 const { isValidCk3Dna } = require('../renderer/dna-validation.js');
-const { parsePersistentDna } = require('./live-dna-codec.cjs');
+const { parsePersistentDna, decodeBase64Dna } = require('./live-dna-codec.cjs');
 const { LiveGameBridge } = require('./live-game-bridge.cjs');
 
 const MUTATING_COMMANDS = new Set(['quick-add', 'create-record', 'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'undo-create', 'finish-without-portrait', 'retry']);
@@ -43,6 +43,8 @@ class GameDockService {
     this.liveBridge = options.liveBridge || new LiveGameBridge({ cachePath: this.preferencesPath ? path.join(path.dirname(this.preferencesPath), 'live-layout-cache.json') : '', logger: this.logger });
     this.selection = null;
     this.selectionSignature = '';
+    this.clipboardDna = null;
+    this.clipboardSignature = '';
     this.liveApply = null;
     this.lastLiveCommand = null;
     this.liveQueue = Promise.resolve();
@@ -195,8 +197,47 @@ class GameDockService {
   syncLiveState() {
     if (!this.dock) return;
     this.dock.syncPreferences?.({ liveLink: this.preferences.liveLink });
-    this.dock.update({ liveEnabled: this.preferences.liveLink.enabled, liveSelectedName: this.selection?.name || '', liveCanApply: Boolean(this.selection) });
+    this.dock.update({ liveEnabled: this.preferences.liveLink.enabled, liveSelectedName: this.selection?.name || '', ...this.liveApplyState() });
     this.syncLiveTargetPolling();
+  }
+
+  liveApplyState() {
+    const source = this.clipboardDna ? 'clipboard' : this.selection ? 'gallery' : '';
+    return { liveCanApply: Boolean(source), liveApplySource: source, liveClipboardFormat: this.clipboardDna?.format || '' };
+  }
+
+  syncClipboardDna(read = false) {
+    let next = null;
+    if (read && this.preferences.liveLink.enabled) {
+      try {
+        const dna = this.clipboard.readText().trim();
+        if (isValidCk3Dna(dna)) {
+          if (/\bgenes\s*=\s*\{/.test(dna)) {
+            parsePersistentDna(dna);
+            next = { dna, format: 'persistent' };
+          } else {
+            decodeBase64Dna(dna);
+            next = { dna, format: 'base64' };
+          }
+        }
+      } catch { next = null; }
+    }
+    const signature = next ? `${next.format}:${next.dna}` : '';
+    if (signature === this.clipboardSignature) return false;
+    this.clipboardDna = next;
+    this.clipboardSignature = signature;
+    this.dock?.update(this.liveApplyState());
+    return true;
+  }
+
+  currentLiveApplyInput(readClipboard = false) {
+    if (readClipboard) this.syncClipboardDna(true);
+    if (this.clipboardDna) {
+      const label = this.clipboardDna.format === 'base64' ? 'Base64 clipboard DNA' : 'Persistent clipboard DNA';
+      return { kind: 'clipboard', signature: this.clipboardSignature, selection: { id: 'clipboard', name: label, modified: 0, dna: this.clipboardDna.dna } };
+    }
+    if (this.selection) return { kind: 'gallery', signature: this.selectionSignature, selection: this.selection };
+    return null;
   }
 
   syncLiveTargetPolling() {
@@ -212,6 +253,7 @@ class GameDockService {
       this.liveTargetProbe = null;
       this.liveTargetGameKey = '';
       this.publishLiveTarget(null);
+      this.syncClipboardDna(false);
       return;
     }
     void this.refreshLiveTarget();
@@ -220,17 +262,20 @@ class GameDockService {
   async refreshLiveTarget() {
     if (!this.serviceStarted || this.destroyed || !this.preferences.liveLink.enabled || !this.dock) {
       this.publishLiveTarget(null);
+      this.syncClipboardDna(false);
       return false;
     }
     const dock = this.dock;
     const game = dock.game;
     if (!dock.state.visible || !dock.state.connected || !game?.processId || game.executable !== 'ck3.exe' || !game.executablePath) {
       this.publishLiveTarget(null);
+      this.syncClipboardDna(false);
       return false;
     }
     /* Expanded panels and mutations retain the last known identity but do not compete
        with an in-flight DNA operation. Hidden or disconnected docks never touch CK3. */
     if (dock.state.mode !== 'compact' || dock.state.busy || this.mutation || this.liveTargetProbe) return false;
+    this.syncClipboardDna(true);
     const identity = { pid: game.processId, executablePath: game.executablePath };
     const gameKey = `${identity.pid}:${identity.executablePath.toLowerCase()}`;
     const revision = this.liveRevision;
@@ -475,22 +520,26 @@ class GameDockService {
         return { ok: true };
       }
       if (command.type === 'live-prepare-apply') {
-        if (!this.selection) throw new Error('Select a gallery character with persistent Ruler Designer DNA in Bloodline first. Base64-only records need persistent DNA before they can be applied.');
-        this.lastLiveCommand = command;
-        const signature = this.selectionSignature;
-        this.dock.update({ busy: true, message: 'Preparing a version-matched DNA preview…', error: '', liveRetry: false });
         const game = this.liveGame();
+        const source = this.currentLiveApplyInput(true);
+        if (!source) throw new Error('Copy persistent or Base64 DNA, or select a gallery character with persistent Ruler Designer DNA in Bloodline first.');
+        this.lastLiveCommand = command;
+        this.dock.update({ busy: true, message: source.kind === 'clipboard' && source.selection.name.startsWith('Base64') ? 'Preparing a guarded Base64 DNA preview…' : 'Preparing a version-matched DNA preview…', error: '', liveRetry: false });
         await this.ensureLiveBridge();
         if (stale()) return { ok: true, cancelled: true };
-        const result = await this.liveBridge.prepareApply(game, this.selection);
+        const result = await this.liveBridge.prepareApply(game, source.selection);
         if (stale()) return { ok: true, cancelled: true };
-        if (signature !== this.selectionSignature) { await this.liveBridge.cancel(); throw new Error('The gallery selection changed. No DNA was applied.'); }
-        this.liveApply = { token: result.token, selectionSignature: signature };
-        this.dock.update({ mode: 'live-confirm', busy: false, liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: 0, liveRetry: false, error: '', message: '' });
+        const unchanged = source.kind === 'clipboard' ? source.signature === this.clipboardSignature : source.signature === this.selectionSignature;
+        if (!unchanged) { await this.liveBridge.cancel(); throw new Error(`The ${source.kind === 'clipboard' ? 'clipboard DNA' : 'gallery selection'} changed. No DNA was applied.`); }
+        this.liveApply = { token: result.token, sourceKind: source.kind, sourceSignature: source.signature };
+        this.dock.update({ mode: 'live-confirm', busy: false, liveApplySource: source.kind, liveClipboardFormat: source.kind === 'clipboard' ? this.clipboardDna?.format || '' : '', liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: 0, liveRetry: false, error: '', message: '' });
         return { ok: true };
       }
       if (command.type === 'live-confirm-apply') {
-        if (!this.liveApply || this.liveApply.selectionSignature !== this.selectionSignature) throw new Error('The gallery record changed or this preview expired. Prepare the apply again.');
+        if (!this.liveApply) throw new Error('This apply preview expired. Prepare it again.');
+        if (this.liveApply.sourceKind === 'clipboard') this.syncClipboardDna(true);
+        const currentSignature = this.liveApply.sourceKind === 'clipboard' ? this.clipboardSignature : this.selectionSignature;
+        if (this.liveApply.sourceSignature !== currentSignature) throw new Error(`The ${this.liveApply.sourceKind === 'clipboard' ? 'clipboard DNA' : 'gallery record'} changed or this preview expired. Prepare the apply again.`);
         this.dock.update({ busy: true, liveRetry: false, error: '' });
         const result = await this.liveBridge.confirmApply(this.liveGame(), this.liveApply.token);
         if (stale()) return { ok: true, cancelled: true };
@@ -606,6 +655,7 @@ class GameDockService {
 
   notifyGameLoss() {
     this.publishLiveTarget(null);
+    this.syncClipboardDna(false);
     const contents = this.getMainContents();
     const draftId = this.dock?.state.draftId || '';
     const operationIds = [...this.pendingRenderer].filter(([, request]) => request.draftId === draftId).map(([operationId]) => operationId);
@@ -641,6 +691,8 @@ class GameDockService {
     this.draftDna = '';
     this.selection = null;
     this.selectionSignature = '';
+    this.clipboardDna = null;
+    this.clipboardSignature = '';
     this.liveApply = null;
     for (const operationId of this.pendingRenderer.keys()) {
       this.settleRendererRequest(operationId, { ok: false, error: 'The application is closing.' });
