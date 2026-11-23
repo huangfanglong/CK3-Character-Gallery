@@ -96,7 +96,7 @@ async function duplicateActiveGallery() {
 
 async function copyDna() {
   const character = getActiveCharacter(); if (!character?.dna) return showToast('This character has no DNA yet.', 'info');
-  try { await navigator.clipboard.writeText(character.dna); showToast('DNA copied to clipboard.', 'success'); }
+  try { await navigator.clipboard.writeText(character.dna); playQuickLookWave(); showToast('DNA copied to clipboard.', 'success'); }
   catch { showToast('DNA could not be copied to the clipboard.', 'info'); }
 }
 
