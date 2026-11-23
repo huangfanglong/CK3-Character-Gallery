@@ -277,7 +277,7 @@ async function main() {
   if ((await evaluate("state.activeId")) !== quickOrder[0]) throw new Error('Quick Look previous navigation did not restore the previous visible record.');
   if ((await evaluate("document.querySelector('.portrait-flight')?.dataset.direction")) !== '-1') throw new Error('Quick Look previous navigation did not reverse the portrait transition.');
   await evaluate("document.querySelector('[data-action=next-character]').click();document.querySelector('[data-quick-tab=dna]').click()");
-  if (!(await evaluate("document.querySelector('.quick-dna')?.textContent.includes('base dna') && Boolean(document.querySelector('.quick-sheet [data-action=copy-dna]'))"))) throw new Error('Quick Look DNA view did not show real record DNA and its copy action.');
+  if (!(await evaluate("document.querySelector('.quick-dna')?.textContent.includes('base dna') && Boolean(document.querySelector('.quick-sheet [data-action=copy-dna]')) && document.querySelector('.quick-sheet .portrait-upload-trigger')?.getAttribute('aria-label') === 'Add portrait variant'"))) throw new Error('Quick Look DNA view did not show real record DNA, its copy action, and the portrait upload trigger.');
   await evaluate("document.querySelector('[data-quick-tab=notes]').click()");
   if (!(await evaluate("Boolean(document.querySelector('.quick-sheet .field-note'))"))) throw new Error('Quick Look Notes view did not preserve the notes workflow.');
   await evaluate("document.querySelector('[data-quick-tab=overview]').click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");

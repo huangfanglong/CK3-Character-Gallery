@@ -311,6 +311,9 @@ h1 { color: var(--ink); font: 660 clamp(33px,3vw,45px)/1.04 var(--sans); letter-
 .quick-sheet .inspector-actions [data-action="previous-character"] .icon { transform: rotate(90deg); }
 .quick-sheet .inspector-actions [data-action="next-character"] .icon { transform: rotate(-90deg); }
 .quick-sheet .inspector-portrait { width: 100%; height: auto; margin: 18px 0; overflow: hidden; border: 1px solid rgba(255,255,255,.65); border-radius: 18px; background: #dddde5; box-shadow: 0 12px 30px rgba(40,35,65,.1); aspect-ratio: .79; }
+.quick-sheet .portrait-upload-trigger { display: block; width: 100%; padding: 0; color: inherit; text-align: inherit; cursor: pointer; }
+.quick-sheet .portrait-upload-trigger:focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; }
+.quick-sheet .portrait-upload-trigger:hover { border-color: var(--copper); }
 .quick-sheet .inspector-portrait::after { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(28,29,36,.05); content: ''; }
 .quick-sheet .inspector-title h2 { color: var(--character-name-color,var(--ink)); font: 680 27px/1.1 var(--sans); letter-spacing: -.045em; }
 .quick-sheet .inspector-title input { color: var(--character-title-color,#8b8c97); font: 500 11px var(--sans); }
