@@ -53,6 +53,7 @@ class GameDockService {
     this.liveTargetProbe = null;
     this.liveTargetProbeSequence = 0;
     this.liveTargetGameKey = '';
+    this.liveResultTimer = null;
   }
 
   async loadPreferences() {
@@ -539,15 +540,16 @@ class GameDockService {
         if (stale()) return { ok: true, cancelled: true };
         this.liveApply = null;
         this.lastLiveCommand = null;
-        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: `Applied ${result.report.geneCount} mapped genes. Hair, beard, and clothing were not changed.` });
+        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: '' });
+        this.scheduleLiveResultExpiry(result.undoUntil);
         return { ok: true };
       }
       if (command.type === 'live-undo') {
         if (!this.dock.state.liveUndoUntil || this.dock.state.liveUndoUntil <= Date.now()) throw new Error('The guarded undo window has expired.');
         this.dock.update({ busy: true, error: '' });
-        const result = await this.liveBridge.undo(this.liveGame());
+        await this.liveBridge.undo(this.liveGame());
         if (stale()) return { ok: true, cancelled: true };
-        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: 0, liveRetry: false, error: '', message: 'Original DNA restored and verified.' });
+        this.clearLiveState();
         return { ok: true };
       }
       throw new Error('That live-game action is not available.');
@@ -560,9 +562,24 @@ class GameDockService {
     }
   }
 
+  scheduleLiveResultExpiry(deadline) {
+    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
+    this.liveResultTimer = null;
+    if (!Number.isFinite(deadline) || deadline <= 0) return;
+    this.liveResultTimer = this.setTimeout(() => {
+      this.liveResultTimer = null;
+      if (this.destroyed || this.dock?.state.mode !== 'live-result' || this.dock.state.busy
+        || this.dock.state.liveUndoUntil !== deadline) return;
+      this.clearLiveState();
+    }, Math.max(0, deadline - Date.now()));
+    this.liveResultTimer?.unref?.();
+  }
+
   clearLiveState() {
+    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
+    this.liveResultTimer = null;
     if (!this.dock) return;
-    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, error: '' });
+    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, message: '', error: '' });
   }
 
   async runMutation(command) {
@@ -678,6 +695,8 @@ class GameDockService {
     this.serviceStarted = false;
     if (this.liveTargetTimer) this.clearInterval(this.liveTargetTimer);
     this.liveTargetTimer = null;
+    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
+    this.liveResultTimer = null;
     ++this.liveTargetProbeSequence;
     this.liveTargetProbe = null;
     this.liveTargetGameKey = '';

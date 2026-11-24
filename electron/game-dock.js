@@ -99,7 +99,7 @@ function collectionPicker() {
 }
 
 function dockMenu() {
-  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p><strong>Live Game Link:</strong> open a CK3 character window, then <strong>Import</strong> creates a draft with persistent DNA. Copy persistent or Base64 DNA, or select a gallery character with persistent DNA, then <strong>Apply</strong> writes it immediately. Clipboard DNA takes priority. Persistent DNA applies recognized genes by name, unknown genes are ignored and missing genes retain the character’s current values. Base64 stays positional and should match your game version and mods. The result retracts automatically; hover over it to Undo or finish. Undo remains available only until its countdown expires, including while retracted.</p><p>Keep app running. Clipboard text is checked only while a draft awaits DNA or the compact live controls are visible.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
+  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p><strong>Live Game Link:</strong> open a CK3 character window, then <strong>Import</strong> creates a draft with persistent DNA. Copy persistent or Base64 DNA, or select a gallery character with persistent DNA, then <strong>Apply</strong> writes it immediately. Clipboard DNA takes priority. Persistent DNA applies recognized genes by name, unknown genes are ignored and missing genes retain the character’s current values. Base64 stays positional and should match your game version and mods. Apply provides a temporary Undo control that retracts automatically; hover over the strip to use it before its countdown expires, including while retracted.</p><p>Keep app running. Clipboard text is checked only while a draft awaits DNA or the compact live controls are visible.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
   if (dockView.menu !== 'menu') return '';
   return `<section class="popover menu" role="menu" aria-label="Game dock options"><p class="popover-label">DOCK POSITION</p>${['left', 'center', 'right'].map((position) => `<button class="menu-option" role="menuitem" data-command="set-position" data-position="${position}"><span>${position[0].toUpperCase()}${position.slice(1)}</span>${dockState.position === position ? dockIcon('check') : ''}</button>`).join('')}<div class="menu-separator"></div><button class="menu-option" role="menuitem" data-command="help">${dockIcon('help')}<span>How to use the dock</span></button><button class="menu-option danger" role="menuitem" data-command="disable-dock">Disable CK3 dock</button></section>`;
 }
@@ -134,9 +134,8 @@ function successMarkup() {
 }
 
 function liveResultMarkup() {
-  const canUndo = dockState.liveUndoUntil > Date.now();
   const seconds = Math.max(0, Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
-  return `<div class="dock-body live-result" aria-busy="${dockState.busy}"><div class="capture-state"><span class="success-mark">${dockIcon('check')}</span><div class="capture-copy"><strong>${canUndo ? `DNA applied to ${dockEscape(dockState.liveTargetName)}` : 'Live Game Link complete'}</strong><span>${dockEscape(dockState.message)}</span></div></div><div class="success-actions live-actions">${canUndo ? `<button class="secondary-button" data-command="live-undo"${dockState.busy || dockView.pending ? ' disabled' : ''}>${dockState.busy ? 'Restoring…' : `Undo (<span id="live-undo-time">${seconds}</span>s)`}</button>` : ''}<span class="spacer"></span><button class="primary-button" data-command="live-cancel"${dockState.busy ? ' disabled' : ''}>Done</button></div></div>`;
+  return `<div class="dock-body live-result" aria-busy="${dockState.busy}" aria-label="Undo DNA application to ${dockEscape(dockState.liveTargetName)}"><div class="success-actions live-actions"><button class="secondary-button" data-command="live-undo"${dockState.busy || dockView.pending ? ' disabled' : ''}>${dockState.busy ? 'Restoring…' : `Undo (<span id="live-undo-time">${seconds}</span>s)`}</button><span class="spacer"></span><button class="primary-button" data-command="live-cancel"${dockState.busy ? ' disabled' : ''}>Done</button></div></div>`;
 }
 
 function errorMarkup() {
@@ -539,8 +538,10 @@ dockBridge.onState((nextState) => {
     dockView.pending = false;
     dockView.pendingCommand = null;
   }
-  if (nextState.mode === 'live-result') scheduleResultRetraction();
-  else if (nextState.mode) clearResultRetraction();
+  /* Foreground changes republish the same state. Only a new result may restart
+     retraction; an already-retracted Undo stays hidden across Alt-Tab. */
+  if (nextState.mode === 'live-result' && dockState.mode !== 'live-result') scheduleResultRetraction();
+  else if (nextState.mode && nextState.mode !== 'live-result') clearResultRetraction();
   dockState = { ...dockState, ...nextState };
   if (preserveName) dockState.characterName = name;
   renderDock();

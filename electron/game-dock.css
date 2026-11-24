@@ -157,9 +157,7 @@ button:disabled { cursor: default; opacity: .42; }
 .live-button.live-apply:disabled { color: var(--muted); }
 .live-controls-note { color: var(--copper); }
 @keyframes live-prism { to { transform: translate(-50%, -50%) rotate(360deg); } }
-.live-actions { margin-top: 12px; }
-.live-result .capture-copy span { white-space: normal; }
-.live-result .capture-state { padding-block: 5px; }
+.live-actions { margin-top: 4px; }
 
 .dock-body { position: relative; z-index: 1; padding: 6px 18px 18px; }
 .dock-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }

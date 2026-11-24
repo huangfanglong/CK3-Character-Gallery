@@ -13,7 +13,7 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
   };
   const dna = liveFixture().process.persistentDna();
   const bridge = {
-    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null, pendingPrepare: null,
+    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null, pendingPrepare: null, undoDelay: 20_000,
     async setEnabled(value) {
       this.calls.push(['enabled', value]);
       if (value && this.failNextEnable) {
@@ -42,7 +42,7 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       if (this.pendingPrepare) await this.pendingPrepare;
       return { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, message: '24 genes mapped. Special appearance entries excluded.' } };
     },
-    async confirmApply() { this.calls.push(['confirm']); return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + 20_000, report: { geneCount: 24, message: '24 genes mapped.' } }; },
+    async confirmApply() { this.calls.push(['confirm']); return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + this.undoDelay, report: { geneCount: 24, message: '24 genes mapped.' } }; },
     async undo() { this.calls.push(['undo']); return { target: { id: 1, name: 'Aella' } }; },
     async cancel() { this.calls.push(['cancel']); return true; }, async close() {},
   };
@@ -134,8 +134,9 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     assert.ok(app.dock.state.liveUndoUntil > Date.now());
     assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, 1, 'One Apply click performs the internal confirmed write.');
     await app.service.handleCommand({ operationId: 'undo', type: 'live-undo', payload: {} });
+    assert.equal(app.dock.state.mode, 'compact', 'Undo returns to the normal dock without a redundant completion panel.');
     assert.equal(app.dock.state.liveUndoUntil, 0);
-    assert.match(app.dock.state.message, /restored and verified/);
+    assert.equal(app.dock.state.message, '');
 
     app.service.syncSelection(null);
     app.setClipboard(app.dna);
@@ -279,6 +280,21 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-restore', type: 'live-cancel', payload: {} })).ok, false, 'An Undo restore cannot be cancelled before verification.');
     assert.equal(verifying.bridge.calls.some(([action]) => action === 'cancel'), false);
     verifying.service.destroy();
+
+    const expiring = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    try {
+      await expiring.service.setLiveLinkChoice(true);
+      expiring.bridge.undoDelay = 25;
+      expiring.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: expiring.dna });
+      const result = await expiring.service.handleCommand({ operationId: 'apply-expiring', type: 'live-prepare-apply', payload: {} });
+      assert.equal(result.ok, true);
+      assert.equal(expiring.dock.state.mode, 'live-result');
+      assert.equal(expiring.dock.state.message, '', 'Apply stores no redundant completion notification.');
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.equal(expiring.dock.state.mode, 'compact', 'The result is retired when its Undo deadline expires.');
+      assert.equal(expiring.dock.state.liveUndoUntil, 0);
+      assert.equal(expiring.service.liveResultTimer, null);
+    } finally { expiring.service.destroy(); }
 
     const synchronized = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
     try {
