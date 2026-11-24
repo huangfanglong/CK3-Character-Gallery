@@ -103,6 +103,7 @@ class GameDock {
       liveDetectedName: '',
       liveTargetName: '',
       liveUndoUntil: 0,
+      liveApplyId: '',
       liveRetry: false,
       liveImported: false,
       commandEpoch: 0,

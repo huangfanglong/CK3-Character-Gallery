@@ -4,7 +4,7 @@ const COMMAND_TYPES = new Set([
   'undo-create', 'view-gallery', 'dismiss', 'retry', 'disable-dock', 'set-position',
   'live-import', 'live-prepare-apply', 'live-undo', 'live-cancel', 'live-retry',
 ]);
-const MODES = new Set(['compact', 'draft', 'framing', 'capture', 'success', 'error', 'live-result']);
+const MODES = new Set(['compact', 'draft', 'framing', 'capture', 'success', 'error']);
 const CAPTURE_STATES = new Set(['starting', 'armed', 'recording', 'matching', 'saving']);
 
 function identifier(value, label, required = false) {

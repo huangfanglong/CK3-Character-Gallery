@@ -130,12 +130,21 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
 
     const applied = await app.service.handleCommand({ operationId: 'apply', type: 'live-prepare-apply', payload: {} });
     assert.equal(applied.ok, true);
-    assert.equal(app.dock.state.mode, 'live-result');
+    assert.equal(app.dock.state.mode, 'compact', 'Apply leaves Import and Apply available in the normal dock.');
     assert.ok(app.dock.state.liveUndoUntil > Date.now());
+    assert.equal(app.dock.state.liveApplyId, 'apply');
     assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, 1, 'One Apply click performs the internal confirmed write.');
+    const firstUndoDeadline = app.dock.state.liveUndoUntil;
+    const nextApplied = await app.service.handleCommand({ operationId: 'apply-next', type: 'live-prepare-apply', payload: {} });
+    assert.equal(nextApplied.ok, true, 'A second Apply is accepted during the first Undo period.');
+    assert.equal(app.dock.state.mode, 'compact');
+    assert.equal(app.dock.state.liveApplyId, 'apply-next', 'Only the latest Apply retains an Undo identity.');
+    assert.ok(app.dock.state.liveUndoUntil >= firstUndoDeadline, 'The latest Apply resets the Undo deadline.');
+    assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, 2);
     await app.service.handleCommand({ operationId: 'undo', type: 'live-undo', payload: {} });
     assert.equal(app.dock.state.mode, 'compact', 'Undo returns to the normal dock without a redundant completion panel.');
     assert.equal(app.dock.state.liveUndoUntil, 0);
+    assert.equal(app.dock.state.liveApplyId, '');
     assert.equal(app.dock.state.message, '');
 
     app.service.syncSelection(null);
@@ -174,7 +183,8 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     const base64Source = app.bridge.calls.filter(([action]) => action === 'prepare').at(-1)[1];
     assert.equal(base64Source.id, 'clipboard');
     assert.equal(base64Source.name, 'Base64 clipboard DNA');
-    assert.equal(app.dock.state.mode, 'live-result');
+    assert.equal(app.dock.state.mode, 'compact');
+    assert.equal(app.dock.state.liveApplyId, 'apply-base64-clipboard');
     await app.service.handleCommand({ operationId: 'cancel-base64-result', type: 'live-cancel', payload: {} });
     app.setClipboard('');
     app.service.syncClipboardDna(true);
@@ -275,8 +285,8 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     verifying.service.lastLiveCommand = { type: 'live-prepare-apply' };
     verifying.dock.update({ mode: 'compact', busy: true });
     assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-write', type: 'live-cancel', payload: {} })).ok, false, 'A one-click DNA write cannot be cancelled before verification.');
-    verifying.service.lastLiveCommand = null;
-    verifying.dock.update({ mode: 'live-result', busy: true });
+    verifying.service.lastLiveCommand = { type: 'live-undo' };
+    verifying.dock.update({ mode: 'compact', busy: true });
     assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-restore', type: 'live-cancel', payload: {} })).ok, false, 'An Undo restore cannot be cancelled before verification.');
     assert.equal(verifying.bridge.calls.some(([action]) => action === 'cancel'), false);
     verifying.service.destroy();
@@ -288,12 +298,15 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       expiring.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: expiring.dna });
       const result = await expiring.service.handleCommand({ operationId: 'apply-expiring', type: 'live-prepare-apply', payload: {} });
       assert.equal(result.ok, true);
-      assert.equal(expiring.dock.state.mode, 'live-result');
+      assert.equal(expiring.dock.state.mode, 'compact');
+      assert.equal(expiring.dock.state.liveApplyId, 'apply-expiring');
+      assert.ok(expiring.dock.state.liveUndoUntil > Date.now());
       assert.equal(expiring.dock.state.message, '', 'Apply stores no redundant completion notification.');
       await new Promise((resolve) => setTimeout(resolve, 80));
-      assert.equal(expiring.dock.state.mode, 'compact', 'The result is retired when its Undo deadline expires.');
+      assert.equal(expiring.dock.state.mode, 'compact', 'The normal dock remains active when its Undo deadline expires.');
       assert.equal(expiring.dock.state.liveUndoUntil, 0);
-      assert.equal(expiring.service.liveResultTimer, null);
+      assert.equal(expiring.dock.state.liveApplyId, '');
+      assert.equal(expiring.service.liveUndoTimer, null);
     } finally { expiring.service.destroy(); }
 
     const synchronized = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });

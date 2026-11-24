@@ -35,7 +35,7 @@ class LiveGameEngine {
     this.pending = null;
     this.undo = null;
     this.now = options.now || Date.now;
-    this.undoLifetimeMs = options.undoLifetimeMs || 20_000;
+    this.undoLifetimeMs = options.undoLifetimeMs || 18_000;
   }
   async setEnabled(enabled) {
     this.enabled = Boolean(enabled);

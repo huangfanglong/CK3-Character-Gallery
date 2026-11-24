@@ -36,6 +36,8 @@ if (!electron.app) {
     let stalledLiveOperationId = '';
     let holdNextLiveImport = false;
     let dismissalCount = 0;
+    let liveTargetName = 'Aella';
+    let liveApplyCount = 0;
     dock = new GameDock({
       BrowserWindow, screen, monitor,
       htmlPath: path.join(__dirname, '..', 'electron', 'game-dock.html'),
@@ -59,8 +61,11 @@ if (!electron.app) {
           return new Promise((resolve) => { stalledLiveImport = resolve; });
         }
         if (type === 'live-import') dock.update({ mode: 'draft', dnaReady: true, dnaAttached: true, liveImported: true, characterName: 'Aella', message: '24 genes imported as persistent DNA.' });
-        if (type === 'live-prepare-apply') dock.update({ mode: 'live-result', liveTargetName: 'Aella', liveUndoUntil: Date.now() + 20_000, message: '', busy: false });
-        if (type === 'live-undo') dock.update({ mode: 'compact', liveTargetName: '', liveUndoUntil: 0, message: '', busy: false });
+        if (type === 'live-prepare-apply') {
+          liveApplyCount += 1;
+          dock.update({ mode: 'compact', liveTargetName, liveUndoUntil: Date.now() + 18_000, liveApplyId: operationId, message: '', busy: false });
+        }
+        if (type === 'live-undo') dock.update({ mode: 'compact', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', message: '', busy: false });
         if (['dismiss', 'cancel-draft', 'finish-without-portrait', 'cancel-capture', 'live-cancel'].includes(type)) {
           dock.update({ mode: 'compact', capture: null, crop: null, characterId: null, liveUndoUntil: 0, liveRetry: false });
           if (stalledCreate) { stalledCreate({ ok: true, cancelled: true }); stalledCreate = null; }
@@ -327,49 +332,61 @@ if (!electron.app) {
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Persistent clipboard DNA.*Aella/);
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
       await delay(40);
-      assert.equal(dock.state.mode, 'live-result', 'Apply completes without an intermediate confirmation screen.');
+      assert.equal(dock.state.mode, 'compact', 'Apply returns directly to the normal controls without a confirmation or result screen.');
       assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".live-confirm, [data-command=live-confirm-apply]"))'), false, 'Apply confirmation UI and commands are removed.');
-      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-undo]").disabled'), false);
-      assert.equal(await window.webContents.executeJavaScript('/Live Game Link complete|Applied \\d+ mapped genes/.test(document.querySelector(".dock").textContent)'), false, 'Apply does not display a redundant completion notification.');
-      const undoDeadline = dock.state.liveUndoUntil;
-      await delay(2150);
-      const retractedUndo = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({mode:dockState.mode,retracted:dockView.resultRetracted,revealed:dockView.revealed,clock:Boolean(captureClock),deadline:dockState.liveUndoUntil,remaining:dockState.liveUndoUntil-Date.now(),height:document.querySelector('.dock').getBoundingClientRect().height,body:getComputedStyle(document.querySelector('.live-result')).visibility})`));
-      assert.equal(retractedUndo.mode, 'live-result');
-      assert.equal(retractedUndo.retracted, true);
-      assert.equal(retractedUndo.revealed, false);
-      assert.equal(retractedUndo.clock, true, 'The Undo clock continues while the result is hidden.');
-      assert.equal(retractedUndo.deadline, undoDeadline, 'Retraction must not clear or extend the Undo deadline.');
-      assert.ok(retractedUndo.remaining > 0 && retractedUndo.remaining < 19_500, 'Undo time elapses during retraction.');
-      assert.equal(retractedUndo.height, 6);
-      assert.equal(retractedUndo.body, 'hidden');
+      assert.equal(dock.state.message, '');
+      const firstApplyId = dock.state.liveApplyId;
+      const firstUndoDeadline = dock.state.liveUndoUntil;
+      assert.ok(firstApplyId);
+      const immediateRetraction = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({revealed:dockView.revealed,pending:dockView.pending,clock:Boolean(captureClock),undo:Boolean(document.querySelector('[data-command=live-undo]')),importDisabled:document.querySelector('[data-command=live-import]').disabled,applyDisabled:document.querySelector('[data-command=live-prepare-apply]').disabled})`));
+      assert.equal(immediateRetraction.revealed, false, 'Apply starts retracting immediately, without a 1.8-second delay.');
+      assert.equal(immediateRetraction.pending, false);
+      assert.equal(immediateRetraction.clock, true, 'The latest Undo clock continues while the dock is retracted.');
+      assert.equal(immediateRetraction.undo, true);
+      assert.equal(immediateRetraction.importDisabled, false, 'Import stays available during the Undo period.');
+      assert.equal(immediateRetraction.applyDisabled, false, 'Apply stays available during the Undo period.');
+      await delay(260);
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height'), 6);
       monitor.state = null;
       monitor.emit('change', null);
       assert.equal(window.isVisible(), false);
       monitor.state = game;
       monitor.emit('change', game);
       await delay(40);
-      const returnedToGame = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({visible:dockState.visible,retracted:dockView.resultRetracted,revealed:dockView.revealed,deadline:dockState.liveUndoUntil,body:getComputedStyle(document.querySelector('.live-result')).visibility})`));
+      const returnedToGame = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({visible:dockState.visible,revealed:dockView.revealed,deadline:dockState.liveUndoUntil,id:dockState.liveApplyId,height:document.querySelector('.dock').getBoundingClientRect().height})`));
       assert.equal(returnedToGame.visible, true);
-      assert.equal(returnedToGame.retracted, true, 'Alt-Tab must not reopen a stale Apply result.');
-      assert.equal(returnedToGame.revealed, false);
-      assert.equal(returnedToGame.deadline, undoDeadline, 'Alt-Tab must not restart the Undo deadline.');
-      assert.equal(returnedToGame.body, 'hidden');
+      assert.equal(returnedToGame.revealed, false, 'Alt-Tab leaves the normal dock retracted.');
+      assert.equal(returnedToGame.deadline, firstUndoDeadline, 'Alt-Tab must not restart the Undo deadline.');
+      assert.equal(returnedToGame.id, firstApplyId);
+      assert.equal(returnedToGame.height, 6);
       dock.present();
       await delay(20);
-      assert.equal(await window.webContents.executeJavaScript('dockView.resultRetracted'), true, 'Same-state publication cannot undo retraction.');
+      assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Same-state publication cannot reveal the dock.');
       await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
       await delay(260);
-      const revealedUndo = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({revealed:dockView.revealed,retracted:dockView.resultRetracted,height:document.querySelector('.dock').getBoundingClientRect().height,body:getComputedStyle(document.querySelector('.live-result')).visibility,undo:Boolean(document.querySelector('[data-command=live-undo]'))})`));
+      const revealedUndo = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({revealed:dockView.revealed,height:document.querySelector('.dock').getBoundingClientRect().height,undo:Boolean(document.querySelector('[data-command=live-undo]')),importDisabled:document.querySelector('[data-command=live-import]').disabled,applyDisabled:document.querySelector('[data-command=live-prepare-apply]').disabled})`));
       assert.equal(revealedUndo.revealed, true);
-      assert.equal(revealedUndo.retracted, true, 'Hover retains the result workflow rather than returning to compact Apply controls.');
-      assert.ok(revealedUndo.height > 48);
-      assert.equal(revealedUndo.body, 'visible');
+      assert.equal(revealedUndo.height, 48);
       assert.equal(revealedUndo.undo, true);
+      assert.equal(revealedUndo.importDisabled, false);
+      assert.equal(revealedUndo.applyDisabled, false);
+      liveTargetName = 'Second Character';
+      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
+      await delay(40);
+      assert.equal(liveApplyCount, 2, 'A second character can be modified during the first Undo period.');
+      assert.equal(dock.state.mode, 'compact');
+      assert.equal(dock.state.liveTargetName, 'Second Character');
+      assert.notEqual(dock.state.liveApplyId, firstApplyId, 'The second Apply replaces the first Undo identity.');
+      assert.ok(dock.state.liveUndoUntil > firstUndoDeadline, 'The second Apply restarts the 18-second Undo deadline.');
+      assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Every new Apply retracts immediately, even from an open Undo control.');
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      await delay(260);
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-undo]").click()');
       await delay(40);
-      assert.equal(dock.state.mode, 'compact', 'Undo returns directly to the normal dock.');
+      assert.equal(dock.state.mode, 'compact');
+      assert.equal(dock.state.liveUndoUntil, 0);
       assert.equal(dock.state.message, '');
-      assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".live-result"))'), false, 'No completion panel remains after Undo.');
+      assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector("[data-command=live-undo]"))'), false, 'Undo removes the latest operation control.');
       dock.update({ mode: 'compact', liveCanApply: true, liveApplySource: 'gallery', liveClipboardFormat: '', liveSelectedName: 'Archived Aella' });
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").click()');
       await delay(40);
@@ -405,23 +422,18 @@ if (!electron.app) {
 
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
       await delay(40);
-      assert.equal(dock.state.mode, 'live-result');
+      assert.equal(dock.state.mode, 'compact');
       assert.equal(dock.state.liveApplySource, 'gallery');
       assert.equal(dock.state.liveSelectedName, 'Archived Aella');
-      assert.equal(dock.state.liveTargetName, 'Aella');
+      assert.equal(dock.state.liveTargetName, 'Second Character');
       assert.equal(dock.state.message, '');
       assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".live-confirm, [data-command=live-confirm-apply]"))'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-undo]").disabled'), false);
-      await window.webContents.executeJavaScript('document.querySelector(".dock").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}))');
-      await delay(40);
-      assert.equal(dock.state.mode, 'compact');
-      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
-      await delay(40);
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-undo]").click()');
       await delay(40);
       assert.equal(dock.state.mode, 'compact');
       assert.equal(dock.state.message, '');
-      assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".live-result"))'), false);
+      assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector("[data-command=live-undo]"))'), false);
       dock.update({ mode: 'compact', error: '', capture: null, busy: false });
       await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").click()');
       await delay(40);

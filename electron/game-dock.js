@@ -1,23 +1,21 @@
 const dockRoot = document.querySelector('#game-dock');
 const announcer = document.querySelector('#announcer');
 const dockBridge = window.gameDock;
-let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveApplySource: '', liveClipboardFormat: '', liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveUndoUntil: 0, liveRetry: false, busy: false, commandEpoch: 0 };
-let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false, resultRetracted: false };
+let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveApplySource: '', liveClipboardFormat: '', liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', liveRetry: false, busy: false, commandEpoch: 0 };
+let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
 let commandSequence = 0;
 let interactive = false;
 let drag = null;
 let captureClock = null;
-let resultRetractionTimer = null;
 let textInputActive = false;
 let hitRegionFrame = null;
 let hitRegionTimer = null;
-const LIVE_RESULT_RETRACTION_DELAY = 1800;
 
 function sendNativeHitRegions() {
   const regions = [];
   for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
     let rect = element.getBoundingClientRect();
-    if (element.classList.contains('dock') && (dockState.mode === 'compact' || dockView.resultRetracted) && dockView.revealed) {
+    if (element.classList.contains('dock') && dockState.mode === 'compact' && dockView.revealed) {
       /* Claim the final bounds as reveal starts, not only after its CSS transition.
          Otherwise a fast pointer leaves the temporary native region. During collapse,
          retain the animated bounds instead: native window shapes clip rendering too. */
@@ -99,7 +97,7 @@ function collectionPicker() {
 }
 
 function dockMenu() {
-  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p><strong>Live Game Link:</strong> open a CK3 character window, then <strong>Import</strong> creates a draft with persistent DNA. Copy persistent or Base64 DNA, or select a gallery character with persistent DNA, then <strong>Apply</strong> writes it immediately. Clipboard DNA takes priority. Persistent DNA applies recognized genes by name, unknown genes are ignored and missing genes retain the character’s current values. Base64 stays positional and should match your game version and mods. Apply provides a temporary Undo control that retracts automatically; hover over the strip to use it before its countdown expires, including while retracted.</p><p>Keep app running. Clipboard text is checked only while a draft awaits DNA or the compact live controls are visible.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
+  if (dockView.help) return `<section class="popover menu" role="dialog" aria-label="Game dock help"><p class="popover-label">HOW IT WORKS</p><div class="help-copy"><p>Rest your pointer on the thin top strip to unfold the controls. Move away to tuck them back.</p><p><strong>1.</strong> Use CK3’s Copy DNA option, then choose <strong>Quick add</strong>.</p><p><strong>2.</strong> Move the square over the character. Drag corners to resize.</p><p><strong>Snapshot</strong> saves a PNG. <strong>Live portrait</strong> records WebM; press <strong>${dockEscape(shortcutLabel(dockState.shortcut))}</strong> to stop and find a smooth loop.</p><p><strong>Live Game Link:</strong> open a CK3 character window, then <strong>Import</strong> creates a draft with persistent DNA. Copy persistent or Base64 DNA, or select a gallery character with persistent DNA, then <strong>Apply</strong> writes it immediately. Clipboard DNA takes priority. Persistent DNA applies recognized genes by name, unknown genes are ignored and missing genes retain the character’s current values. Base64 stays positional and should match your game version and mods. After Apply, the dock immediately tucks away without a completion panel. Hover to use Undo within 18 seconds; each new Apply replaces the previous Undo and restarts its countdown. Import and Apply remain available during that countdown.</p><p>Keep app running. Clipboard text is checked only while a draft awaits DNA or the compact live controls are visible.</p></div><button class="menu-option" data-command="close-menu">Close help</button></section>`;
   if (dockView.menu !== 'menu') return '';
   return `<section class="popover menu" role="menu" aria-label="Game dock options"><p class="popover-label">DOCK POSITION</p>${['left', 'center', 'right'].map((position) => `<button class="menu-option" role="menuitem" data-command="set-position" data-position="${position}"><span>${position[0].toUpperCase()}${position.slice(1)}</span>${dockState.position === position ? dockIcon('check') : ''}</button>`).join('')}<div class="menu-separator"></div><button class="menu-option" role="menuitem" data-command="help">${dockIcon('help')}<span>How to use the dock</span></button><button class="menu-option danger" role="menuitem" data-command="disable-dock">Disable CK3 dock</button></section>`;
 }
@@ -133,11 +131,6 @@ function successMarkup() {
   return `<div class="dock-body"><div class="capture-state"><span class="success-mark">${dockIcon('check')}</span><div class="capture-copy"><strong>Saved to ${dockEscape(dockState.collection)}</strong><span>${dockEscape(dockState.message || `${dockState.characterName} is in your archive.`)}</span></div></div><div class="success-actions" style="margin-top:14px"><button class="text-button" data-command="undo-create"${dockState.undoUntil > Date.now() ? '' : ' disabled'}>Undo</button><span class="spacer"></span><button class="secondary-button" data-command="view-gallery">View in gallery</button><button class="primary-button" data-command="dismiss">Done</button></div></div>`;
 }
 
-function liveResultMarkup() {
-  const seconds = Math.max(0, Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
-  return `<div class="dock-body live-result" aria-busy="${dockState.busy}" aria-label="Undo DNA application to ${dockEscape(dockState.liveTargetName)}"><div class="success-actions live-actions"><button class="secondary-button" data-command="live-undo"${dockState.busy || dockView.pending ? ' disabled' : ''}>${dockState.busy ? 'Restoring…' : `Undo (<span id="live-undo-time">${seconds}</span>s)`}</button><span class="spacer"></span><button class="primary-button" data-command="live-cancel"${dockState.busy ? ' disabled' : ''}>Done</button></div></div>`;
-}
-
 function errorMarkup() {
   const live = Boolean(dockState.liveRetry);
   return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">COULDN’T COMPLETE THAT</p><h2>${dockEscape(dockState.error || 'The archive did not respond.')}</h2></div><button class="icon-button" data-command="${live ? 'live-cancel' : 'dismiss'}" aria-label="Dismiss error">${dockIcon('close')}</button></div><div class="capture-actions"><button class="secondary-button" data-command="${live ? 'live-cancel' : 'dismiss'}">Dismiss</button><button class="primary-button" data-command="${live ? 'live-retry' : 'retry'}"${dockView.pending ? ' disabled' : ''}>Try again</button></div></div>`;
@@ -153,7 +146,11 @@ function compactBar() {
     : !dockState.liveCanApply ? 'Copy persistent or Base64 DNA, or select a gallery character with persistent DNA'
       : `Apply ${sourceName} to ${targetName} in CK3`;
   const liveControls = dockState.liveEnabled ? `<span class="divider"></span><button class="live-button live-import" data-command="live-import" title="${dockEscape(importTitle)}" aria-label="Import DNA from CK3"${unavailable || !dockState.liveTargetAvailable ? ' disabled' : ''}>${dockIcon('download')}<span>Import</span></button><button class="live-button live-apply" data-command="live-prepare-apply" title="${dockEscape(applyTitle)}" aria-label="Apply DNA to CK3"${unavailable || !dockState.liveTargetAvailable || !dockState.liveCanApply ? ' disabled' : ''}>${dockIcon('apply')}<span>Apply</span></button>` : '';
-  return `<div class="dock-bar">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${unavailable ? ' disabled' : ''}>${dockIcon('plus')} Quick add</button>${liveControls}<span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}">${dockState.liveImported ? 'Persistent DNA' : dockState.dnaReady ? 'DNA copied' : ''}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
+  const undoAvailable = dockState.liveEnabled && dockState.liveUndoUntil > Date.now();
+  const undoSeconds = Math.max(0, Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
+  const undoTitle = `Undo the latest DNA application to ${dockState.liveTargetName}`;
+  const undoControl = undoAvailable ? `<button class="secondary-button live-undo" data-command="live-undo" title="${dockEscape(undoTitle)}" aria-label="${dockEscape(undoTitle)}"${unavailable ? ' disabled' : ''}>Undo <span id="live-undo-time">${undoSeconds}</span>s</button>` : '';
+  return `<div class="dock-bar ${undoAvailable ? 'has-undo' : ''}">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${unavailable ? ' disabled' : ''}>${dockIcon('plus')} Quick add</button>${liveControls}${undoControl}<span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}">${dockState.liveImported ? 'Persistent DNA' : dockState.dnaReady ? 'DNA copied' : ''}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
 }
 
 function dockDisplayGeometry() {
@@ -183,9 +180,8 @@ function renderDock() {
   const mode = dockState.mode;
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
   const expanded = mode !== 'compact';
-  const retracted = mode === 'live-result' && dockView.resultRetracted;
-  const classes = ['dock', `position-${dockState.position || 'center'}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', retracted ? 'retracted' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
-  const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'live-result' ? liveResultMarkup() : mode === 'error' ? errorMarkup() : '';
+  const classes = ['dock', `position-${dockState.position || 'center'}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
+  const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'error' ? errorMarkup() : '';
   dockRoot.innerHTML = dockState.visible ? `<section class="${classes}" aria-label="Bloodline game dock">${compactBar()}${body}${collectionPicker()}${dockMenu()}</section>${reticleMarkup()}` : '';
   syncCaptureClock();
   syncNativeHitRegions();
@@ -195,14 +191,14 @@ function syncCaptureClock() {
   if (captureClock) clearInterval(captureClock);
   captureClock = null;
   const recording = dockState.capture?.startedAt && ['recording', 'matching'].includes(dockState.capture.state);
-  const undo = dockState.mode === 'live-result' && dockState.liveUndoUntil > Date.now();
+  const undo = dockState.liveUndoUntil > Date.now();
   if (!recording && !undo) return;
   captureClock = setInterval(() => {
     if (recording) {
       const clock = document.querySelector('#capture-time');
       if (clock) clock.textContent = elapsedLabel(dockState.capture.startedAt);
     }
-    if (dockState.mode === 'live-result') {
+    if (dockState.liveUndoUntil) {
       if (dockState.liveUndoUntil <= Date.now()) { dockState.liveUndoUntil = 0; renderDock(); }
       else {
         const clock = document.querySelector('#live-undo-time');
@@ -225,26 +221,13 @@ function closeMenus() {
   dockView.query = '';
 }
 
-function clearResultRetraction() {
-  if (resultRetractionTimer !== null) clearTimeout(resultRetractionTimer);
-  resultRetractionTimer = null;
-  dockView.resultRetracted = false;
-}
-
-function scheduleResultRetraction() {
-  clearResultRetraction();
-  resultRetractionTimer = setTimeout(() => {
-    resultRetractionTimer = null;
-    if (dockState.mode !== 'live-result') return;
-    closeMenus();
-    if (dockRoot.contains(document.activeElement)) document.activeElement.blur();
-    setDockRevealed(false);
-    /* Retraction changes presentation only. Keeping live-result and liveUndoUntil
-       intact lets the same Undo deadline run while the result is hidden. */
-    dockView.resultRetracted = true;
-    renderDock();
-    setInteractive(false);
-  }, LIVE_RESULT_RETRACTION_DELAY);
+function collapseDockAfterApply() {
+  closeMenus();
+  dockView.pending = false;
+  dockView.pendingCommand = null;
+  if (dockRoot.contains(document.activeElement)) document.activeElement.blur();
+  setDockRevealed(false);
+  setInteractive(false);
 }
 
 async function runCommand(type, payload = {}) {
@@ -460,7 +443,7 @@ dockRoot.addEventListener('keydown', (event) => {
     if (textInputActive) { document.activeElement?.blur(); dockBridge.setTextInput(false); textInputActive = false; }
     if (dockView.picker || dockView.menu || dockView.help) { closeMenus(); renderDock(); }
     else if (dockState.mode === 'draft') void runCommand('cancel-draft');
-    else if (dockState.mode === 'live-result' || dockState.liveRetry) void runCommand('live-cancel');
+    else if (dockState.liveRetry) void runCommand('live-cancel');
     else if (dockState.capture) void runCommand('cancel-capture');
   }
   if (event.key === 'Enter' && event.target.id === 'character-name') {
@@ -496,11 +479,10 @@ dockRoot.addEventListener('focusout', () => {
   }, 0);
 });
 function withinRevealedDock(event) {
-  if (!(dockState.mode === 'compact' || dockView.resultRetracted) || !dockView.revealed) return false;
+  if (dockState.mode !== 'compact' || !dockView.revealed) return false;
   const width = Math.min(680, Math.max(0, window.innerWidth - 24));
   const left = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
-  const height = dockState.mode === 'compact' ? 48 : Math.max(48, document.querySelector('.dock')?.scrollHeight || 48);
-  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < height;
+  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < 48;
 }
 
 function dockPointerTargets(event) {
@@ -531,6 +513,7 @@ dockBridge.onState((nextState) => {
   const preservePicker = input?.id === 'collection-filter';
   const name = preserveName ? input.value : '';
   const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
+  const newLiveApply = nextState.mode === 'compact' && Boolean(nextState.liveApplyId) && nextState.liveApplyId !== dockState.liveApplyId;
   if (((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0))
     || (nextState.mode === 'error' && dockView.pendingCommand?.type?.startsWith('live-'))) {
     /* The service publishes a terminal error before its IPC reply reaches the
@@ -538,10 +521,9 @@ dockBridge.onState((nextState) => {
     dockView.pending = false;
     dockView.pendingCommand = null;
   }
-  /* Foreground changes republish the same state. Only a new result may restart
-     retraction; an already-retracted Undo stays hidden across Alt-Tab. */
-  if (nextState.mode === 'live-result' && dockState.mode !== 'live-result') scheduleResultRetraction();
-  else if (nextState.mode && nextState.mode !== 'live-result') clearResultRetraction();
+  /* Every completed Apply returns immediately to the resting strip. The compact
+     controls still contain the latest Undo deadline and never block the next action. */
+  if (newLiveApply) collapseDockAfterApply();
   dockState = { ...dockState, ...nextState };
   if (preserveName) dockState.characterName = name;
   renderDock();

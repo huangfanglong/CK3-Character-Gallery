@@ -19,4 +19,5 @@ assert.equal(state.unknown, undefined);
 assert.throws(() => normalizeGameDockState({ mode: 'admin' }), /mode/i);
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'live-confirm-apply' }), /not supported/, 'The removed Apply confirmation command must stay dead.');
 assert.throws(() => normalizeGameDockState({ mode: 'live-confirm' }), /mode/i, 'The removed Apply confirmation mode must stay dead.');
+assert.throws(() => normalizeGameDockState({ mode: 'live-result' }), /mode/i, 'The replaced Apply result mode must stay dead.');
 console.log('Game dock command tests passed: allow-listed semantic actions, strict payloads, safe crops, and bounded state.');

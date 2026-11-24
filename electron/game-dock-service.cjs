@@ -53,7 +53,7 @@ class GameDockService {
     this.liveTargetProbe = null;
     this.liveTargetProbeSequence = 0;
     this.liveTargetGameKey = '';
-    this.liveResultTimer = null;
+    this.liveUndoTimer = null;
   }
 
   async loadPreferences() {
@@ -352,7 +352,7 @@ class GameDockService {
     this.liveApply = null;
     this.lastLiveCommand = null;
     void this.liveBridge.cancel().catch(() => {});
-    if (this.dock?.state.mode === 'live-result' || this.dock?.state.liveRetry) this.clearLiveState();
+    if (this.dock?.state.liveRetry) this.clearLiveState();
     this.syncLiveState();
   }
 
@@ -442,7 +442,7 @@ class GameDockService {
     if (type === 'live-cancel') {
       /* A write/restore must finish verification, but a pending read or an
          already-reported error must never queue its Dismiss button behind itself. */
-      const writing = this.dock.state.mode === 'live-result' || this.lastLiveCommand?.type === 'live-prepare-apply';
+      const writing = ['live-prepare-apply', 'live-undo'].includes(this.lastLiveCommand?.type);
       if (this.mutationKind === 'live' && this.dock.state.busy && writing) {
         return { ok: false, error: 'Wait for the DNA write to finish verifying.' };
       }
@@ -508,7 +508,8 @@ class GameDockService {
     try {
       if (command.type === 'live-import') {
         this.lastLiveCommand = command;
-        this.dock.update({ busy: true, message: 'Validating the open CK3 character…', error: '', liveRetry: false });
+        this.scheduleLiveUndoExpiry(0);
+        this.dock.update({ busy: true, message: 'Validating the open CK3 character…', error: '', liveUndoUntil: 0, liveTargetName: '', liveApplyId: '', liveRetry: false });
         const game = this.liveGame();
         await this.ensureLiveBridge();
         if (stale()) return { ok: true, cancelled: true };
@@ -526,7 +527,8 @@ class GameDockService {
         const source = this.currentLiveApplyInput(true);
         if (!source) throw new Error('Copy persistent or Base64 DNA, or select a gallery character with persistent Ruler Designer DNA in Bloodline first.');
         this.lastLiveCommand = command;
-        this.dock.update({ busy: true, message: source.kind === 'clipboard' && source.selection.name.startsWith('Base64') ? 'Preparing guarded Base64 DNA…' : 'Preparing version-matched DNA…', error: '', liveRetry: false });
+        this.scheduleLiveUndoExpiry(0);
+        this.dock.update({ busy: true, message: source.kind === 'clipboard' && source.selection.name.startsWith('Base64') ? 'Preparing guarded Base64 DNA…' : 'Preparing version-matched DNA…', error: '', liveUndoUntil: 0, liveTargetName: '', liveApplyId: '', liveRetry: false });
         await this.ensureLiveBridge();
         if (stale()) return { ok: true, cancelled: true };
         const prepared = await this.liveBridge.prepareApply(game, source.selection);
@@ -535,20 +537,23 @@ class GameDockService {
         const unchanged = source.kind === 'clipboard' ? source.signature === this.clipboardSignature : source.signature === this.selectionSignature;
         if (!unchanged) { await this.liveBridge.cancel(); throw new Error(`The ${source.kind === 'clipboard' ? 'clipboard DNA' : 'gallery selection'} changed. No DNA was applied.`); }
         this.liveApply = { token: prepared.token, sourceKind: source.kind, sourceSignature: source.signature };
-        this.dock.update({ busy: true, liveApplySource: source.kind, liveClipboardFormat: source.kind === 'clipboard' ? this.clipboardDna?.format || '' : '', liveTargetName: prepared.target.name, liveUndoUntil: 0, liveRetry: false, error: '', message: 'Applying and verifying DNA…' });
+        this.dock.update({ busy: true, liveApplySource: source.kind, liveClipboardFormat: source.kind === 'clipboard' ? this.clipboardDna?.format || '' : '', liveTargetName: prepared.target.name, liveUndoUntil: 0, liveApplyId: '', liveRetry: false, error: '', message: 'Applying and verifying DNA…' });
         const result = await this.liveBridge.confirmApply(game, prepared.token);
         if (stale()) return { ok: true, cancelled: true };
         this.liveApply = null;
         this.lastLiveCommand = null;
-        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: '' });
-        this.scheduleLiveResultExpiry(result.undoUntil);
+        this.dock.update({ mode: 'compact', busy: false, liveTargetName: result.target.name, liveUndoUntil: result.undoUntil, liveApplyId: command.operationId, liveRetry: false, error: '', message: '' });
+        this.scheduleLiveUndoExpiry(result.undoUntil);
         return { ok: true };
       }
       if (command.type === 'live-undo') {
         if (!this.dock.state.liveUndoUntil || this.dock.state.liveUndoUntil <= Date.now()) throw new Error('The guarded undo window has expired.');
+        this.lastLiveCommand = command;
+        this.scheduleLiveUndoExpiry(0);
         this.dock.update({ busy: true, error: '' });
         await this.liveBridge.undo(this.liveGame());
         if (stale()) return { ok: true, cancelled: true };
+        this.lastLiveCommand = null;
         this.clearLiveState();
         return { ok: true };
       }
@@ -557,29 +562,28 @@ class GameDockService {
       if (stale()) return { ok: true, cancelled: true };
       const message = String(error.message || error).slice(0, 500);
       this.liveApply = null;
+      if (command.type === 'live-undo' && this.dock.state.liveUndoUntil > Date.now()) this.scheduleLiveUndoExpiry(this.dock.state.liveUndoUntil);
       this.dock.update({ mode: 'error', busy: false, error: message, liveRetry: Boolean(this.lastLiveCommand) });
       return { ok: false, error: message };
     }
   }
 
-  scheduleLiveResultExpiry(deadline) {
-    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
-    this.liveResultTimer = null;
+  scheduleLiveUndoExpiry(deadline) {
+    if (this.liveUndoTimer) this.clearTimeout(this.liveUndoTimer);
+    this.liveUndoTimer = null;
     if (!Number.isFinite(deadline) || deadline <= 0) return;
-    this.liveResultTimer = this.setTimeout(() => {
-      this.liveResultTimer = null;
-      if (this.destroyed || this.dock?.state.mode !== 'live-result' || this.dock.state.busy
-        || this.dock.state.liveUndoUntil !== deadline) return;
-      this.clearLiveState();
+    this.liveUndoTimer = this.setTimeout(() => {
+      this.liveUndoTimer = null;
+      if (this.destroyed || !this.dock || this.dock.state.busy || this.dock.state.liveUndoUntil !== deadline) return;
+      this.dock.update({ liveTargetName: '', liveUndoUntil: 0, liveApplyId: '' });
     }, Math.max(0, deadline - Date.now()));
-    this.liveResultTimer?.unref?.();
+    this.liveUndoTimer?.unref?.();
   }
 
   clearLiveState() {
-    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
-    this.liveResultTimer = null;
+    this.scheduleLiveUndoExpiry(0);
     if (!this.dock) return;
-    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, message: '', error: '' });
+    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', liveRetry: false, liveImported: false, message: '', error: '' });
   }
 
   async runMutation(command) {
@@ -695,8 +699,8 @@ class GameDockService {
     this.serviceStarted = false;
     if (this.liveTargetTimer) this.clearInterval(this.liveTargetTimer);
     this.liveTargetTimer = null;
-    if (this.liveResultTimer) this.clearTimeout(this.liveResultTimer);
-    this.liveResultTimer = null;
+    if (this.liveUndoTimer) this.clearTimeout(this.liveUndoTimer);
+    this.liveUndoTimer = null;
     ++this.liveTargetProbeSequence;
     this.liveTargetProbe = null;
     this.liveTargetGameKey = '';
