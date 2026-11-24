@@ -395,6 +395,7 @@ function installEventDelegation() {
   });
   app.addEventListener('focusout', (event) => {
     if (event.target.id === 'gallery-name-input') void finishInlineGalleryRename(event.target);
+    if (event.target.id === 'character-name-input') void finishInlineCharacterNameRename(event.target);
     const thumb = event.target.closest?.('.variant-thumb');
     if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
     const card = event.target.closest?.('.character-card');
@@ -583,6 +584,54 @@ function startInlineGalleryRename() {
   input?.setSelectionRange(input.value.length, input.value.length);
 }
 
+function startInlineCharacterNameRename() {
+  const character = getActiveCharacter();
+  if (!character || state.preview) return;
+  state.characterNameRenameSource = character.id;
+  render('selection');
+  const input = app.querySelector('#character-name-input');
+  focusWithoutScroll(input);
+  input?.setSelectionRange(input.value.length, input.value.length);
+}
+
+async function finishInlineCharacterNameRename(input) {
+  if (!input || input.dataset.finished === 'true') return;
+  input.dataset.finished = 'true';
+  const characterId = state.characterNameRenameSource;
+  const character = getActiveCharacter();
+  if (!character || character.id !== characterId) { state.characterNameRenameSource = null; render('selection'); return; }
+  const value = input.value.trim();
+  const restoreFocus = () => focusWithoutScroll(app.querySelector('[data-action="edit-character-name"]'));
+  if (input.dataset.cancelled === 'true' || value === character.name) {
+    state.characterNameRenameSource = null;
+    render('selection');
+    restoreFocus();
+    return;
+  }
+  if (!value) {
+    delete input.dataset.finished;
+    showToast('Character name cannot be empty.', 'info');
+    focusWithoutScroll(input);
+    input.select();
+    return;
+  }
+  const previousName = character.name;
+  const previousModified = character.modified;
+  character.name = value;
+  character.modified = Date.now();
+  state.characterNameRenameSource = null;
+  render('selection');
+  if (!(await saveLibrary())) {
+    character.name = previousName;
+    character.modified = previousModified;
+    render('selection');
+    restoreFocus();
+    return;
+  }
+  showToast('Character record renamed.', 'success');
+  restoreFocus();
+}
+
 async function finishInlineGalleryRename(input) {
   if (!input || input.dataset.finished === 'true') return;
   input.dataset.finished = 'true';
@@ -703,6 +752,14 @@ function handleDelegatedKeydown(event) {
     event.preventDefault();
     event.stopPropagation();
     event.target.dataset.restoreFocus = 'true';
+    if (event.key === 'Escape') event.target.dataset.cancelled = 'true';
+    event.target.blur();
+    return;
+  }
+  if (event.target.id === 'character-name-input') {
+    if (!['Enter', 'Escape'].includes(event.key) || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (event.key === 'Escape') event.target.dataset.cancelled = 'true';
     event.target.blur();
     return;
@@ -1154,6 +1211,7 @@ function action(name) {
   if (name === 'new-character') return showCharacterModal();
   if (name === 'new-gallery') return showGalleryModal();
   if (name === 'edit-gallery-title') return startInlineGalleryRename();
+  if (name === 'edit-character-name') return startInlineCharacterNameRename();
   if (name === 'rename-gallery') return showRenameGalleryModal();
   if (name === 'delete-gallery') return showDeleteGalleryConfirmation();
   if (name === 'batch-select') return startBatchSelection();

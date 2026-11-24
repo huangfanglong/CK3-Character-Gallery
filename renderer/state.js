@@ -4,6 +4,7 @@ const state = {
   galleries: [],
   activeGallery: 'Default',
   galleryRenameSource: null,
+  characterNameRenameSource: null,
   allGalleries: false,
   activeId: null,
   focusContext: 'character',
