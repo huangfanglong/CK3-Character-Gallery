@@ -6,7 +6,10 @@ const MAX_PORTRAIT_BYTES = 50 * 1024 * 1024;
 const MAX_PORTRAIT_FRAMES = 300;
 const MAX_LOGICAL_FRAME_PIXELS = 4_000_000;
 const MAX_AGGREGATE_FRAME_PIXELS = 20_000_000;
+const MAX_DECODED_MEMORY_BYTES = 256 * 1024 * 1024;
 const PALETTE_SAMPLE_FRAMES = 24;
+const OUTPUT_SIZE = 450;
+const RGBA_BYTES = 4;
 
 function portraitLimits(options = {}) {
   return {
@@ -14,7 +17,20 @@ function portraitLimits(options = {}) {
     maxFrames: options.maxFrames ?? MAX_PORTRAIT_FRAMES,
     maxLogicalPixels: options.maxLogicalPixels ?? MAX_LOGICAL_FRAME_PIXELS,
     maxAggregatePixels: options.maxAggregatePixels ?? MAX_AGGREGATE_FRAME_PIXELS,
+    maxDecodedMemoryBytes: options.maxDecodedMemoryBytes ?? MAX_DECODED_MEMORY_BYTES,
   };
+}
+
+function estimateDecodedMemory({ width, height, frameCount, descriptorPixels, sourceBytes }) {
+  /* Inspection and crop decoding can overlap before GC. Include both RGBA patch
+     sets, the compositor/canvas/restore buffers, retained palette samples and their
+     joined input, plus the source copies transferred through the worker boundary.
+     This is a deterministic working-set guard, not an estimate of total process RSS. */
+  const decodedPatches = descriptorPixels * RGBA_BYTES * 2;
+  const compositingBuffers = width * height * RGBA_BYTES * 3;
+  const paletteBuffers = Math.min(frameCount, PALETTE_SAMPLE_FRAMES) * OUTPUT_SIZE * OUTPUT_SIZE * RGBA_BYTES * 2;
+  const retainedSources = sourceBytes * 3;
+  return decodedPatches + compositingBuffers + paletteBuffers + retainedSources;
 }
 
 async function portraitBuffer(input, maxBytes) {
@@ -73,6 +89,14 @@ async function inspectPortraitSource(input, options = {}) {
       throw new Error('Animated portrait frame dimensions are invalid.');
     }
   }
+  const estimatedMemoryBytes = estimateDecodedMemory({
+    width, height, frameCount, descriptorPixels, sourceBytes: buffer.length,
+  });
+  if (estimatedMemoryBytes > limits.maxDecodedMemoryBytes) {
+    const requiredMiB = Math.ceil(estimatedMemoryBytes / (1024 * 1024));
+    const limitMiB = Math.floor(limits.maxDecodedMemoryBytes / (1024 * 1024));
+    throw new Error(`Animated portrait needs about ${requiredMiB} MB of decoded working memory, exceeding the ${limitMiB} MB limit. Choose a smaller or shorter GIF.`);
+  }
   let frames;
   try {
     frames = decompressFrames(parsed, false);
@@ -89,6 +113,7 @@ async function inspectPortraitSource(input, options = {}) {
     frames: frames.length,
     delay: frames.map((frame) => frame.delay),
     loop: gifLoopCount(parsed),
+    estimatedMemoryBytes,
   };
 }
 
@@ -216,10 +241,12 @@ async function processPortraitCrop(input, crop, options = {}) {
 
 module.exports = {
   MAX_AGGREGATE_FRAME_PIXELS,
+  MAX_DECODED_MEMORY_BYTES,
   MAX_LOGICAL_FRAME_PIXELS,
   MAX_PORTRAIT_BYTES,
   MAX_PORTRAIT_FRAMES,
   PALETTE_SAMPLE_FRAMES,
+  estimateDecodedMemory,
   inspectPortraitSource,
   processPortraitCrop,
 };

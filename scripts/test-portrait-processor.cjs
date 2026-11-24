@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { parseGIF, decompressFrames } = require('gifuct-js');
 const { GIFEncoder, applyPalette, quantize } = require('gifenc');
-const { PALETTE_SAMPLE_FRAMES, inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
+const { MAX_DECODED_MEMORY_BYTES, PALETTE_SAMPLE_FRAMES, estimateDecodedMemory, inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
 
 function arrayBufferFor(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -99,6 +99,11 @@ async function main() {
   assert.equal(source.frames, 2);
   assert.deepEqual(source.delay, [80, 120]);
   assert.equal(source.loop, 2);
+  assert.equal(MAX_DECODED_MEMORY_BYTES, 256 * 1024 * 1024);
+  assert.equal(source.estimatedMemoryBytes, estimateDecodedMemory({
+    width: 4, height: 3, frameCount: 2, descriptorPixels: 24, sourceBytes: input.length,
+  }));
+  assert.ok(source.estimatedMemoryBytes < MAX_DECODED_MEMORY_BYTES);
 
   const output = await processPortraitCrop(input, { x: 1, y: 0, size: 3 });
   assert.equal(output.extension, '.gif');
@@ -114,6 +119,11 @@ async function main() {
   const imageFrames = parsed.frames.filter((frame) => frame.image);
   assert.ok(imageFrames.slice(1).every((frame) => !frame.image.descriptor.lct.exists), 'Cropped GIF frames should share the global palette.');
   assert.equal(PALETTE_SAMPLE_FRAMES, 24);
+
+  const boundaryOutput = await processPortraitCrop(input, { x: 1, y: 0, size: 3 }, { maxDecodedMemoryBytes: source.estimatedMemoryBytes });
+  assert.deepEqual(boundaryOutput.data, output.data, 'Preflight must not change accepted GIF bytes or visual quality.');
+  await assert.rejects(() => inspectPortraitSource(input, { maxDecodedMemoryBytes: source.estimatedMemoryBytes - 1 }), /decoded working memory.*limit/i);
+  await assert.rejects(() => processPortraitCrop(input, { x: 1, y: 0, size: 3 }, { maxDecodedMemoryBytes: source.estimatedMemoryBytes - 1 }), /decoded working memory.*limit/i);
 
   const transparentOutput = await processPortraitCrop(transparentFixture(), { x: 0, y: 0, size: 2 });
   const transparentFrames = decompressFrames(parseGIF(arrayBufferFor(transparentOutput.data)), true);
