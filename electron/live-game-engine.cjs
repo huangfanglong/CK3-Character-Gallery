@@ -255,7 +255,6 @@ class LiveGameEngine {
     return this.withProcess(false, async ({ handle }, session) => {
       const target = await this.readTarget(handle, session);
       const converted = dnaToRaw(selection.dna, session.catalog, { baseRaw: target.raw });
-      if (sameBytes(target.raw, converted.raw)) throw new Error('The selected CK3 character already has this DNA. Nothing needs to be applied.');
       const token = crypto.randomUUID();
       this.pending = { token, target, raw: converted.raw, original: target.raw, selection: { ...selection }, report: converted.report, fingerprint: fingerprintOf(target), createdAt: this.now() };
       return { token, target: publicTarget(target), report: converted.report };

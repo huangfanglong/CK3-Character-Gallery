@@ -183,6 +183,16 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   assert.deepEqual(fixture.process.dna(), original);
   await assert.rejects(engine.undoApply(fixture.game), /expired/);
 
+  const beforeIdenticalApply = fixture.process.dna();
+  const beforeIdenticalWrites = fixture.process.writeCalls.length;
+  const identical = await engine.prepareApply(fixture.game, { ...selection, dna: imported.dna });
+  const identicalResult = await engine.confirmApply(fixture.game, identical.token);
+  assert.ok(identicalResult.undoUntil > 10_000);
+  assert.equal(fixture.process.writeCalls.length, beforeIdenticalWrites + 1, 'Identical DNA still follows the normal verified write path.');
+  assert.deepEqual(fixture.process.dna(), beforeIdenticalApply);
+  await engine.undoApply(fixture.game);
+  assert.deepEqual(fixture.process.dna(), beforeIdenticalApply);
+
   const base64Dna = require('../electron/live-dna-codec.cjs').persistentDnaToRaw(selection.dna, fixture.catalog).raw.toString('base64');
   const base64Prepared = await engine.prepareApply(fixture.game, { id: 'clipboard', name: 'Base64 clipboard DNA', dna: base64Dna, modified: 0 });
   assert.match(base64Prepared.report.message, /positional genes.*game version and enabled mods/i);
