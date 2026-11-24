@@ -260,8 +260,32 @@ if (!electron.app) {
       assert.equal(dismissalCount, dismissalBaseline + 1, 'A synthesized click following the release fallback must not dispatch twice.');
       dock.update({ mode: 'compact', error: '', capture: null, liveEnabled: true, liveCanApply: true, liveSelectedName: 'Archived Aella', liveTargetAvailable: false, liveDetectedName: '', liveUndoUntil: 0 });
       await delay(30);
-      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), true, 'Import starts disabled until a real target is detected.');
-      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), true, 'A gallery selection alone cannot enable Apply.');
+      const readPrismState = async () => JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const dock=document.querySelector('.dock').getBoundingClientRect();
+        const read=(selector)=>{
+          const button=document.querySelector(selector);
+          const rect=button.getBoundingClientRect();
+          const beam=getComputedStyle(button,'::before');
+          return {disabled:button.disabled,height:rect.height,left:rect.left,right:rect.right,animation:beam.animationName,content:beam.content,pointerEvents:beam.pointerEvents};
+        };
+        return JSON.stringify({dock:{left:dock.left,right:dock.right},quickAddHeight:document.querySelector('[data-command=quick-add]').getBoundingClientRect().height,import:read('[data-command=live-import]'),apply:read('[data-command=live-prepare-apply]')});
+      })()`));
+      const assertPrismFit = (state) => {
+        assert.equal(state.dock.right - state.dock.left, 680, 'Prominent live controls must preserve the dock width.');
+        for (const [name, button] of [['Import', state.import], ['Apply', state.apply]]) {
+          assert.equal(button.height, state.quickAddHeight, `${name} must match Quick add's height.`);
+          assert.ok(button.left >= state.dock.left && button.right <= state.dock.right, `${name} must remain inside the dock.`);
+          assert.equal(button.pointerEvents, 'none', `${name}'s decorative beam must not intercept input.`);
+        }
+      };
+      const disabledPrism = await readPrismState();
+      assertPrismFit(disabledPrism);
+      assert.equal(disabledPrism.import.disabled, true, 'Import starts disabled until a real target is detected.');
+      assert.equal(disabledPrism.apply.disabled, true, 'A gallery selection alone cannot enable Apply.');
+      for (const button of [disabledPrism.import, disabledPrism.apply]) {
+        assert.equal(button.animation, 'none', 'Disabled live buttons must not animate.');
+        assert.equal(button.content, 'none', 'Disabled live buttons must not render a prism layer.');
+      }
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").title'), /Open a character window/);
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Open a character window/);
       dock.update({ liveTargetAvailable: true, liveDetectedName: 'Aella' });
@@ -269,10 +293,35 @@ if (!electron.app) {
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), false);
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Archived Aella.*Aella/);
+      const enabledPrism = await readPrismState();
+      assertPrismFit(enabledPrism);
+      assert.equal(enabledPrism.import.animation, 'live-prism');
+      assert.equal(enabledPrism.apply.animation, 'live-prism');
+      if (process.env.CK3_GAME_DOCK_LIVE_SCREENSHOT) {
+        window.setContentProtection(false);
+        const rect = await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().toJSON()');
+        const image = await window.webContents.capturePage({ x: Math.max(0, Math.floor(rect.x) - 8), y: 0, width: Math.ceil(rect.width) + 16, height: 62 });
+        await require('node:fs/promises').writeFile(process.env.CK3_GAME_DOCK_LIVE_SCREENSHOT, image.toPNG());
+      }
       dock.update({ liveCanApply: false, liveSelectedName: '' });
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), false, 'Clearing the gallery selection does not disable Import.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), true);
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Copy persistent or Base64 DNA/);
+      const independentPrism = await readPrismState();
+      assertPrismFit(independentPrism);
+      assert.equal(independentPrism.import.animation, 'live-prism', 'Import retains its beam without an Apply source.');
+      assert.equal(independentPrism.apply.animation, 'none', 'Apply loses its beam without a DNA source.');
+      const cdp = window.webContents.debugger;
+      cdp.attach('1.3');
+      try {
+        await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+        const reducedPrism = await readPrismState();
+        assert.equal(reducedPrism.import.animation, 'none', 'Reduced motion must stop Import’s prism animation.');
+        assert.equal(reducedPrism.apply.animation, 'none', 'Reduced motion must stop the enabled-state prism animation.');
+      } finally {
+        await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+        cdp.detach();
+      }
       dock.update({ liveCanApply: true, liveApplySource: 'clipboard', liveClipboardFormat: 'persistent', liveSelectedName: '' });
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), false, 'Clipboard DNA enables Apply without a gallery selection.');
