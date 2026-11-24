@@ -77,12 +77,12 @@ function sidebarMarkup(galleries) {
   </aside>`;
 }
 
-function inspectorMarkup(character) {
+function inspectorMarkup(character, records) {
   if (!character) return `<aside class="inspector empty-inspector" hidden><div class="inspector-empty-mark">◌</div><p class="eyebrow">NO RECORD SELECTED</p><p>Choose a portrait from the archive to inspect.</p><button class="outline-button" data-action="new-character">${icon('plus')} New character</button></aside>`;
   const favorite = state.favorites.has(character.id);
   const variantCount = character.images?.length || (state.preview ? character.variants || 0 : 0);
   const viewedVariant = state.selectedVariantIndex !== null && state.selectedVariantIndex < variantCount ? state.selectedVariantIndex : coverVariantIndex(character);
-  const records = visibleCharacters();
+  records = records || visibleCharacters();
   const recordIndex = records.findIndex((record) => record.id === character.id);
   const tab = ['overview', 'dna', 'notes'].includes(state.quickTab) ? state.quickTab : 'overview';
   const formatDate = (value) => value ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value)) : 'Not recorded';

@@ -233,6 +233,73 @@ function characterForPortraitTarget(target) {
 }
 
 let portraitLoadMoreObserver = null;
+const imageUrlSignatures = new WeakMap();
+const imageUrlRequests = new Map();
+let imageUrlRenderQueued = false;
+
+function imagePathsFor(character) {
+  return (character?.images || []).filter(Boolean);
+}
+
+function imagePathSignature(paths) {
+  return JSON.stringify(paths);
+}
+
+function imageUrlRecords(records) {
+  const required = records.slice(0, state.visibleLimit || 48);
+  if (state.activeId && ['character', 'variant'].includes(state.focusContext)) {
+    const active = getActiveCharacter();
+    if (active) required.push(active);
+  }
+  comparisonRecords().forEach(({ character }) => required.push(character));
+  return [...new Map(required.filter(Boolean).map((character) => [character.id, character])).values()];
+}
+
+function cachedImageUrls(character, paths, signature) {
+  const existing = state.imageUrls.get(character.id);
+  if (!existing || existing.length !== paths.length) return false;
+  const previousSignature = imageUrlSignatures.get(existing);
+  // URL arrays supplied by portrait mutations and integrations are already resolved.
+  return previousSignature === undefined || previousSignature === signature;
+}
+
+function queueImageUrlRender() {
+  if (imageUrlRenderQueued) return;
+  imageUrlRenderQueued = true;
+  queueMicrotask(() => {
+    imageUrlRenderQueued = false;
+    render();
+  });
+}
+
+function ensureImageUrls(character) {
+  const paths = imagePathsFor(character);
+  const signature = imagePathSignature(paths);
+  if (cachedImageUrls(character, paths, signature)) return Promise.resolve(false);
+  if (!paths.length) {
+    const hadUrls = Boolean(state.imageUrls.get(character.id)?.length);
+    const urls = [];
+    imageUrlSignatures.set(urls, signature);
+    state.imageUrls.set(character.id, urls);
+    return Promise.resolve(hadUrls);
+  }
+  const key = `${character.id}:${signature}`;
+  const existingRequest = imageUrlRequests.get(key);
+  if (existingRequest) return existingRequest;
+  const request = Promise.all(paths.map((imagePath) => desktop.imageUrl(imagePath)))
+    .then((urls) => {
+      const current = getViewCharacters().find((item) => item.id === character.id);
+      if (!current || imagePathSignature(imagePathsFor(current)) !== signature) return false;
+      imageUrlSignatures.set(urls, signature);
+      state.imageUrls.set(character.id, urls);
+      return true;
+    })
+    .finally(() => {
+      if (imageUrlRequests.get(key) === request) imageUrlRequests.delete(key);
+    });
+  imageUrlRequests.set(key, request);
+  return request;
+}
 
 function syncPortraitLoadMore() {
   portraitLoadMoreObserver?.disconnect();
@@ -257,7 +324,7 @@ function render(scope = 'all') {
   if (scope === 'modal') return renderModal();
   if (scope === 'chrome') return renderChrome();
   const characters = visibleCharacters();
-  morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter())}</div>${state.modal || ''}${contextMenuMarkup()}`);
+  morphAppContent(app, `${chromeMarkup()}<div class="app-shell">${sidebarMarkup(state.galleries)}${mainMarkup(characters)}${inspectorMarkup(getActiveCharacter(), characters)}</div>${state.modal || ''}${contextMenuMarkup()}`);
   syncCharacterAppearance(app);
   syncPortraitLoadMore();
   syncPortraitPlayback(app, Boolean(state.modal), true);
@@ -269,7 +336,7 @@ function render(scope = 'all') {
   lastRenderedActiveId = state.activeId;
   if (state.focusDnaSave) focusWithoutScroll(app.querySelector('[data-action="save-dna"]'));
   if (state.sortMenuOpen) focusWithoutScroll(app.querySelector('[data-sort][aria-selected="true"]'));
-  void updateImageUrls().catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
+  void updateImageUrls(characters).catch((error) => showToast(readableError(error, 'Portrait previews could not be loaded.'), 'info'));
   syncLiveGameSelection();
 }
 
@@ -277,19 +344,10 @@ function focusWithoutScroll(element) {
   element?.focus({ preventScroll: true });
 }
 
-async function updateImageUrls() {
+async function updateImageUrls(records = visibleCharacters()) {
   if (!desktop) return;
-  const chars = getViewCharacters();
-  let changed = false;
-  for (const character of chars) {
-    const paths = (character.images || []).filter(Boolean);
-    const existing = state.imageUrls.get(character.id);
-    if (existing?.length === paths.length) continue;
-    if (!paths.length) { state.imageUrls.set(character.id, []); continue; }
-    state.imageUrls.set(character.id, await Promise.all(paths.map((imagePath) => desktop.imageUrl(imagePath))));
-    changed = true;
-  }
-  if (changed) render();
+  const changed = await Promise.all(imageUrlRecords(records).map(ensureImageUrls));
+  if (changed.some(Boolean)) queueImageUrlRender();
 }
 
 function renderSelection() {
@@ -299,7 +357,8 @@ function renderSelection() {
     lastRenderedActiveId = state.activeId;
   }
   const current = app.querySelector('.quick-overlay') || app.querySelector('.app-shell > .inspector');
-  const next = morphAppRegion(current, inspectorMarkup(getActiveCharacter()));
+  const character = getActiveCharacter();
+  const next = morphAppRegion(current, inspectorMarkup(character, character ? visibleCharacters() : []));
   if (next) syncCharacterAppearance(next);
   syncPortraitPlayback(app, Boolean(state.modal));
   syncLiveGameSelection();

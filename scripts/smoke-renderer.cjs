@@ -915,6 +915,33 @@ async function main() {
   if (renderBenchmark.modalDuration > 1000) throw new Error(`Large archive modal update exceeded the regression ceiling (${renderBenchmark.modalDuration}ms).`);
   if (renderBenchmark.scopedFullMorphs !== 0) throw new Error(`Scoped updates invoked the full application morph ${renderBenchmark.scopedFullMorphs} time(s).`);
   if (!(await evaluate("(async()=>{const prior=state.modal;let resolve;const pending=runPortraitSourceRequest(()=>new Promise(done=>{resolve=done}));state.modal='<div class=modal-backdrop></div>';resolve({sourceId:'stale-source'});const result=await pending;const preserved=state.modal==='<div class=modal-backdrop></div>';state.modal=prior;render('modal');return result===undefined&&preserved})()"))) throw new Error('A stale portrait request replaced a newer modal workflow.');
+  const portraitLoading = JSON.parse(await evaluate(`(async()=>{
+    const originalRender=render;const originalVisibleCharacters=visibleCharacters;const originalPromiseAll=Promise.all;
+    let pathBatches=0;let filterPasses=0;
+    try{
+      const characters=Array.from({length:96},(_,index)=>({id:\`url-\${index}\`,name:\`URL Character \${index}\`,title:'',images:[\`portrait-\${index}.png\`],dna:'',note:'',tags:[],created:index,modified:index,coverIndex:0}));
+      state.galleries=[{name:'URL Loading Archive',characters}];state.activeGallery='URL Loading Archive';state.allGalleries=false;
+      state.query='';state.filters={dna:'all',favorites:false,tags:new Set()};state.sort='custom';state.view='cards';state.visibleLimit=48;
+      state.activeId=null;state.focusContext='collection';state.selectedVariantIndex=null;state.comparisonIds=[];state.comparisonExpanded=false;state.modal=null;state.imageUrls=new Map();
+      render=()=>{};
+      Promise.all=function(values){const input=Array.from(values);if(input.length===1)pathBatches+=1;return originalPromiseAll.call(Promise,input);};
+      const first=updateImageUrls(characters);const duplicate=updateImageUrls(characters);await originalPromiseAll.call(Promise,[first,duplicate]);
+      const initial={pathBatches,cached:state.imageUrls.size};
+      state.visibleLimit=96;await updateImageUrls(characters);const expanded=state.imageUrls.size;
+      characters[0].images=['replacement.png'];await updateImageUrls(characters);const replacement=state.imageUrls.get('url-0')?.[0]||'';
+      state.visibleLimit=48;state.activeId='url-95';state.focusContext='character';state.imageUrls=new Map();await updateImageUrls(characters);
+      const quickLook={cached:state.imageUrls.size,active:state.imageUrls.has('url-95')};
+      await new Promise(resolve=>setTimeout(resolve,0));render=originalRender;
+      visibleCharacters=function(...args){filterPasses+=1;return originalVisibleCharacters.apply(this,args);};
+      render();const fullRenderPasses=filterPasses;
+      return JSON.stringify({initial,expanded,replacement,quickLook,fullRenderPasses});
+    }finally{render=originalRender;visibleCharacters=originalVisibleCharacters;Promise.all=originalPromiseAll;}
+  })()`));
+  if (portraitLoading.initial.pathBatches !== 48 || portraitLoading.initial.cached !== 48) throw new Error(`Portrait loading exceeded the render window or duplicated in-flight requests (${JSON.stringify(portraitLoading)}).`);
+  if (portraitLoading.expanded !== 96) throw new Error(`Portrait loading did not follow the expanded render window (${JSON.stringify(portraitLoading)}).`);
+  if (!portraitLoading.replacement.endsWith('/replacement.png')) throw new Error(`Same-length portrait replacement retained a stale URL (${JSON.stringify(portraitLoading)}).`);
+  if (portraitLoading.quickLook.cached !== 49 || !portraitLoading.quickLook.active) throw new Error(`Off-screen Quick Look did not retain its required portrait URL (${JSON.stringify(portraitLoading)}).`);
+  if (portraitLoading.fullRenderPasses !== 1) throw new Error(`Quick Look repeated the full filter-and-sort pass (${portraitLoading.fullRenderPasses} passes).`);
   console.log(`Renderer smoke test passed: archive, combinable filters, animated sorting, Ctrl-click selection, list portrait previews, stable selection scrolling, custom ordering, favorites, variants, character appearance, clipboard DNA and DNA-only creation, DNA undo/redo, static and animated GIF cropping, themed scrollbars, clipboard creation, batch deletion, collection context menus and ordering, focused deletion, inspector, notes, menus, shortcuts, search, resizing, a 750-record render in ${renderBenchmark.duration}ms, a scoped selection update in ${renderBenchmark.selectionDuration}ms, and a scoped modal update in ${renderBenchmark.modalDuration}ms.`);
   socket.close();
   cleanup();
