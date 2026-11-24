@@ -80,8 +80,8 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │    - BrowserWindow controller: focus-aware visibility, placement, hit        │
 │      regions, navigation, and normalizer for allow-listed commands/state.    │
 │    - 6 px resting strip; left/center/right; compact 48 / expanded 310 high.  │
-│    - Modes: compact, draft, framing, capture, success, error, live-confirm,  │
-│      live-result. Capture states: starting, armed, recording, matching,      │
+│    - Modes: compact, draft, framing, capture, success, error, live-result.   │
+│      Capture states: starting, armed, recording, matching,                   │
 │      saving.                                                                 │
 │  game-dock-preload.cjs                                                       │
 │    - Exposes window.gameDock: ready, command, setInteractive, setHitRegions, │

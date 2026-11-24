@@ -8,7 +8,7 @@ const { parsePersistentDna, decodeBase64Dna } = require('./live-dna-codec.cjs');
 const { LiveGameBridge } = require('./live-game-bridge.cjs');
 
 const MUTATING_COMMANDS = new Set(['quick-add', 'create-record', 'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'undo-create', 'finish-without-portrait', 'retry']);
-const LIVE_COMMANDS = new Set(['live-import', 'live-prepare-apply', 'live-confirm-apply', 'live-undo', 'live-retry']);
+const LIVE_COMMANDS = new Set(['live-import', 'live-prepare-apply', 'live-undo', 'live-retry']);
 
 class GameDockService {
   constructor(options) {
@@ -351,7 +351,7 @@ class GameDockService {
     this.liveApply = null;
     this.lastLiveCommand = null;
     void this.liveBridge.cancel().catch(() => {});
-    if (['live-confirm', 'live-result'].includes(this.dock?.state.mode) || this.dock?.state.liveRetry) this.clearLiveState();
+    if (this.dock?.state.mode === 'live-result' || this.dock?.state.liveRetry) this.clearLiveState();
     this.syncLiveState();
   }
 
@@ -439,9 +439,10 @@ class GameDockService {
       return { ok: true };
     }
     if (type === 'live-cancel') {
-      /* A confirmed write/restore must finish verification, but a pending read or an
+      /* A write/restore must finish verification, but a pending read or an
          already-reported error must never queue its Dismiss button behind itself. */
-      if (this.mutationKind === 'live' && this.dock.state.busy && ['live-confirm', 'live-result'].includes(this.dock.state.mode)) {
+      const writing = this.dock.state.mode === 'live-result' || this.lastLiveCommand?.type === 'live-prepare-apply';
+      if (this.mutationKind === 'live' && this.dock.state.busy && writing) {
         return { ok: false, error: 'Wait for the DNA write to finish verifying.' };
       }
       this.retireLiveOperations();
@@ -524,28 +525,21 @@ class GameDockService {
         const source = this.currentLiveApplyInput(true);
         if (!source) throw new Error('Copy persistent or Base64 DNA, or select a gallery character with persistent Ruler Designer DNA in Bloodline first.');
         this.lastLiveCommand = command;
-        this.dock.update({ busy: true, message: source.kind === 'clipboard' && source.selection.name.startsWith('Base64') ? 'Preparing a guarded Base64 DNA preview…' : 'Preparing a version-matched DNA preview…', error: '', liveRetry: false });
+        this.dock.update({ busy: true, message: source.kind === 'clipboard' && source.selection.name.startsWith('Base64') ? 'Preparing guarded Base64 DNA…' : 'Preparing version-matched DNA…', error: '', liveRetry: false });
         await this.ensureLiveBridge();
         if (stale()) return { ok: true, cancelled: true };
-        const result = await this.liveBridge.prepareApply(game, source.selection);
+        const prepared = await this.liveBridge.prepareApply(game, source.selection);
         if (stale()) return { ok: true, cancelled: true };
+        if (source.kind === 'clipboard') this.syncClipboardDna(true);
         const unchanged = source.kind === 'clipboard' ? source.signature === this.clipboardSignature : source.signature === this.selectionSignature;
         if (!unchanged) { await this.liveBridge.cancel(); throw new Error(`The ${source.kind === 'clipboard' ? 'clipboard DNA' : 'gallery selection'} changed. No DNA was applied.`); }
-        this.liveApply = { token: result.token, sourceKind: source.kind, sourceSignature: source.signature };
-        this.dock.update({ mode: 'live-confirm', busy: false, liveApplySource: source.kind, liveClipboardFormat: source.kind === 'clipboard' ? this.clipboardDna?.format || '' : '', liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: 0, liveRetry: false, error: '', message: '' });
-        return { ok: true };
-      }
-      if (command.type === 'live-confirm-apply') {
-        if (!this.liveApply) throw new Error('This apply preview expired. Prepare it again.');
-        if (this.liveApply.sourceKind === 'clipboard') this.syncClipboardDna(true);
-        const currentSignature = this.liveApply.sourceKind === 'clipboard' ? this.clipboardSignature : this.selectionSignature;
-        if (this.liveApply.sourceSignature !== currentSignature) throw new Error(`The ${this.liveApply.sourceKind === 'clipboard' ? 'clipboard DNA' : 'gallery record'} changed or this preview expired. Prepare the apply again.`);
-        this.dock.update({ busy: true, liveRetry: false, error: '' });
-        const result = await this.liveBridge.confirmApply(this.liveGame(), this.liveApply.token);
+        this.liveApply = { token: prepared.token, sourceKind: source.kind, sourceSignature: source.signature };
+        this.dock.update({ busy: true, liveApplySource: source.kind, liveClipboardFormat: source.kind === 'clipboard' ? this.clipboardDna?.format || '' : '', liveTargetName: prepared.target.name, liveUndoUntil: 0, liveRetry: false, error: '', message: 'Applying and verifying DNA…' });
+        const result = await this.liveBridge.confirmApply(game, prepared.token);
         if (stale()) return { ok: true, cancelled: true };
         this.liveApply = null;
         this.lastLiveCommand = null;
-        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveReport: result.report.message, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: `Applied ${result.report.geneCount} mapped genes. Hair, beard, and clothing were not changed.` });
+        this.dock.update({ mode: 'live-result', busy: false, liveTargetName: result.target.name, liveUndoUntil: result.undoUntil, liveRetry: false, error: '', message: `Applied ${result.report.geneCount} mapped genes. Hair, beard, and clothing were not changed.` });
         return { ok: true };
       }
       if (command.type === 'live-undo') {
@@ -568,7 +562,7 @@ class GameDockService {
 
   clearLiveState() {
     if (!this.dock) return;
-    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveReport: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, error: '' });
+    this.dock.update({ mode: 'compact', busy: false, liveTargetName: '', liveUndoUntil: 0, liveRetry: false, liveImported: false, error: '' });
   }
 
   async runMutation(command) {

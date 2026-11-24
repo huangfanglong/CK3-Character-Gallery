@@ -13,7 +13,7 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
   };
   const dna = liveFixture().process.persistentDna();
   const bridge = {
-    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null,
+    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null, pendingPrepare: null,
     async setEnabled(value) {
       this.calls.push(['enabled', value]);
       if (value && this.failNextEnable) {
@@ -37,7 +37,11 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       if (this.failImport) { this.failImport = false; throw new Error('Layout unavailable.'); }
       return { dna, target: { id: 1, name: 'Aella', nameIsKey: true }, geneCount: 24 };
     },
-    async prepareApply(_game, selection) { this.calls.push(['prepare', selection]); return { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, message: '24 genes mapped. Special appearance entries excluded.' } }; },
+    async prepareApply(_game, selection) {
+      this.calls.push(['prepare', selection]);
+      if (this.pendingPrepare) await this.pendingPrepare;
+      return { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, message: '24 genes mapped. Special appearance entries excluded.' } };
+    },
     async confirmApply() { this.calls.push(['confirm']); return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + 20_000, report: { geneCount: 24, message: '24 genes mapped.' } }; },
     async undo() { this.calls.push(['undo']); return { target: { id: 1, name: 'Aella' } }; },
     async cancel() { this.calls.push(['cancel']); return true; }, async close() {},
@@ -109,19 +113,26 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 5, dna: app.dna });
     assert.equal(app.dock.state.liveCanApply, true);
     assert.equal(app.dock.state.liveSelectedName, 'Archived Aella');
-    await app.service.handleCommand({ operationId: 'prepare-stale', type: 'live-prepare-apply', payload: {} });
-    assert.equal(app.dock.state.mode, 'live-confirm');
-    assert.equal(app.dock.state.liveTargetName, 'Aella');
+    let resolveGalleryPrepare;
+    app.bridge.pendingPrepare = new Promise((resolve) => { resolveGalleryPrepare = resolve; });
+    const staleGalleryApply = app.service.handleCommand({ operationId: 'prepare-stale', type: 'live-prepare-apply', payload: {} });
+    await new Promise((resolve) => setImmediate(resolve));
     app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: app.dna });
     assert.equal(app.dock.state.mode, 'compact');
     assert.equal(app.service.liveApply, null);
-    assert.equal((await app.service.handleCommand({ operationId: 'stale-confirm', type: 'live-confirm-apply', payload: {} })).ok, false);
-    assert.equal(app.bridge.calls.some(([action]) => action === 'confirm'), false, 'Selection changes invalidate a pending apply.');
+    resolveGalleryPrepare();
+    app.bridge.pendingPrepare = null;
+    const staleGallery = await staleGalleryApply;
+    assert.equal(staleGallery.ok, false);
+    assert.match(staleGallery.error, /gallery selection changed/);
+    assert.equal(app.bridge.calls.some(([action]) => action === 'confirm'), false, 'Selection changes invalidate the internal apply preview before writing.');
+    await app.service.handleCommand({ operationId: 'cancel-stale-gallery', type: 'live-cancel', payload: {} });
 
-    await app.service.handleCommand({ operationId: 'prepare', type: 'live-prepare-apply', payload: {} });
-    await app.service.handleCommand({ operationId: 'confirm', type: 'live-confirm-apply', payload: {} });
+    const applied = await app.service.handleCommand({ operationId: 'apply', type: 'live-prepare-apply', payload: {} });
+    assert.equal(applied.ok, true);
     assert.equal(app.dock.state.mode, 'live-result');
     assert.ok(app.dock.state.liveUndoUntil > Date.now());
+    assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, 1, 'One Apply click performs the internal confirmed write.');
     await app.service.handleCommand({ operationId: 'undo', type: 'live-undo', payload: {} });
     assert.equal(app.dock.state.liveUndoUntil, 0);
     assert.match(app.dock.state.message, /restored and verified/);
@@ -133,8 +144,10 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     assert.equal(app.dock.state.liveCanApply, true, 'Persistent clipboard DNA enables Apply without a gallery selection.');
     assert.equal(app.dock.state.liveApplySource, 'clipboard');
     assert.equal(app.dock.state.liveClipboardFormat, 'persistent');
-    await app.service.handleCommand({ operationId: 'prepare-persistent-clipboard', type: 'live-prepare-apply', payload: {} });
-    assert.equal(app.dock.state.mode, 'live-confirm');
+    let resolveClipboardPrepare;
+    app.bridge.pendingPrepare = new Promise((resolve) => { resolveClipboardPrepare = resolve; });
+    const persistentApply = app.service.handleCommand({ operationId: 'apply-persistent-clipboard', type: 'live-prepare-apply', payload: {} });
+    await new Promise((resolve) => setImmediate(resolve));
     const persistentSource = app.bridge.calls.filter(([action]) => action === 'prepare').at(-1)[1];
     assert.equal(persistentSource.id, 'clipboard');
     assert.equal(persistentSource.name, 'Persistent clipboard DNA');
@@ -143,7 +156,9 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     assert.notEqual(changedClipboard, app.dna);
     app.setClipboard(changedClipboard);
     const confirmCount = app.bridge.calls.filter(([action]) => action === 'confirm').length;
-    const staleClipboard = await app.service.handleCommand({ operationId: 'confirm-stale-clipboard', type: 'live-confirm-apply', payload: {} });
+    resolveClipboardPrepare();
+    app.bridge.pendingPrepare = null;
+    const staleClipboard = await persistentApply;
     assert.equal(staleClipboard.ok, false);
     assert.match(staleClipboard.error, /clipboard DNA changed/);
     assert.equal(app.bridge.calls.filter(([action]) => action === 'confirm').length, confirmCount, 'Changed clipboard DNA is refused before the fixture write.');
@@ -153,11 +168,11 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     app.service.syncClipboardDna(true);
     assert.equal(app.dock.state.liveClipboardFormat, 'base64');
     assert.equal(app.dock.state.liveCanApply, true, 'Base64 clipboard DNA enables Apply without a gallery selection.');
-    await app.service.handleCommand({ operationId: 'prepare-base64-clipboard', type: 'live-prepare-apply', payload: {} });
+    const base64Applied = await app.service.handleCommand({ operationId: 'apply-base64-clipboard', type: 'live-prepare-apply', payload: {} });
+    assert.equal(base64Applied.ok, true);
     const base64Source = app.bridge.calls.filter(([action]) => action === 'prepare').at(-1)[1];
     assert.equal(base64Source.id, 'clipboard');
     assert.equal(base64Source.name, 'Base64 clipboard DNA');
-    await app.service.handleCommand({ operationId: 'confirm-base64-clipboard', type: 'live-confirm-apply', payload: {} });
     assert.equal(app.dock.state.mode, 'live-result');
     await app.service.handleCommand({ operationId: 'cancel-base64-result', type: 'live-cancel', payload: {} });
     app.setClipboard('');
@@ -256,8 +271,12 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
 
     const verifying = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
     verifying.service.mutationKind = 'live';
-    verifying.dock.update({ mode: 'live-confirm', busy: true });
-    assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-write', type: 'live-cancel', payload: {} })).ok, false, 'A confirmed DNA write cannot be cancelled before verification.');
+    verifying.service.lastLiveCommand = { type: 'live-prepare-apply' };
+    verifying.dock.update({ mode: 'compact', busy: true });
+    assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-write', type: 'live-cancel', payload: {} })).ok, false, 'A one-click DNA write cannot be cancelled before verification.');
+    verifying.service.lastLiveCommand = null;
+    verifying.dock.update({ mode: 'live-result', busy: true });
+    assert.equal((await verifying.service.handleCommand({ operationId: 'cancel-confirmed-restore', type: 'live-cancel', payload: {} })).ok, false, 'An Undo restore cannot be cancelled before verification.');
     assert.equal(verifying.bridge.calls.some(([action]) => action === 'cancel'), false);
     verifying.service.destroy();
 
