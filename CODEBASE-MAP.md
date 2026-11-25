@@ -72,7 +72,7 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │                                                                              │
 │  game-dock-service.cjs                                                       │
 │    - Owns dock lifecycle, preferences (ui-settings.json), and command flow.  │
-│    - Scopes clipboard reads to Quick add or a waiting visible draft.         │
+│    - Gates Quick add with visible-dock clipboard checks and click validation. │
 │    - Bridges commands to the renderer and validates async results/epochs.    │
 │    - Owns Live Game Link operations, consent, selection, and guarded undo.   │
 │                                                                              │
@@ -311,9 +311,9 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │  in ui-settings.json. WindowsGameMonitor shows a 6 px strip at the top of    │
 │  the foreground CK3 window; hovering unfolds the controls.                   │
 │                                                                              │
-│  Quick add -> clipboard read (only on this action or a waiting draft) ->     │
-│    validate DNA -> createCharacterRecord with automatic name -> framing.     │
-│   A missing/invalid DNA value opens a draft; name and DNA are entered there. │
+│  Visible compact dock -> 400 ms clipboard eligibility checks -> Quick add    │
+│    revalidates on click -> createCharacterRecord with automatic name.        │
+│   Empty/unrelated clipboard DNA disables the action; no empty draft opens.   │
 │                                                                              │
 │  Framing -> drag/reticle and corner handles (crop math shared with the main  │
 │   app) -> Snapshot (450x450 PNG) or Live portrait (450x450 WebM, Smart Loop) │

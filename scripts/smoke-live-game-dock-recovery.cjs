@@ -36,7 +36,10 @@ async function main() {
   monitor.start = () => true;
   monitor.stop = () => {};
   monitor.restoreFocus = () => true;
-  const contents = { id: 7, isDestroyed: () => false, send() {} };
+  let service;
+  const contents = { id: 7, mainFrame: {}, isDestroyed: () => false, send(channel, value) {
+    if (channel === 'game-dock:command') queueMicrotask(() => service.completeRendererResult({ sender: contents, senderFrame: contents.mainFrame }, value.operationId, { ok: true }));
+  } };
   const dock = new GameDock({
     BrowserWindow, screen, monitor,
     htmlPath: path.join(__dirname, '..', 'electron', 'game-dock.html'),
@@ -48,8 +51,9 @@ async function main() {
   /* Only target detection is synthetic. Worker startup and Import still cross the
      real bridge and fail at the intentionally nonexistent CK3 process boundary. */
   liveBridge.detect = async () => ({ target: { id: 1, name: 'Aella', nameIsKey: true } });
-  const service = new GameDockService({
-    dock, liveBridge, clipboard: { readText: () => '' }, getMainContents: () => contents,
+  let clipboardText = '';
+  service = new GameDockService({
+    dock, liveBridge, clipboard: { readText: () => clipboardText }, getMainContents: () => contents,
     createId: () => 'draft-recovery', logger: { error() {} },
     preferences: { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } },
   });
@@ -167,7 +171,10 @@ async function main() {
     await service.setLiveLinkChoice(true);
     await delay(60);
     assert.equal(await window.webContents.executeJavaScript('dockView.pending'), false, 'File off/on must release the dock pending state.');
-    assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), false, 'Quick Add must be clickable after File off/on.');
+    clipboardText = Buffer.alloc(80, 65).toString('base64');
+    service.syncQuickAddClipboard();
+    await delay(40);
+    assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), false, 'Eligible clipboard DNA keeps Quick Add clickable after File off/on.');
 
     await nativeClick('[data-command=live-import]');
     await waitFor(() => dock.state.mode === 'error', 'The post-toggle Import did not report a result.');

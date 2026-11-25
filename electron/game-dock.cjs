@@ -90,6 +90,7 @@ class GameDock {
       characterId: null,
       characterName: '',
       dnaReady: false,
+      quickAddReady: false,
       dnaAttached: false,
       message: '',
       error: '',

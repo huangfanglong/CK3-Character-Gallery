@@ -37,13 +37,13 @@ The game dock is a separate, content-protected overlay that appears as a thin 6 
 
 **Quick add and portraits**
 
-1. Use CK3's **Copy DNA** action, then choose **Quick add** in the dock. A character with an automatic name is created in the selected collection and the framing controls open.
-2. If the clipboard does not contain valid DNA, Quick add opens a draft instead. Copy DNA while that draft is visible, optionally enter a name, then choose **Create & frame portrait** or **Save DNA only**.
+1. Copy persistent or Base64 DNA in CK3. **Quick add** becomes available when the dock detects supported clipboard DNA; choose it to create an automatically named character in the selected collection and open the framing controls.
+2. Quick add stays unavailable when the clipboard is empty or contains unrelated text. The dock validates the clipboard again on click so it always uses the latest valid DNA, then you can optionally enter a name and choose **Create & frame portrait** or **Save DNA only**.
 3. Drag the square reticle to position it and drag its corner handles to resize it. **Snapshot** saves a 450 × 450 PNG. **Live portrait** records a 450 × 450 WebM through the same capture and Smart Loop pipeline used by the main app.
 4. Press `Ctrl+Alt+G` while CK3 is focused to start or stop a dock recording. During Smart Loop search, press it again to finish immediately.
 5. A successful quick add offers **View in gallery** and a 12-second **Undo**. Undo refuses to remove the record if it has changed elsewhere.
 
-The dock reads clipboard text only when you choose Quick add or while a visible new-record draft is waiting for DNA. It keeps no clipboard history, sends no telemetry, and stores its enabled/position/collection preferences locally in `ui-settings.json`; those preferences are not included in collection exports. Closing the Bloodline main window closes the dock and exits the app—there is no background tray mode.
+For Quick add, the dock checks clipboard text every 400 ms only while its compact dock is visible, and validates it again when you click. A visible new-record draft waiting for DNA can also detect a new clipboard value. Hidden docks do not read the clipboard. The dock keeps no clipboard history, sends no telemetry, and stores its enabled/position/collection preferences locally in `ui-settings.json`; those preferences are not included in collection exports. Closing the Bloodline main window closes the dock and exits the app—there is no background tray mode.
 
 **Optional Live Game Link**
 

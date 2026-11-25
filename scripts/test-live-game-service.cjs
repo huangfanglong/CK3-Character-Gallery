@@ -46,10 +46,13 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     async undo() { this.calls.push(['undo']); return { target: { id: 1, name: 'Aella' } }; },
     async cancel() { this.calls.push(['cancel']); return true; }, async close() {},
   };
-  const contents = { id: 7, isDestroyed: () => false, send() {} };
+  let service;
+  const contents = { id: 7, mainFrame: {}, isDestroyed: () => false, send(channel, value) {
+    if (channel === 'game-dock:command') queueMicrotask(() => service.completeRendererResult({ sender: contents, senderFrame: contents.mainFrame }, value.operationId, { ok: true }));
+  } };
   const options = loadSaved ? {} : { preferences };
   let clipboardText = '';
-  const service = new GameDockService({ dock, liveBridge: bridge, preferencesPath, clipboard: { readText: () => clipboardText }, getMainContents: () => contents, createId: () => 'draft-live', ...options });
+  service = new GameDockService({ dock, liveBridge: bridge, preferencesPath, clipboard: { readText: () => clipboardText }, getMainContents: () => contents, createId: () => 'draft-live', ...options });
   service.mainWindowWebContentsId = contents.id;
   return { dock, bridge, service, dna, setClipboard(value) { clipboardText = value; } };
 }
@@ -237,6 +240,7 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       assert.equal(renewed.ok, true, 'Import can start a fresh operation after the old one is retired.');
       assert.equal(stalled.bridge.calls.filter(([action]) => action === 'import').length, 2);
       assert.equal(stalled.dock.state.liveImported, true);
+      stalled.setClipboard(stalled.dna);
       const quickAdd = await stalled.service.handleCommand({ operationId: 'quick-add-after-toggle', type: 'quick-add', payload: {} });
       assert.equal(quickAdd.ok, true, 'Quick Add remains available even if the old live operation never settles cleanly.');
       assert.equal(stalled.dock.state.mode, 'draft');

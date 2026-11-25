@@ -45,27 +45,38 @@ function fixture(options = {}) {
   const valid = fixture();
   const pending = valid.service.handleCommand({ operationId: 'op-1', type: 'quick-add', payload: {} });
   const duplicate = valid.service.handleCommand({ operationId: 'op-1', type: 'quick-add', payload: {} });
-  assert.equal(valid.commands.length, 0, 'Invalid clipboard opens a draft locally without touching the archive.');
-  await Promise.all([pending, duplicate]);
-  assert.equal(valid.dock.state.mode, 'draft');
-  assert.equal(valid.dock.state.draftId, 'draft-1');
+  assert.equal(valid.commands.length, 0, 'An empty clipboard cannot touch the archive.');
+  const [invalid, duplicateInvalid] = await Promise.all([pending, duplicate]);
+  assert.equal(invalid.ok, false);
+  assert.equal(duplicateInvalid.ok, false);
+  assert.match(invalid.error, /Copy persistent or Base64 DNA/);
+  assert.equal(valid.dock.state.mode, 'compact', 'Quick Add no longer opens an empty waiting draft.');
+  assert.equal(valid.dock.state.draftId, '');
+  assert.equal(valid.reads(), 1, 'Duplicate physical commands share one clipboard read.');
 
-  valid.service.setDraftActive(false);
-  assert.equal(valid.reads(), 1);
+  valid.dock.state.visible = true;
   valid.setClipboard('unrelated clipboard text');
-  valid.service.setDraftActive(true);
-  await delayImmediate();
-  assert.equal(valid.dock.state.dnaReady, false);
-  assert.equal(valid.dock.state.message.includes('valid CK3 DNA'), false, 'Unrelated clipboard content is never shown in the dock.');
-  valid.service.setDraftActive(false);
-  const stoppedReads = valid.reads();
-  await valid.service.checkClipboard();
-  assert.equal(valid.reads(), stoppedReads, 'Clipboard checks stop when the draft is hidden.');
-
+  valid.service.syncQuickAddClipboard();
+  assert.equal(valid.dock.state.quickAddReady, false);
   valid.setClipboard(validDna);
-  valid.service.setDraftActive(true);
-  await delayImmediate();
-  assert.equal(valid.dock.state.dnaReady, true);
+  valid.service.syncQuickAddClipboard();
+  assert.equal(valid.dock.state.quickAddReady, true, 'Base64 DNA enables Quick Add.');
+  valid.setClipboard('genes = { hair_color = { index = 1 } }');
+  valid.service.syncQuickAddClipboard();
+  assert.equal(valid.dock.state.quickAddReady, true, 'Persistent DNA enables Quick Add.');
+  valid.setClipboard('unrelated clipboard text');
+  valid.service.syncQuickAddClipboard();
+  assert.equal(valid.dock.state.quickAddReady, false, 'Removing eligible DNA disables Quick Add again.');
+  const hiddenReads = valid.reads();
+  valid.dock.state.visible = false;
+  valid.service.syncQuickAddClipboard();
+  assert.equal(valid.reads(), hiddenReads, 'A hidden dock performs no Quick Add clipboard read.');
+  valid.dock.state.visible = true;
+
+  valid.dock.state.mode = 'draft';
+  valid.dock.state.draftId = 'draft-1';
+  valid.dock.state.dnaReady = true;
+  valid.service.draftDna = validDna;
   await valid.service.handleCommand({ operationId: 'op-2', type: 'create-record', payload: { name: 'Ragnhild', frame: true } });
   assert.equal(valid.commands.length, 1);
   assert.equal(valid.commands[0].payload.dna, validDna);
@@ -201,5 +212,3 @@ function fixture(options = {}) {
   fast.service.destroy();
   console.log('Game dock service tests passed: clipboard scoping, forwarding, preferences, focus-independent cancellation, bounded requests, stale-result rejection, and cleanup.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
-
-function delayImmediate() { return new Promise((resolve) => setImmediate(resolve)); }

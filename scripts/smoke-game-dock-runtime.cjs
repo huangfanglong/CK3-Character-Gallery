@@ -89,6 +89,11 @@ if (!electron.app) {
       assert.equal(await window.webContents.executeJavaScript('typeof window.require'), 'undefined');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").textContent.trim()'), 'Quick add');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), true, 'Quick Add starts disabled without clipboard DNA.');
+      assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").title'), /Copy persistent or Base64 DNA/);
+      dock.update({ quickAddReady: true });
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), false, 'Eligible clipboard DNA enables Quick Add.');
 
       const restingGeometry = JSON.parse(await window.webContents.executeJavaScript(`(()=>{ const dock=document.querySelector('.dock'); const rect=dock.getBoundingClientRect(); return JSON.stringify({width:rect.width,height:rect.height,top:rect.top,revealed:dockView.revealed,controls:getComputedStyle(document.querySelector('.dock-bar')).visibility}); })()`));
       assert.deepEqual(restingGeometry, { width: 280, height: 6, top: 0, revealed: false, controls: 'hidden' });
@@ -274,33 +279,38 @@ if (!electron.app) {
           const beam=getComputedStyle(button,'::before');
           return {disabled:button.disabled,height:rect.height,left:rect.left,right:rect.right,animation:beam.animationName,content:beam.content,pointerEvents:beam.pointerEvents};
         };
-        return JSON.stringify({dock:{left:dock.left,right:dock.right},quickAddHeight:document.querySelector('[data-command=quick-add]').getBoundingClientRect().height,import:read('[data-command=live-import]'),apply:read('[data-command=live-prepare-apply]')});
+        return JSON.stringify({dock:{left:dock.left,right:dock.right},quickAdd:read('[data-command=quick-add]'),import:read('[data-command=live-import]'),apply:read('[data-command=live-prepare-apply]')});
       })()`));
       const assertPrismFit = (state) => {
         assert.equal(state.dock.right - state.dock.left, 680, 'Prominent live controls must preserve the dock width.');
-        for (const [name, button] of [['Import', state.import], ['Apply', state.apply]]) {
-          assert.equal(button.height, state.quickAddHeight, `${name} must match Quick add's height.`);
+        for (const [name, button] of [['Quick add', state.quickAdd], ['Import', state.import], ['Apply', state.apply]]) {
+          assert.equal(button.height, state.quickAdd.height, `${name} must match Quick add's height.`);
           assert.ok(button.left >= state.dock.left && button.right <= state.dock.right, `${name} must remain inside the dock.`);
           assert.equal(button.pointerEvents, 'none', `${name}'s decorative beam must not intercept input.`);
         }
       };
+      dock.update({ quickAddReady: false });
+      await delay(30);
       const disabledPrism = await readPrismState();
       assertPrismFit(disabledPrism);
+      assert.equal(disabledPrism.quickAdd.disabled, true, 'Quick Add is disabled without eligible clipboard DNA.');
       assert.equal(disabledPrism.import.disabled, true, 'Import starts disabled until a real target is detected.');
       assert.equal(disabledPrism.apply.disabled, true, 'A gallery selection alone cannot enable Apply.');
-      for (const button of [disabledPrism.import, disabledPrism.apply]) {
-        assert.equal(button.animation, 'none', 'Disabled live buttons must not animate.');
-        assert.equal(button.content, 'none', 'Disabled live buttons must not render a prism layer.');
+      for (const button of [disabledPrism.quickAdd, disabledPrism.import, disabledPrism.apply]) {
+        assert.equal(button.animation, 'none', 'Disabled action buttons must not animate.');
+        assert.equal(button.content, 'none', 'Disabled action buttons must not render a prism layer.');
       }
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").title'), /Open a character window/);
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Open a character window/);
-      dock.update({ liveTargetAvailable: true, liveDetectedName: 'Aella' });
+      dock.update({ liveTargetAvailable: true, liveDetectedName: 'Aella', quickAddReady: true });
       await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").disabled'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), false);
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Archived Aella.*Aella/);
       const enabledPrism = await readPrismState();
       assertPrismFit(enabledPrism);
+      assert.equal(enabledPrism.quickAdd.animation, 'live-prism');
       assert.equal(enabledPrism.import.animation, 'live-prism');
       assert.equal(enabledPrism.apply.animation, 'live-prism');
       if (process.env.CK3_GAME_DOCK_LIVE_SCREENSHOT) {
@@ -315,6 +325,7 @@ if (!electron.app) {
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Copy persistent or Base64 DNA/);
       const independentPrism = await readPrismState();
       assertPrismFit(independentPrism);
+      assert.equal(independentPrism.quickAdd.animation, 'live-prism', 'Quick Add retains its beam independently of the live actions.');
       assert.equal(independentPrism.import.animation, 'live-prism', 'Import retains its beam without an Apply source.');
       assert.equal(independentPrism.apply.animation, 'none', 'Apply loses its beam without a DNA source.');
       const cdp = window.webContents.debugger;
@@ -322,6 +333,7 @@ if (!electron.app) {
       try {
         await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
         const reducedPrism = await readPrismState();
+        assert.equal(reducedPrism.quickAdd.animation, 'none', 'Reduced motion must stop Quick Add’s prism animation.');
         assert.equal(reducedPrism.import.animation, 'none', 'Reduced motion must stop Import’s prism animation.');
         assert.equal(reducedPrism.apply.animation, 'none', 'Reduced motion must stop the enabled-state prism animation.');
       } finally {

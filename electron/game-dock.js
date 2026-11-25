@@ -163,6 +163,7 @@ function compactBar() {
   const destinationDisabled = dockView.pending || dockState.busy || !['compact', 'draft'].includes(dockState.mode);
   const targetName = dockState.liveDetectedName || 'the character open in CK3';
   const sourceName = dockState.liveApplySource === 'clipboard' ? `${dockState.liveClipboardFormat === 'base64' ? 'Base64' : 'Persistent'} clipboard DNA` : dockState.liveSelectedName;
+  const quickAddTitle = dockState.quickAddReady ? 'Create a character from the DNA in your clipboard' : 'Copy persistent or Base64 DNA in CK3 to use Quick add';
   const importTitle = dockState.liveTargetAvailable ? `Import persistent DNA from ${targetName}` : 'Open a character window in CK3 to import DNA';
   const applyTitle = !dockState.liveTargetAvailable ? 'Open a character window in CK3 to apply DNA'
     : !dockState.liveCanApply ? 'Copy persistent or Base64 DNA, or select a gallery character with persistent DNA'
@@ -172,7 +173,8 @@ function compactBar() {
   const undoSeconds = Math.max(0, Math.ceil((dockState.liveUndoUntil - Date.now()) / 1000));
   const undoTitle = `Undo the latest DNA application to ${dockState.liveTargetName}`;
   const undoControl = undoAvailable ? `<button class="secondary-button live-undo" data-command="live-undo" title="${dockEscape(undoTitle)}" aria-label="${dockEscape(undoTitle)}"${unavailable ? ' disabled' : ''}>Undo <span id="live-undo-time">${undoSeconds}</span>s</button>` : '';
-  return `<div class="dock-bar ${undoAvailable ? 'has-undo' : ''}">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="primary-button" data-command="quick-add"${unavailable ? ' disabled' : ''}>${dockIcon('plus')} Quick add</button>${liveControls}${undoControl}<span class="spacer"></span><span class="dna-state ${dockState.dnaReady ? 'ready' : ''}">${dockState.liveImported ? 'Persistent DNA' : dockState.dnaReady ? 'DNA copied' : ''}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
+  const dnaCopied = dockState.dnaReady || dockState.quickAddReady;
+  return `<div class="dock-bar ${undoAvailable ? 'has-undo' : ''}">${brand()}<button class="collection-button" data-command="open-collections" aria-label="Destination: ${dockEscape(dockState.collection)}" aria-expanded="${dockView.picker}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button><span class="divider"></span><button class="live-button live-quick-add" data-command="quick-add" title="${dockEscape(quickAddTitle)}" aria-label="Quick add with clipboard DNA"${unavailable || !dockState.quickAddReady ? ' disabled' : ''}>${dockIcon('plus')}<span>Quick add</span></button>${liveControls}${undoControl}<span class="spacer"></span><span class="dna-state ${dnaCopied ? 'ready' : ''}">${dockState.liveImported ? 'Persistent DNA' : dnaCopied ? 'DNA copied' : ''}</span><button class="icon-button" data-command="toggle-menu" aria-label="More dock options" aria-expanded="${dockView.menu === 'menu'}">${dockIcon('more')}</button></div>`;
 }
 
 function dockDisplayGeometry() {

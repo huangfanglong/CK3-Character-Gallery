@@ -38,6 +38,7 @@ class GameDockService {
     this.draftActive = false;
     this.draftDna = '';
     this.clipboardTimer = null;
+    this.quickAddTimer = null;
     this.destroyed = false;
     this.mainWindowWebContentsId = null;
     this.liveBridge = options.liveBridge || new LiveGameBridge({ cachePath: this.preferencesPath ? path.join(path.dirname(this.preferencesPath), 'live-layout-cache.json') : '', logger: this.logger });
@@ -112,6 +113,7 @@ class GameDockService {
     }
     this.serviceStarted = true;
     this.syncLiveState();
+    this.startQuickAddClipboardMonitoring();
     if (!this.preferences.enabled) return false;
     const started = this.dock.start();
     this.syncLiveTargetPolling();
@@ -390,6 +392,28 @@ class GameDockService {
     return true;
   }
 
+  startQuickAddClipboardMonitoring() {
+    if (this.quickAddTimer || this.destroyed) return false;
+    this.syncQuickAddClipboard();
+    this.quickAddTimer = this.setInterval(() => { this.syncQuickAddClipboard(); }, 400);
+    this.quickAddTimer?.unref?.();
+    return true;
+  }
+
+  syncQuickAddClipboard() {
+    const dock = this.dock;
+    if (!dock || this.destroyed) return false;
+    const visibleCompactDock = dock.state.visible && dock.state.mode === 'compact';
+    let ready = false;
+    if (visibleCompactDock) {
+      try { ready = isValidCk3Dna(this.clipboard.readText()); }
+      catch (error) { this.logger.error('Quick Add clipboard could not be read:', error); }
+    }
+    if (dock.state.quickAddReady === ready) return false;
+    dock.update({ quickAddReady: ready });
+    return true;
+  }
+
   setDraftActive(active) {
     this.draftActive = Boolean(active && this.dock?.state.mode === 'draft' && !this.dock.state.dnaReady);
     if (this.clipboardTimer) this.clearInterval(this.clipboardTimer);
@@ -479,16 +503,17 @@ class GameDockService {
     if (!this.dock.game?.hwnd && type !== 'view-gallery') throw new Error('CK3 is no longer in the foreground.');
     if (type === 'quick-add') {
       if (this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
-      const draftId = this.createId();
-      this.draftDna = '';
+      /* The visible button is eligibility-gated, but the clipboard can change between
+         a poll and the physical click. Revalidate and use only this exact DNA snapshot. */
       const clipboardText = this.clipboard.readText();
       const dna = isValidCk3Dna(clipboardText) ? clipboardText.trim() : '';
-      this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: Boolean(dna), dnaAttached: false, liveImported: false, capture: null, crop: null, error: '', message: dna ? 'Creating the character…' : 'Copy DNA in CK3 to continue.' });
       if (!dna) {
-        this.setDraftActive(this.dock.state.visible);
-        return { ok: true };
+        this.dock.update({ quickAddReady: false });
+        return { ok: false, error: 'Copy persistent or Base64 DNA in CK3 before using Quick add.' };
       }
+      const draftId = this.createId();
       this.draftDna = dna;
+      this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: true, dnaAttached: false, liveImported: false, capture: null, crop: null, error: '', message: 'Creating the character…' });
       return this.runMutation({ ...command, payload: { ...payload, draftId, dna, collection: this.dock.state.collection, gameHwnd: this.dock.game.hwnd } });
     }
     if (MUTATING_COMMANDS.has(type) && this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
@@ -701,6 +726,8 @@ class GameDockService {
     this.serviceStarted = false;
     if (this.liveTargetTimer) this.clearInterval(this.liveTargetTimer);
     this.liveTargetTimer = null;
+    if (this.quickAddTimer) this.clearInterval(this.quickAddTimer);
+    this.quickAddTimer = null;
     if (this.liveUndoTimer) this.clearTimeout(this.liveUndoTimer);
     this.liveUndoTimer = null;
     ++this.liveTargetProbeSequence;

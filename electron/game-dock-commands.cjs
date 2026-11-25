@@ -64,7 +64,7 @@ function normalizeGameDockState(patch) {
     if (!Array.isArray(patch.collections) || patch.collections.length > 1000) throw new Error('The dock collection list is invalid.');
     state.collections = [...new Set(patch.collections.map((name) => text(name, 'collection')).filter(Boolean))];
   }
-  for (const key of ['busy', 'dnaReady', 'dnaAttached', 'sound']) if (key in patch) state[key] = Boolean(patch[key]);
+  for (const key of ['busy', 'dnaReady', 'quickAddReady', 'dnaAttached', 'sound']) if (key in patch) state[key] = Boolean(patch[key]);
   for (const key of ['message', 'error']) if (key in patch) state[key] = text(patch[key], key, 256);
   if ('position' in patch) {
     if (!['left', 'center', 'right'].includes(patch.position)) throw new Error('The dock position is invalid.');

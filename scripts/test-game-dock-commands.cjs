@@ -15,9 +15,10 @@ assert.equal('ignored' in normalizeGameDockCommand({ ...base, type: 'select-coll
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: 'All characters' } }), /destination/i);
 assert.deepEqual(normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: .4, centerY: .6, size: .25 } } }).payload.crop, { centerX: .4, centerY: .6, size: .25 });
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: 2, centerY: .6, size: .25 } } }), /crop/i);
-const state = normalizeGameDockState({ mode: 'draft', collections: ['Court'], collection: 'Court', dnaReady: true, characterName: 'Ragnhild', visible: false, unknown: 'discard' });
+const state = normalizeGameDockState({ mode: 'draft', collections: ['Court'], collection: 'Court', dnaReady: true, quickAddReady: true, characterName: 'Ragnhild', visible: false, unknown: 'discard' });
 assert.equal(state.mode, 'draft');
 assert.equal(state.dnaReady, true);
+assert.equal(state.quickAddReady, true);
 assert.equal(state.visible, undefined);
 assert.equal(state.unknown, undefined);
 assert.throws(() => normalizeGameDockState({ mode: 'admin' }), /mode/i);
