@@ -88,6 +88,20 @@ function fixture(options = {}) {
   assert.throws(() => fast.service.validateCaptureContext({ dockDraftId: 'old-draft', gameHwnd: '42' }), /no longer active/);
   assert.throws(() => fast.service.validateGameHwnd('99'), /window has changed/);
 
+  const destination = fixture();
+  destination.dock.state.mode = 'draft';
+  destination.dock.state.draftId = 'draft-1';
+  destination.dock.state.collections = ['Court', 'Mediterranean characters'];
+  destination.service.draftDna = validDna;
+  const missingDestination = await destination.service.handleCommand({ operationId: 'op-missing-destination', type: 'create-record', payload: { name: 'Aella', collection: 'Deleted gallery', frame: false } });
+  assert.equal(missingDestination.ok, false);
+  assert.match(missingDestination.error, /no longer exists/);
+  assert.equal(destination.commands.length, 0, 'A stale destination cannot create a record in the wrong gallery.');
+  await destination.service.handleCommand({ operationId: 'op-chosen-destination', type: 'create-record', payload: { name: 'Aella', collection: 'Mediterranean characters', frame: false } });
+  assert.equal(destination.commands[0].payload.collection, 'Mediterranean characters');
+  assert.equal(destination.commands[0].payload.dna, validDna);
+  destination.service.destroy();
+
   const blocked = fixture();
   blocked.dock.game = null;
   const response = await blocked.service.handleCommand({ operationId: 'op-hidden', type: 'quick-add', payload: {} });

@@ -41,7 +41,11 @@ function normalizeGameDockCommand(command) {
     if (!['left', 'center', 'right'].includes(input.position)) throw new Error('The dock position is invalid.');
     payload = { position: input.position };
   } else if (type === 'crop-change') payload = { crop: normalizedCrop(input.crop), draftId: identifier(input.draftId, 'draft') };
-  else if (type === 'create-record') payload = { draftId: identifier(input.draftId, 'draft'), name: text(input.name, 'name'), frame: input.frame !== false };
+  else if (type === 'create-record') {
+    const collection = text(input.collection, 'destination');
+    if (collection.toLowerCase() === 'all characters') throw new Error('Choose a real destination collection.');
+    payload = { draftId: identifier(input.draftId, 'draft'), name: text(input.name, 'name'), frame: input.frame !== false, collection };
+  }
   else if (['snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'reset-crop', 'undo-create', 'finish-without-portrait', 'cancel-draft', 'retry'].includes(type)) payload = { draftId: identifier(input.draftId, 'draft') };
   return { operationId, type, payload };
 }

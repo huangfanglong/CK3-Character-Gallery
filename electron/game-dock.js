@@ -12,7 +12,22 @@ let textInputActive = false;
 let hitRegionFrame = null;
 let hitRegionTimer = null;
 
+function positionDraftCollectionPicker() {
+  const picker = document.querySelector('.popover.draft-picker');
+  const destination = document.querySelector('#draft-destination');
+  const dock = document.querySelector('.dock');
+  if (!picker || !destination || !dock) return;
+  const dockRect = dock.getBoundingClientRect();
+  const destinationRect = destination.getBoundingClientRect();
+  const originX = dockRect.left + dock.clientLeft;
+  const originY = dockRect.top + dock.clientTop;
+  picker.style.top = `${destinationRect.bottom - originY + 6}px`;
+  picker.style.left = `${destinationRect.left - originX}px`;
+  picker.style.width = `${destinationRect.width}px`;
+}
+
 function sendNativeHitRegions() {
+  positionDraftCollectionPicker();
   const regions = [];
   for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
     let rect = element.getBoundingClientRect();
@@ -97,7 +112,8 @@ function collectionPicker() {
   if (!dockView.picker) return '';
   const query = dockView.query.toLowerCase();
   const collections = dockState.collections.filter((name) => name.toLowerCase().includes(query));
-  return `<section class="popover" role="dialog" aria-label="Choose destination collection"><div class="search-field"><input id="collection-filter" class="input dock-text-input" type="search" placeholder="Find a collection…" aria-label="Find a collection" value="${dockEscape(dockView.query)}" /></div><p class="popover-label">DESTINATION</p>${collections.map((name) => `<button class="collection-option ${name === dockState.collection ? 'selected' : ''}" data-command="select-collection" data-collection="${dockEscape(name)}"><span>${dockEscape(name)}</span>${name === dockState.collection ? dockIcon('check') : ''}</button>`).join('') || '<p class="empty-option">No matching collections.</p>'}</section>`;
+  const draftPicker = dockView.pickerSource === 'draft' && dockState.mode === 'draft';
+  return `<section class="popover ${draftPicker ? 'draft-picker' : ''}" role="dialog" aria-label="Choose destination collection"><div class="search-field"><input id="collection-filter" class="input dock-text-input" type="search" placeholder="Find a collection…" aria-label="Find a collection" value="${dockEscape(dockView.query)}" /></div><p class="popover-label">DESTINATION</p>${collections.map((name) => `<button class="collection-option ${name === dockState.collection ? 'selected' : ''}" data-command="select-collection" data-collection="${dockEscape(name)}"><span>${dockEscape(name)}</span>${name === dockState.collection ? dockIcon('check') : ''}</button>`).join('') || '<p class="empty-option">No matching collections.</p>'}</section>`;
 }
 
 function dockMenu() {
@@ -112,7 +128,9 @@ function brand() {
 
 function draftMarkup() {
   const ready = dockState.dnaReady;
-  return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">NEW CHARACTER</p><h2>${ready ? 'DNA ready to archive' : 'Copy DNA in CK3'}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Cancel new character">${dockIcon('close')}</button></div><p class="helper">${ready ? 'Choose a destination, then create the record or continue to portrait framing.' : 'Return to the character’s DNA window and copy its DNA. This panel will update automatically.'}</p><div class="draft-grid"><label class="field">Name (optional)<input id="character-name" class="input dock-text-input" maxlength="120" value="${dockEscape(dockState.characterName)}" placeholder="Automatic name" /></label><label class="field">Destination<input id="draft-destination" class="input" value="${dockEscape(dockState.collection)}" readonly /></label></div><div class="draft-actions"><p class="helper">${ready ? 'Your copied DNA stays private.' : 'No other clipboard text is shown or stored.'}</p><button class="text-button" data-command="cancel-draft">Cancel</button><button class="secondary-button" data-command="create-record" data-frame="false"${ready && !dockView.pending ? '' : ' disabled'}>Save DNA only</button><button class="primary-button" data-command="create-record" data-frame="true"${ready && !dockView.pending ? '' : ' disabled'}>${dockView.pending ? 'Creating…' : 'Create & frame'}</button></div></div>`;
+  const pickerExpanded = dockView.picker && dockView.pickerSource === 'draft';
+  const destinationDisabled = dockView.pending || dockState.busy || !dockState.collections.length;
+  return `<div class="dock-body"><div class="dock-heading"><div><p class="eyebrow">NEW CHARACTER</p><h2>${ready ? 'DNA ready to archive' : 'Copy DNA in CK3'}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Cancel new character">${dockIcon('close')}</button></div><p class="helper">${ready ? 'Choose a destination, then create the record or continue to portrait framing.' : 'Return to the character’s DNA window and copy its DNA. This panel will update automatically.'}</p><div class="draft-grid"><label class="field">Name (optional)<input id="character-name" class="input dock-text-input" maxlength="120" value="${dockEscape(dockState.characterName)}" placeholder="Automatic name" /></label><div class="field"><label for="draft-destination">Destination</label><button type="button" id="draft-destination" class="input destination-button" data-command="open-collections" data-picker="draft" aria-haspopup="dialog" aria-expanded="${pickerExpanded}"${destinationDisabled ? ' disabled' : ''}><span>${dockEscape(dockState.collection || 'Choose collection')}</span>${dockIcon('chevron')}</button></div></div><div class="draft-actions"><p class="helper">${ready ? 'Your copied DNA stays private.' : 'No other clipboard text is shown or stored.'}</p><button class="text-button" data-command="cancel-draft">Cancel</button><button class="secondary-button" data-command="create-record" data-frame="false"${ready && !dockView.pending ? '' : ' disabled'}>Save DNA only</button><button class="primary-button" data-command="create-record" data-frame="true"${ready && !dockView.pending ? '' : ' disabled'}>${dockView.pending ? 'Creating…' : 'Create & frame'}</button></div></div>`;
 }
 
 function framingMarkup() {
@@ -280,13 +298,31 @@ async function runCommand(type, payload = {}) {
 
 async function selectCommand(button) {
   const type = button.dataset.command;
-  if (type === 'open-collections') { dockView.picker = !dockView.picker; dockView.menu = ''; dockView.query = ''; setDockRevealed(true); renderDock(); document.querySelector('#collection-filter')?.focus(); return; }
+  if (type === 'open-collections') {
+    const nameField = document.querySelector('#character-name');
+    if (nameField) dockState.characterName = nameField.value;
+    const opening = !dockView.picker;
+    dockView.picker = opening;
+    dockView.pickerSource = opening && button.dataset.picker === 'draft' ? 'draft' : 'bar';
+    dockView.menu = '';
+    dockView.query = '';
+    setDockRevealed(true);
+    renderDock();
+    document.querySelector('#collection-filter')?.focus();
+    return;
+  }
   if (type === 'toggle-menu') { dockView.menu = dockView.menu ? '' : 'menu'; dockView.picker = false; dockView.help = false; setDockRevealed(true); renderDock(); return; }
   if (type === 'help') { dockView.help = true; dockView.menu = ''; setDockRevealed(true); renderDock(); return; }
   if (type === 'close-menu') { closeMenus(); renderDock(); return; }
-  if (type === 'select-collection') { dockView.picker = false; dockView.query = ''; await runCommand(type, { collection: button.dataset.collection }); return; }
+  if (type === 'select-collection') {
+    dockState = { ...dockState, collection: button.dataset.collection };
+    closeMenus();
+    renderDock();
+    await runCommand(type, { collection: button.dataset.collection });
+    return;
+  }
   if (type === 'set-position') { dockView.menu = ''; await runCommand(type, { position: button.dataset.position }); return; }
-  if (type === 'create-record') return runCommand(type, { frame: button.dataset.frame === 'true', name: document.querySelector('#character-name')?.value || '' });
+  if (type === 'create-record') { closeMenus(); return runCommand(type, { frame: button.dataset.frame === 'true', name: document.querySelector('#character-name')?.value || '', collection: dockState.collection }); }
   if (['cancel-draft', 'dismiss', 'cancel-capture'].includes(type)) { closeMenus(); setInteractive(false); return runCommand(type); }
   return runCommand(type);
 }
@@ -460,7 +496,7 @@ dockRoot.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && event.target.id === 'character-name') {
     event.preventDefault();
     event.target.blur();
-    if (dockState.dnaReady) void runCommand('create-record', { frame: true, name: event.target.value });
+    if (dockState.dnaReady) { closeMenus(); void runCommand('create-record', { frame: true, name: event.target.value, collection: dockState.collection }); }
   }
 });
 dockRoot.addEventListener('input', (event) => {
@@ -534,7 +570,10 @@ dockBridge.onState((nextState) => {
   const input = document.activeElement;
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';
-  const name = preserveName ? input.value : '';
+  /* Destination selection publishes a fresh dock state, but it must not replace a
+     locally edited draft name with the name originally imported from CK3. */
+  const preserveDraftName = dockView.pickerSource === 'draft' && dockState.mode === 'draft' && nextState.mode === 'draft';
+  const name = preserveName ? input.value : dockState.characterName;
   const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
   const newLiveApply = nextState.mode === 'compact' && Boolean(nextState.liveApplyId) && nextState.liveApplyId !== dockState.liveApplyId;
   if (((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0))
@@ -548,7 +587,7 @@ dockBridge.onState((nextState) => {
      controls still contain the latest Undo deadline and never block the next action. */
   if (newLiveApply) collapseDockAfterApply();
   dockState = { ...dockState, ...nextState };
-  if (preserveName) dockState.characterName = name;
+  if (preserveName || preserveDraftName) dockState.characterName = name;
   renderDock();
   if (preserveName) {
     const field = document.querySelector('#character-name');

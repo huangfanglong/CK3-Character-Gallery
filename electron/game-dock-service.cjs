@@ -492,7 +492,9 @@ class GameDockService {
       return this.runMutation({ ...command, payload: { ...payload, draftId, dna, collection: this.dock.state.collection, gameHwnd: this.dock.game.hwnd } });
     }
     if (MUTATING_COMMANDS.has(type) && this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
-    const enriched = { ...command, payload: { ...payload, draftId: this.dock.state.draftId, collection: this.dock.state.collection, gameHwnd: this.dock.game?.hwnd || '' } };
+    const collection = type === 'create-record' && payload.collection ? payload.collection : this.dock.state.collection;
+    if (type === 'create-record' && !this.dock.state.collections.includes(collection)) throw new Error('That destination collection no longer exists. Choose another gallery.');
+    const enriched = { ...command, payload: { ...payload, draftId: this.dock.state.draftId, collection, gameHwnd: this.dock.game?.hwnd || '' } };
     if (['create-record', 'retry'].includes(type)) enriched.payload.dna = this.draftDna;
     return MUTATING_COMMANDS.has(type) ? this.runMutation(enriched) : this.forward(enriched);
   }

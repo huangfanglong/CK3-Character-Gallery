@@ -97,6 +97,8 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │    - Sandboxed, context-isolated dock renderer. CSP allows only 'self'       │
 │      scripts/styles; img/media/connect/object/frame-ancestors are 'none'.    │
 │    - Owns reticle framing, pointer/drag state, clocks, and dock markup.      │
+│      Import drafts include an anchored, searchable destination picker; the   │
+│      chosen gallery is validated and carried explicitly into record creation. │
 │                                                                              │
 │  windows-game-monitor.cjs                                                    │
 │    - koffi Win32 foreground/bounds hooks; tracks the visible ck3.exe window. │

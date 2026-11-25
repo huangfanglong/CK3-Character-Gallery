@@ -38,6 +38,7 @@ if (!electron.app) {
     let dismissalCount = 0;
     let liveTargetName = 'Aella';
     let liveApplyCount = 0;
+    const createRecordCommands = [];
     dock = new GameDock({
       BrowserWindow, screen, monitor,
       htmlPath: path.join(__dirname, '..', 'electron', 'game-dock.html'),
@@ -47,6 +48,7 @@ if (!electron.app) {
         if (type === 'select-collection') { dock.setPreferences({ collection: payload.collection }); dock.update({ collection: payload.collection }); }
         if (type === 'set-position') dock.setPreferences({ position: payload.position });
         if (type === 'quick-add') dock.update({ mode: 'draft', dnaReady: true, characterName: '' });
+        if (type === 'create-record') createRecordCommands.push({ operationId, ...payload });
         if (type === 'create-record' && payload.name === 'Stalled capture') {
           stalledOperationId = operationId;
           return new Promise((resolve) => { stalledCreate = resolve; });
@@ -392,7 +394,30 @@ if (!electron.app) {
       await delay(40);
       assert.equal(dock.state.liveImported, true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dna-state").textContent.includes("Persistent DNA")'), true);
-      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-cancel]")?.click()');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#draft-destination").textContent.trim()'), 'House of Wessex');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#draft-destination").disabled'), false);
+      await window.webContents.executeJavaScript(`{ document.querySelector('#character-name').value='Aella of the Stepstones'; document.querySelector('#draft-destination').click(); }`);
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('dockView.pickerSource'), 'draft');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#draft-destination").getAttribute("aria-expanded")'), 'true');
+      const draftPickerGeometry = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const anchor=document.querySelector('#draft-destination').getBoundingClientRect();const picker=document.querySelector('.draft-picker').getBoundingClientRect();return JSON.stringify({anchorLeft:anchor.left,anchorBottom:anchor.bottom,anchorWidth:anchor.width,pickerLeft:picker.left,pickerTop:picker.top,pickerWidth:picker.width,name:document.querySelector('#character-name').value});})()`));
+      assert.equal(draftPickerGeometry.name, 'Aella of the Stepstones', 'Opening Destination preserves the edited character name.');
+      assert.ok(Math.abs(draftPickerGeometry.anchorLeft - draftPickerGeometry.pickerLeft) < 1);
+      assert.ok(Math.abs(draftPickerGeometry.anchorWidth - draftPickerGeometry.pickerWidth) < 1);
+      assert.ok(draftPickerGeometry.pickerTop >= draftPickerGeometry.anchorBottom, 'The gallery picker opens below its Destination control.');
+      await window.webContents.executeJavaScript(`{ const input=document.querySelector('#collection-filter'); input.value='Mediterranean'; input.dispatchEvent(new Event('input',{bubbles:true})); }`);
+      assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll(".collection-option").length'), 1);
+      await window.webContents.executeJavaScript('document.querySelector(".collection-option").click()');
+      await delay(40);
+      assert.equal(dock.state.collection, 'Mediterranean characters');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#draft-destination").textContent.trim()'), 'Mediterranean characters');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#character-name").value'), 'Aella of the Stepstones');
+      await window.webContents.executeJavaScript('document.querySelector("[data-command=create-record][data-frame=false]").click()');
+      await delay(40);
+      assert.equal(createRecordCommands.at(-1).collection, 'Mediterranean characters', 'Import saves to the gallery chosen inside its draft.');
+      assert.equal(createRecordCommands.at(-1).name, 'Aella of the Stepstones');
+      assert.equal(createRecordCommands.at(-1).frame, false);
+      assert.equal(dock.state.mode, 'success');
       dock.update({ mode: 'compact' });
 
       holdNextLiveImport = true;
