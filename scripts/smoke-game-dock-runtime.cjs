@@ -138,8 +138,12 @@ if (!electron.app) {
       await delay(50);
       assert.equal(dock.state.collection, 'House of Wessex');
 
-      await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").click()');
+      await window.webContents.executeJavaScript('{ window.__quickAddDock = document.querySelector(".dock"); document.querySelector("[data-command=quick-add]").click(); }');
       await delay(50);
+      const quickAddMotion = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({sameNode:window.__quickAddDock===document.querySelector('.dock'),height:document.querySelector('.dock').getBoundingClientRect().height,animating:Boolean(dockHeightAnimation)})`));
+      assert.equal(quickAddMotion.sameNode, true, 'Quick Add preserves the dock element so transitions can run.');
+      assert.equal(quickAddMotion.animating, true, 'Quick Add animates into its variable-height draft.');
+      assert.ok(quickAddMotion.height > 48, 'Quick Add is visibly partway through its height transition.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock.expanded") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=create-record][data-frame=true]").disabled'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), true);
@@ -347,8 +351,12 @@ if (!electron.app) {
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").disabled'), false, 'Clipboard DNA enables Apply without a gallery selection.');
       assert.match(await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").title'), /Persistent clipboard DNA.*Aella/);
-      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
+      await window.webContents.executeJavaScript('{ window.__applyDock = document.querySelector(".dock"); document.querySelector("[data-command=live-prepare-apply]").click(); }');
       await delay(40);
+      const applyMotion = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const dock=document.querySelector('.dock');return JSON.stringify({sameNode:window.__applyDock===dock,height:dock.getBoundingClientRect().height,heightTransition:dock.getAnimations().some((animation)=>animation.transitionProperty==='height')});})()`));
+      assert.equal(applyMotion.sameNode, true, 'Apply preserves the dock element throughout its collapse.');
+      assert.equal(applyMotion.heightTransition, true, 'Apply uses the same CSS height transition as pointer exit.');
+      assert.ok(applyMotion.height > 6 && applyMotion.height < 48, `Apply is visibly mid-collapse (${applyMotion.height}px).`);
       assert.equal(dock.state.mode, 'compact', 'Apply returns directly to the normal controls without a confirmation or result screen.');
       assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".live-confirm, [data-command=live-confirm-apply]"))'), false, 'Apply confirmation UI and commands are removed.');
       assert.equal(dock.state.message, '');
@@ -405,8 +413,12 @@ if (!electron.app) {
       assert.equal(dock.state.message, '');
       assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector("[data-command=live-undo]"))'), false, 'Undo removes the latest operation control.');
       dock.update({ mode: 'compact', liveCanApply: true, liveApplySource: 'gallery', liveClipboardFormat: '', liveSelectedName: 'Archived Aella' });
-      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").click()');
+      await window.webContents.executeJavaScript('{ window.__importDock = document.querySelector(".dock"); document.querySelector("[data-command=live-import]").click(); }');
       await delay(40);
+      const importMotion = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({sameNode:window.__importDock===document.querySelector('.dock'),height:document.querySelector('.dock').getBoundingClientRect().height,animating:Boolean(dockHeightAnimation)})`));
+      assert.equal(importMotion.sameNode, true, 'Import preserves the dock element throughout expansion.');
+      assert.equal(importMotion.animating, true, 'Import animates into its variable-height draft.');
+      assert.ok(importMotion.height > 48, 'Import is visibly partway through its height transition.');
       assert.equal(dock.state.liveImported, true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dna-state").textContent.includes("Persistent DNA")'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("#draft-destination").textContent.trim()'), 'House of Wessex');

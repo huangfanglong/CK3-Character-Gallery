@@ -200,13 +200,52 @@ function reticleMarkup() {
   return `<div id="portrait-reticle" class="reticle ${locked ? 'locked' : ''}" role="group" tabindex="${locked ? '-1' : '0'}" aria-label="Portrait frame. Drag to move, corners to resize." style="--crop-x:${rect.x}px;--crop-y:${rect.y}px;--crop-size:${rect.size}px"><span class="reticle-grid" aria-hidden="true"></span>${locked ? '' : ['north-west', 'north-east', 'south-east', 'south-west'].map((handle) => `<span class="crop-handle ${handle}" data-crop-handle="${handle}" aria-hidden="true"></span>`).join('')}<span class="reticle-label">${locked ? 'Frame locked' : '450 × 450 · drag to frame'}</span></div>`;
 }
 
+let dockHeightAnimation = null;
+
 function renderDock() {
   const mode = dockState.mode;
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
   const expanded = mode !== 'compact';
   const classes = ['dock', `position-${dockState.position || 'center'}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
   const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'error' ? errorMarkup() : '';
-  dockRoot.innerHTML = dockState.visible ? `<section class="${classes}" aria-label="Bloodline game dock">${compactBar()}${body}${collectionPicker()}${dockMenu()}</section>${reticleMarkup()}` : '';
+  const previousDock = dockRoot.querySelector(':scope > .dock');
+  const previousHeight = previousDock?.getBoundingClientRect().height || 0;
+  const wasExpanded = previousDock?.classList.contains('expanded') || false;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion && dockHeightAnimation) { dockHeightAnimation.cancel(); dockHeightAnimation = null; }
+  if (!dockState.visible) {
+    dockHeightAnimation?.cancel();
+    dockHeightAnimation = null;
+    dockRoot.innerHTML = '';
+  } else {
+    /* Keep the section alive so Apply uses the same CSS collapse as pointer exit.
+       Replacing the whole node used to cancel every transition before it appeared. */
+    const dock = previousDock || document.createElement('section');
+    if (!previousDock) {
+      dockRoot.innerHTML = '';
+      dock.setAttribute('aria-label', 'Bloodline game dock');
+      dockRoot.append(dock);
+    }
+    dock.className = classes;
+    dock.innerHTML = `${compactBar()}${body}${collectionPicker()}${dockMenu()}`;
+    dockRoot.querySelectorAll(':scope > .reticle').forEach((reticle) => reticle.remove());
+    const reticle = reticleMarkup();
+    dock.insertAdjacentHTML('afterend', reticle);
+    const nextHeight = dock.getBoundingClientRect().height;
+    /* CSS cannot interpolate to an expanded panel's auto height. Measure that target
+       and animate only these mode changes; compact Apply remains a native CSS transition.
+       A native crop surface opens stable so its hit region never trails the animation. */
+    if (previousDock && (wasExpanded || expanded) && !reticle && Math.abs(nextHeight - previousHeight) > .5 && !reducedMotion) {
+      dockHeightAnimation?.cancel();
+      const animation = dock.animate([
+        { height: `${previousHeight}px` },
+        { height: `${nextHeight}px` },
+      ], { duration: 200, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+      dockHeightAnimation = animation;
+      animation.onfinish = () => { if (dockHeightAnimation === animation) dockHeightAnimation = null; };
+      animation.oncancel = () => { if (dockHeightAnimation === animation) dockHeightAnimation = null; };
+    }
+  }
   syncCaptureClock();
   syncNativeHitRegions();
 }
