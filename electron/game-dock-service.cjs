@@ -494,10 +494,7 @@ class GameDockService {
     /* Dismissal is local cleanup. It must still work while the dock's name field owns
        Windows focus, or after CK3 loses its foreground window. */
     if (type === 'cancel-draft' || type === 'dismiss' || (type === 'cancel-capture' && this.mutation)) {
-      this.cancelRendererDraft(this.dock.state.draftId || '');
-      this.clearDraft();
-      this.clearLiveState();
-      void this.liveBridge.cancel().catch(() => {});
+      this.resetDraft();
       return { ok: true, cancelled: true };
     }
     if (!this.dock.game?.hwnd && type !== 'view-gallery') throw new Error('CK3 is no longer in the foreground.');
@@ -523,6 +520,13 @@ class GameDockService {
     if (type === 'create-record' && !this.dock.state.collections.includes(collection)) throw new Error('That destination collection no longer exists. Choose another gallery.');
     const enriched = { ...command, payload: { ...payload, draftId: this.dock.state.draftId, collection, gameHwnd: this.dock.game?.hwnd || '' } };
     if (['create-record', 'retry'].includes(type)) enriched.payload.dna = this.draftDna;
+    if (type === 'view-gallery') {
+      const result = await this.forward(enriched);
+      /* View in gallery is also confirmation of the saved draft. Reset only after
+         the gallery selected the character successfully, exactly like choosing Done. */
+      if (result.ok) this.resetDraft();
+      return result;
+    }
     return MUTATING_COMMANDS.has(type) ? this.runMutation(enriched) : this.forward(enriched);
   }
 
@@ -636,6 +640,13 @@ class GameDockService {
     this.setDraftActive(false);
     this.draftDna = '';
     if (resetState && this.dock) this.dock.update({ mode: 'compact', draftId: null, characterId: null, characterName: '', dnaReady: false, dnaAttached: false, liveImported: false, capture: null, crop: null, sourceSize: null, message: '', error: '', undoUntil: 0 });
+  }
+
+  resetDraft() {
+    this.cancelRendererDraft(this.dock.state.draftId || '');
+    this.clearDraft();
+    this.clearLiveState();
+    void this.liveBridge.cancel().catch(() => {});
   }
 
   settleRendererRequest(operationId, response) {

@@ -31,16 +31,19 @@ function sendNativeHitRegions() {
   const regions = [];
   for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
     let rect = element.getBoundingClientRect();
-    if (element.classList.contains('dock') && dockState.mode === 'compact') {
-      /* Reveal claims the final expanded footprint immediately. Collapse follows the
-         animated bounds, then returns to the visible 280 px resting strip. The extra
-         two rows are an invisible landing margin for the native cursor guard. */
+    if (element.classList.contains('dock') && ['compact', 'framing'].includes(dockState.mode)) {
+      /* Reveal claims the final expanded footprint immediately. Compact collapse
+         follows its animated bounds; framing immediately releases the departing
+         panel so an invisible animated shell cannot intercept CK3 input. */
       const available = Math.max(120, window.innerWidth - 24);
-      const width = dockView.revealed ? Math.min(680, available) : rect.width;
-      const x = dockView.revealed
+      const restingWidth = dockState.mode === 'framing' ? Math.min(280, available) : rect.width;
+      const width = dockView.revealed ? Math.min(680, available) : restingWidth;
+      const x = dockView.revealed || dockState.mode === 'framing'
         ? dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2
         : rect.x;
-      const height = dockView.revealed ? 48 : Math.max(8, rect.height);
+      const height = dockState.mode === 'framing'
+        ? dockView.revealed ? Math.max(48, element.scrollHeight) : 8
+        : dockView.revealed ? 48 : Math.max(8, rect.height);
       rect = { x, y: 0, width, height };
     }
     if (!(rect.width > 0 && rect.height > 0)) continue;
@@ -71,9 +74,13 @@ function syncNativeHitRegions() {
 function setDockRevealed(next) {
   const pinned = dockView.picker || Boolean(dockView.menu) || dockView.help || dockView.pending || textInputActive;
   const revealed = Boolean(next || pinned);
-  if (dockView.revealed !== revealed) {
+  const changed = dockView.revealed !== revealed;
+  if (changed) {
     dockView.revealed = revealed;
     document.querySelector('.dock')?.classList.toggle('revealed', revealed);
+    /* Framing is a retractable mode, not a permanently expanded dialog. Re-render
+       only its panel; dockState and the independent crop surface stay untouched. */
+    if (dockState.visible && dockState.mode === 'framing') renderDock();
   }
   syncNativeHitRegions();
 }
@@ -225,8 +232,8 @@ function renderDock() {
   deferredDockRender = false;
   const mode = dockState.mode;
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
-  const expanded = mode !== 'compact';
-  const classes = ['dock', `position-${dockState.position || 'center'}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
+  const expanded = mode !== 'compact' && (mode !== 'framing' || dockView.revealed);
+  const classes = ['dock', `position-${dockState.position || 'center'}`, `mode-${mode}`, dockView.revealed ? 'revealed' : '', expanded ? 'expanded' : '', capture ? 'recording' : '', mode === 'error' ? 'failure' : '', mode === 'success' ? 'success' : ''].filter(Boolean).join(' ');
   const body = mode === 'draft' ? draftMarkup() : mode === 'framing' ? framingMarkup() : capture ? captureMarkup() : mode === 'success' ? successMarkup() : mode === 'error' ? errorMarkup() : '';
   const previousDock = dockRoot.querySelector(':scope > .dock');
   const previousHeight = previousDock?.getBoundingClientRect().height || 0;
@@ -253,9 +260,9 @@ function renderDock() {
     dock.insertAdjacentHTML('afterend', reticle);
     const nextHeight = dock.getBoundingClientRect().height;
     /* CSS cannot interpolate to an expanded panel's auto height. Measure that target
-       and animate only these mode changes; compact Apply remains a native CSS transition.
-       A native crop surface opens stable so its hit region never trails the animation. */
-    if (previousDock && (wasExpanded || expanded) && !reticle && Math.abs(nextHeight - previousHeight) > .5 && !reducedMotion) {
+       and animate mode changes plus framing's hover collapse. Compact Apply remains
+       a native CSS transition; recording's crop surface opens without height motion. */
+    if (previousDock && (wasExpanded || expanded) && (!reticle || mode === 'framing') && Math.abs(nextHeight - previousHeight) > .5 && !reducedMotion) {
       dockHeightAnimation?.cancel();
       const animation = dock.animate([
         { height: `${previousHeight}px` },
@@ -605,8 +612,8 @@ dockRoot.addEventListener('focusout', () => {
     if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
   }, 0);
 });
-function withinCompactDock(event) {
-  if (dockState.mode !== 'compact') return false;
+function withinDockStrip(event) {
+  if (!['compact', 'framing'].includes(dockState.mode)) return false;
   const available = Math.max(0, window.innerWidth - 24);
   const width = dockView.revealed ? Math.min(680, available) : Math.min(280, Math.max(120, available));
   const left = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
@@ -618,7 +625,7 @@ function dockPointerTargets(event) {
   const target = document.elementFromPoint(event.clientX, event.clientY);
   /* Only the narrow resting strip reveals the dock. Once revealed, the entire
      expanded footprint remains interactive and protected from game edge-panning. */
-  const overDock = Boolean(target?.closest('.dock')) || withinCompactDock(event);
+  const overDock = Boolean(target?.closest('.dock')) || withinDockStrip(event);
   return { overDock, overSurface: overDock || Boolean(target?.closest('.reticle')) };
 }
 

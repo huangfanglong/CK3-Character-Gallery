@@ -28,18 +28,20 @@ function fixture(options = {}) {
   contents.mainFrame = {};
   let clipboard = '';
   let reads = 0;
+  let galleryShows = 0;
   let service;
   service = new GameDockService({
     dock,
     clipboard: { readText() { reads += 1; return clipboard; } },
     getMainContents: () => contents,
+    showMainWindow() { galleryShows += 1; },
     createId: (() => { let index = 0; return () => `draft-${++index}`; })(),
     ...(Object.hasOwn(options, 'preferences') ? { preferences: options.preferences } : { preferences: { enabled: true, position: 'center', collection: 'Court' } }),
     preferencesPath: options.preferencesPath || '',
     rendererCommandTimeoutMs: options.rendererCommandTimeoutMs,
   });
   service.mainWindowWebContentsId = contents.id;
-  return { dock, commands, cancellations, gameLosses, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads };
+  return { dock, commands, cancellations, gameLosses, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads, galleryShows: () => galleryShows };
 }
 
 (async () => {
@@ -233,6 +235,42 @@ function fixture(options = {}) {
   focusReturn.service.notifyGameLoss();
   assert.deepEqual(focusReturn.gameLosses, [{ draftId: 'draft-saved', operationIds: [] }], 'An unsaved in-progress capture still receives game-loss handling.');
   focusReturn.service.destroy();
+
+  const viewGallery = fixture();
+  Object.assign(viewGallery.dock.state, {
+    mode: 'success', draftId: 'draft-saved', characterId: 'character-saved', characterName: 'Aella',
+    dnaReady: true, dnaAttached: true, undoUntil: Date.now() + 12_000,
+    liveUndoUntil: Date.now() + 18_000, liveApplyId: 'live-apply-saved',
+  });
+  viewGallery.service.draftDna = validDna;
+  const viewed = await viewGallery.service.handleCommand({ operationId: 'op-view-gallery', type: 'view-gallery', payload: {} });
+  assert.equal(viewed.ok, true);
+  assert.equal(viewGallery.galleryShows(), 1, 'View in gallery still brings the main window forward.');
+  assert.equal(viewGallery.commands.at(-1).type, 'view-gallery');
+  assert.equal(viewGallery.commands.at(-1).payload.draftId, 'draft-saved');
+  assert.equal(viewGallery.dock.state.mode, 'compact', 'View in gallery confirms the saved draft like Done.');
+  assert.equal(viewGallery.dock.state.draftId, null);
+  assert.equal(viewGallery.dock.state.characterId, null);
+  assert.equal(viewGallery.dock.state.characterName, '');
+  assert.equal(viewGallery.dock.state.dnaReady, false);
+  assert.equal(viewGallery.dock.state.undoUntil, 0);
+  assert.equal(viewGallery.dock.state.liveUndoUntil, 0);
+  assert.equal(viewGallery.dock.state.liveApplyId, '');
+  assert.equal(viewGallery.service.draftDna, '');
+  assert.deepEqual(viewGallery.cancellations, [{ draftId: 'draft-saved', reason: 'cancelled', operationIds: [] }], 'The confirmed draft is cleared in the renderer too.');
+  viewGallery.service.destroy();
+
+  const failedView = fixture({ autoRespond: false });
+  Object.assign(failedView.dock.state, { mode: 'success', draftId: 'draft-saved', characterId: 'character-saved' });
+  const failedViewCommand = failedView.service.handleCommand({ operationId: 'op-view-failed', type: 'view-gallery', payload: {} });
+  assert.equal(failedView.commands.length, 1);
+  failedView.service.completeRendererResult({ sender: failedView.contents, senderFrame: failedView.contents.mainFrame }, 'op-view-failed', { ok: false, error: 'Finish the open gallery editor first.' });
+  assert.equal((await failedViewCommand).ok, false);
+  assert.equal(failedView.dock.state.mode, 'error');
+  assert.equal(failedView.dock.state.draftId, 'draft-saved', 'A failed gallery action must not clear the saved draft.');
+  assert.equal(failedView.dock.state.characterId, 'character-saved');
+  assert.equal(failedView.cancellations.length, 0);
+  failedView.service.destroy();
 
   blocked.service.destroy();
   valid.service.destroy();

@@ -160,6 +160,12 @@ button:disabled { cursor: default; opacity: .42; }
 .dock-bar.has-undo .brand { padding-right: 2px; }
 
 .dock-body { position: relative; z-index: 1; padding: 6px 18px 18px; }
+.dock.mode-framing:not(.expanded) > .dock-body {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 0s 120ms;
+}
 .dock-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
 .eyebrow { margin: 0 0 5px; color: var(--copper); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
 h1, h2, p { margin-top: 0; }

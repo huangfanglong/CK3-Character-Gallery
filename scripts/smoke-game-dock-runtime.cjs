@@ -247,6 +247,37 @@ if (!electron.app) {
       assert.equal(externalDrag.started, false, 'A drag without a crop hover must remain CK3 input.');
       assert.deepEqual(externalDrag.after, externalDrag.before);
 
+      const framingSession = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({crop:dockState.crop,draftId:dockState.draftId,characterId:dockState.characterId,name:dockState.characterName})`));
+      const framingHeight = await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height');
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:20,clientY:400}))`);
+      await delay(40);
+      const framingCollapse = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const dock=document.querySelector('.dock');return JSON.stringify({mode:dockState.mode,revealed:dockView.revealed,expanded:dock.classList.contains('expanded'),height:dock.getBoundingClientRect().height,animating:Boolean(dockHeightAnimation),crop:dockState.crop,draftId:dockState.draftId,characterId:dockState.characterId,name:dockState.characterName,reticle:Boolean(document.querySelector('#portrait-reticle'))});})()`));
+      assert.equal(framingCollapse.mode, 'framing', 'Leaving the panel must preserve Portrait Framing.');
+      assert.equal(framingCollapse.revealed, false);
+      assert.equal(framingCollapse.expanded, false);
+      assert.equal(framingCollapse.animating, true, 'Framing uses the same smooth collapse transition as the normal dock.');
+      assert.ok(framingCollapse.height > 6 && framingCollapse.height < framingHeight, `Framing is visibly mid-collapse (${framingCollapse.height}px).`);
+      assert.equal(framingCollapse.reticle, true, 'The crop grid remains available while its panel is retracted.');
+      assert.deepEqual({ crop: framingCollapse.crop, draftId: framingCollapse.draftId, characterId: framingCollapse.characterId, name: framingCollapse.name }, framingSession, 'Collapsing does not reset or finish the framing session.');
+      for (let attempt = 0; attempt < 100 && await window.webContents.executeJavaScript(`(()=>{const rect=document.querySelector('.dock').getBoundingClientRect();return rect.height!==6||Math.abs(rect.width-280)>.1;})()`); attempt += 1) await delay(25);
+      const retractedFraming = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const dock=document.querySelector('.dock');const controls=getComputedStyle(document.querySelector('[data-command=reset-crop]'));const rect=dock.getBoundingClientRect();return JSON.stringify({height:rect.height,width:rect.width,visibility:controls.visibility,pointerEvents:controls.pointerEvents,interactive});})()`));
+      assert.equal(retractedFraming.height, 6);
+      assert.ok(Math.abs(retractedFraming.width - 280) < .1, `The retracted framing strip returns to its resting width (${retractedFraming.width}px).`);
+      assert.equal(retractedFraming.visibility, 'hidden');
+      assert.equal(retractedFraming.pointerEvents, 'none');
+      assert.equal(retractedFraming.interactive, false);
+      assert.equal(dock.window.isVisible(), true, 'Retraction keeps the overlay connected and visible.');
+      assert.equal(dock.state.mode, 'framing');
+      assert.equal(dock.state.capture, null);
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      for (let attempt = 0; attempt < 100 && !(await window.webContents.executeJavaScript('dockView.revealed && document.querySelector(".dock").classList.contains("expanded") && !dockHeightAnimation')); attempt += 1) await delay(25);
+      const restoredFraming = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({mode:dockState.mode,revealed:dockView.revealed,height:document.querySelector('.dock').getBoundingClientRect().height,controls:getComputedStyle(document.querySelector('[data-command=reset-crop]')).visibility,crop:dockState.crop,draftId:dockState.draftId,characterId:dockState.characterId,name:dockState.characterName})`));
+      assert.equal(restoredFraming.mode, 'framing');
+      assert.equal(restoredFraming.revealed, true);
+      assert.equal(restoredFraming.height, framingHeight);
+      assert.equal(restoredFraming.controls, 'visible');
+      assert.deepEqual({ crop: restoredFraming.crop, draftId: restoredFraming.draftId, characterId: restoredFraming.characterId, name: restoredFraming.name }, framingSession, 'Re-expansion restores the same framing session and crop.');
+
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-capture]").click()');
       await delay(50);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".capture-copy strong").textContent'), /Recording/);
