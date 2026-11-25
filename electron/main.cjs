@@ -13,6 +13,7 @@ const { saveCaptureVideo } = require('./capture-video.cjs');
 const { isCaptureShortcut } = require('./capture-shortcuts.cjs');
 const { CaptureSessionManager } = require('./capture-session-manager.cjs');
 const { CaptureHud } = require('./capture-hud.cjs');
+const { CursorlessCapture, CURSORLESS_FRAME_BYTES } = require('./cursorless-capture.cjs');
 const { GameDockService } = require('./game-dock-service.cjs');
 const { imageDirectory } = require('./image-directory.cjs');
 
@@ -33,6 +34,7 @@ let portraitPreviewDrainInProgress = false;
 let portraitPreviewDrainComplete = false;
 const captureSources = new Map();
 const captureSessions = new CaptureSessionManager(globalShortcut, crypto.randomUUID);
+const cursorlessCapture = new CursorlessCapture({ workerPath: path.join(__dirname, 'windows-cursorless-capture-worker.cjs') });
 let captureHud = null;
 let gameDock = null;
 let mainWindow = null;
@@ -242,6 +244,7 @@ function presentCaptureStatus(capture, sessionId, status) {
 function releaseCaptureSession(sessionId, terminalStatus = null) {
   const capture = captureSessions.get(sessionId);
   const released = captureSessions.release(sessionId);
+  if (released) void cursorlessCapture.stop(sessionId).catch((error) => console.error('Cursor-free capture could not stop:', error));
   if (released && capture?.dockDraftId && capture.ownerWebContentsId === mainWindowWebContentsId) {
     mainWindow?.webContents.setBackgroundThrottling(true);
   }
@@ -257,6 +260,7 @@ function releaseCaptureSessionsByOwner(ownerWebContentsId) {
   const capture = sessionId && captureSessions.get(sessionId);
   captureSessions.releaseByOwner(ownerWebContentsId);
   if (capture?.ownerWebContentsId === ownerWebContentsId) {
+    void cursorlessCapture.stop(sessionId).catch((error) => console.error('Cursor-free capture could not stop:', error));
     if (capture.dockDraftId) mainWindow?.webContents.setBackgroundThrottling(true);
     try { presentCaptureStatus(capture, sessionId, null); }
     catch (error) { console.error('Capture status could not be released:', error); }
@@ -491,6 +495,33 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut, context) => {
   return { sessionId, shortcut };
 });
 
+ipcMain.handle('capture:start-cursorless', async (event, sessionId, crop) => {
+  const capture = requireCaptureOwner(event, sessionId);
+  if (!capture.dockDraftId || capture.phase !== 'starting') throw new Error('Cursor-free capture is only available while starting a dock recording.');
+  if (!capture.sourceId.startsWith(`window:${capture.gameHwnd}:`)) throw new Error('The CK3 capture window no longer matches this session.');
+  const sender = event.sender;
+  try {
+    return await cursorlessCapture.start({
+      sessionId,
+      gameHwnd: capture.gameHwnd,
+      crop,
+      onFrame: (frame) => {
+        if (sender.isDestroyed() || captureSessions.get(sessionId) !== capture) return;
+        if (frame.error) sender.send('capture:cursorless-frame', sessionId, { error: String(frame.error).slice(0, 300) });
+        else if (frame.pixels instanceof ArrayBuffer && frame.pixels.byteLength === CURSORLESS_FRAME_BYTES) sender.send('capture:cursorless-frame', sessionId, { pixels: frame.pixels, sequence: frame.sequence });
+      },
+    });
+  } catch (error) {
+    await cursorlessCapture.stop(sessionId).catch(() => {});
+    throw error;
+  }
+});
+
+ipcMain.handle('capture:stop-cursorless', async (event, sessionId) => {
+  requireCaptureOwner(event, sessionId);
+  return cursorlessCapture.stop(sessionId);
+});
+
 ipcMain.handle('capture:status', (event, sessionId, status) => {
   const capture = requireCaptureOwner(event, sessionId);
   if (!['armed', 'starting', 'recording', 'matching', 'saving'].includes(status?.state)) throw new Error('Capture status is invalid.');
@@ -653,6 +684,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (portraitPreviewDrainInProgress) return;
   portraitPreviewDrainInProgress = true;
+  void cursorlessCapture.destroy().catch((error) => console.error('Cursor-free capture could not shut down:', error));
   gameDock?.destroy();
   for (const window of BrowserWindow.getAllWindows()) {
     try {

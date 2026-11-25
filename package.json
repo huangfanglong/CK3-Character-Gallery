@@ -14,7 +14,7 @@
     "test:archive": "node scripts/test-archive-store.cjs",
     "test:portraits": "node scripts/test-portrait-processor.cjs && node scripts/test-portrait-worker.cjs && node scripts/test-portrait-source-manager.cjs && node scripts/test-portrait-preview-store.cjs",
     "test:playback": "node scripts/test-portrait-playback.cjs",
-    "test:capture": "node scripts/test-capture-video.cjs && node scripts/test-capture-settings.cjs && node scripts/test-capture-loop.cjs && node scripts/test-image-directory.cjs && node scripts/test-capture-hud.cjs && node scripts/test-live-capture-lifecycle.cjs",
+    "test:capture": "node scripts/test-capture-video.cjs && node scripts/test-capture-settings.cjs && node scripts/test-capture-loop.cjs && node scripts/test-image-directory.cjs && node scripts/test-capture-hud.cjs && node scripts/test-cursorless-capture.cjs && node scripts/test-live-capture-lifecycle.cjs",
     "test:capture-hud-runtime": "electron scripts/smoke-capture-hud-runtime.cjs",
     "test:capture-ui-runtime": "electron scripts/smoke-capture-ui-runtime.cjs",
     "test:capture-loop-runtime": "electron scripts/smoke-capture-loop-runtime.cjs",

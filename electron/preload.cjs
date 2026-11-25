@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld('galleryDesktop', {
   finishCapture: (sessionId, characterId, video) => ipcRenderer.invoke('capture:finish', sessionId, characterId, video),
   completeCapture: (sessionId, outcome) => ipcRenderer.invoke('capture:complete', sessionId, outcome),
   releaseCapture: (sessionId, failureMessage = '') => ipcRenderer.invoke('capture:release', sessionId, failureMessage),
+  startCursorlessCapture: (sessionId, crop) => ipcRenderer.invoke('capture:start-cursorless', sessionId, crop),
+  stopCursorlessCapture: (sessionId) => ipcRenderer.invoke('capture:stop-cursorless', sessionId),
+  onCursorlessCaptureFrame: (callback) => {
+    const listener = (_event, sessionId, frame) => callback(sessionId, frame);
+    ipcRenderer.on('capture:cursorless-frame', listener);
+    return () => ipcRenderer.removeListener('capture:cursorless-frame', listener);
+  },
   onCaptureToggle: (callback) => {
     const listener = (_event, sessionId) => callback(sessionId);
     ipcRenderer.on('capture:toggle', listener);

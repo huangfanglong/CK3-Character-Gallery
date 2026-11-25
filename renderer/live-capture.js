@@ -601,7 +601,71 @@ function initializeLiveCapturePreview() {
   });
 }
 
+function paintDockCursorlessFrame(capture, frame) {
+  if (!capture?.cursorlessCanvas || frame?.pixels?.byteLength !== 450 * 450 * 4) return false;
+  const context = capture.cursorlessCanvas.getContext('2d');
+  const image = context.createImageData(450, 450);
+  image.data.set(new Uint8ClampedArray(frame.pixels));
+  context.putImageData(image, 0, 0);
+  capture.cursorlessFrameReady = true;
+  return true;
+}
+
+function handleDockCursorlessFrame(capture, sessionId, frame, generation) {
+  if (state.captureSession !== capture || capture.sessionId !== sessionId || capture.cursorlessGeneration !== generation) return;
+  if (frame?.error) {
+    capture.recordingError = new Error(String(frame.error).slice(0, 300));
+    if (['starting-recording', 'recording', 'matching'].includes(capture.phase)) void cancelLiveCapture(readableError(capture.recordingError, 'Cursor-free CK3 capture ended.'));
+    return;
+  }
+  paintDockCursorlessFrame(capture, frame);
+}
+
+async function stopDockCursorlessCapture(capture) {
+  if (!capture) return false;
+  capture.cursorlessGeneration = (capture.cursorlessGeneration || 0) + 1;
+  capture.recordingCursorless = false;
+  capture.cursorlessFrameReady = false;
+  capture.cursorlessCanvas = null;
+  const cleanup = capture.cursorlessFrameCleanup;
+  capture.cursorlessFrameCleanup = null;
+  try { cleanup?.(); } catch {}
+  const shouldStop = capture.cursorlessCaptureActive;
+  capture.cursorlessCaptureActive = false;
+  if (shouldStop && capture.sessionId && typeof desktop?.stopCursorlessCapture === 'function') await desktop.stopCursorlessCapture(capture.sessionId).catch(() => false);
+  return true;
+}
+
+async function startDockCursorlessCapture(capture) {
+  if (!capture?.dock || !capture.recordingCrop || typeof desktop?.startCursorlessCapture !== 'function' || typeof desktop?.onCursorlessCaptureFrame !== 'function') throw new Error('Cursor-free CK3 capture is not ready.');
+  await stopDockCursorlessCapture(capture);
+  const generation = capture.cursorlessGeneration;
+  const canvas = document.createElement('canvas');
+  canvas.width = 450;
+  canvas.height = 450;
+  capture.cursorlessCanvas = canvas;
+  capture.cursorlessCaptureActive = true;
+  capture.cursorlessFrameCleanup = desktop.onCursorlessCaptureFrame((sessionId, frame) => handleDockCursorlessFrame(capture, sessionId, frame, generation));
+  try {
+    await desktop.startCursorlessCapture(capture.sessionId, { ...capture.recordingCrop });
+    if (state.captureSession !== capture || capture.cursorlessGeneration !== generation || !capture.cursorlessCaptureActive) {
+      const error = new Error('Cursor-free CK3 capture was cancelled.');
+      error.name = 'AbortError';
+      throw error;
+    }
+    capture.recordingCursorless = true;
+  } catch (error) {
+    await stopDockCursorlessCapture(capture);
+    throw error;
+  }
+}
+
 function drawLiveCaptureFrame(capture) {
+  if (capture?.recordingCursorless) {
+    if (!capture.cursorlessFrameReady || !capture.cursorlessCanvas || !capture.canvas) return false;
+    capture.canvas.getContext('2d').drawImage(capture.cursorlessCanvas, 0, 0, 450, 450);
+    return true;
+  }
   const video = capture?.video || document.querySelector('#capture-video');
   const selectedCrop = capture?.recordingCrop || capture?.crop;
   if (!capture || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !selectedCrop) return false;
@@ -650,7 +714,9 @@ async function startLiveCaptureRecording(capture) {
   capture.recordingError = null;
   const video = capture.video || document.querySelector('#capture-video');
   if (video?.videoWidth && video.videoHeight && capture.crop) capture.recordingCrop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
+  if (capture.dock) await startDockCursorlessCapture(capture);
   if (!drawLiveCaptureFrame(capture)) {
+    if (capture.dock) await stopDockCursorlessCapture(capture);
     capture.loopProcessor.close();
     capture.loopProcessor = null;
     capture.encoder.close();
@@ -695,6 +761,7 @@ async function stopLiveCaptureRecording(capture) {
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
   if (capture?.matchingTimer) clearTimeout(capture.matchingTimer);
   if (capture) { capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; }
+  if (capture?.dock) await stopDockCursorlessCapture(capture);
   if (capture?.recordingError) {
     capture.loopProcessor?.close();
     capture.loopProcessor = null;
@@ -711,6 +778,7 @@ function discardLiveCaptureRecording(capture) {
   if (capture?.timer) clearInterval(capture.timer);
   if (capture?.durationTimer) clearTimeout(capture.durationTimer);
   if (capture?.matchingTimer) clearTimeout(capture.matchingTimer);
+  if (capture?.dock) void stopDockCursorlessCapture(capture).catch(() => {});
   capture?.loopProcessor?.close();
   capture?.encoder?.close();
   if (capture) { capture.encoder = null; capture.loopProcessor = null; capture.timer = null; capture.durationTimer = null; capture.matchingTimer = null; capture.recordingCrop = null; }
