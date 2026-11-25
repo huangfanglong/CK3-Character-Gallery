@@ -200,7 +200,7 @@ async function main() {
       await delay(320);
       movePointer(bounds.x + 24, bounds.y + 120);
       await waitFor(() => dock.nativeHitTesting
-        ? shapeCalls.at(-1)?.regions.every((region) => region.height <= 8)
+        ? shapeCalls.at(-1)?.regions.every((region) => region.height <= 10 && region.width <= 282)
         : ignoreCalls.at(-1)?.ignore === true, 'Leaving the dock did not restore its inert hit region.');
       await delay(250);
       assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Leaving the dock did not fold the menu.');

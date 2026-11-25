@@ -71,12 +71,39 @@ monitor.restoreFocus = (hwnd) => { monitor.restoreFocusCalls.push(hwnd); return 
 const screen = new FakeScreen();
 const windows = [];
 const commands = [];
+const cursorGuard = {
+  active: false,
+  armCalls: [],
+  releaseCalls: 0,
+  startCalls: 0,
+  stopCalls: 0,
+  destroyCalls: 0,
+  contains: null,
+  mouseMove: null,
+  start(handler) { this.startCalls += 1; this.mouseMove = handler; return true; },
+  stop() { this.stopCalls += 1; this.mouseMove = null; this.release(); },
+  arm(bounds, contains) {
+    this.armCalls.push({ bounds, contains });
+    this.active = true;
+    this.contains = contains;
+    return true;
+  },
+  release() {
+    const wasActive = this.active;
+    this.releaseCalls += 1;
+    this.active = false;
+    this.contains = null;
+    return wasActive;
+  },
+  destroy() { this.destroyCalls += 1; this.stop(); },
+};
 const dock = new GameDock({
   BrowserWindow: class extends FakeWindow { constructor(options) { super(options); windows.push(this); } },
   screen,
   monitor,
   htmlPath: path.join(__dirname, '..', 'electron', 'game-dock.html'),
   preloadPath: path.join(__dirname, '..', 'electron', 'game-dock-preload.cjs'),
+  cursorGuard,
   onCommand: (command) => { commands.push(command); return { ok: true }; },
   onGameLoss: (draftId, previous, current) => { dock.gameLosses.push({ draftId, previous, current }); },
 });
@@ -98,6 +125,18 @@ async function main() {
   assert.equal(window.options.webPreferences.sandbox, true);
   assert.equal(window.options.webPreferences.contextIsolation, true);
   assert.equal(window.options.webPreferences.nodeIntegration, false);
+  if (dock.nativeHitTesting) {
+    assert.deepEqual(window.shape, [{ x: 812, y: 0, width: 280, height: 8 }], 'Only the narrow resting strip accepts native pointer entry.');
+    assert.equal(cursorGuard.startCalls, 1);
+    assert.equal(cursorGuard.mouseMove({ x: window.bounds.x + 650, y: window.bounds.y }), false, 'The future expanded footprint does not activate while resting.');
+    assert.equal(cursorGuard.active, false);
+    assert.equal(cursorGuard.mouseMove({ x: window.bounds.x + 900, y: window.bounds.y }), true, 'Native entry arms before renderer hover IPC.');
+    assert.equal(cursorGuard.active, true);
+    assert.equal(cursorGuard.contains({ x: window.bounds.x + 900, y: window.bounds.y + 6 }), true, 'The clamped pointer lands inside the resting shape.');
+    assert.equal(cursorGuard.contains({ x: window.bounds.x + 900, y: window.bounds.y + 8 }), false);
+    dock.releaseCursorGuard();
+    cursorGuard.armCalls = [];
+  }
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(window.sent.some((entry) => entry.channel === 'game-dock:state' && entry.value.visible));
@@ -130,14 +169,59 @@ async function main() {
     assert.equal(window.ignoreMouseEvents[0], true);
   }
 
+  const previousNativeHitTesting = dock.nativeHitTesting;
+  dock.nativeHitTesting = true;
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.armCalls.length, 0, 'A child frame cannot arm the cursor guard.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.armCalls.length, 0, 'The guard waits for the expanded native shape.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', false);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [
+    { x: 620, y: 0, width: 680, height: 48, cursor: true },
+    { x: 200, y: 200, width: 100, height: 100, cursor: false },
+  ]);
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, false, 'A foreign hover cannot engage an expanded dock.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
+  assert.deepEqual(cursorGuard.armCalls[0].bounds, game.clientBounds);
+  const containsCursor = cursorGuard.contains;
+  assert.equal(containsCursor({ x: window.bounds.x + 700, y: window.bounds.y + 2 }), true);
+  assert.equal(containsCursor({ x: window.bounds.x + 20, y: window.bounds.y + 2 }), false, 'Top-edge input outside the dock is not captured.');
+  assert.equal(containsCursor({ x: window.bounds.x + 250, y: window.bounds.y + 220 }), false, 'The capture reticle is excluded.');
+  window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:hover', false);
+  assert.equal(cursorGuard.active, true, 'A child frame cannot release trusted dock state.');
+  cursorGuard.release();
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [{ x: 620, y: 0, width: 680, height: 48, cursor: true }]);
+  assert.equal(cursorGuard.active, true, 'A native watchdog exit does not latch out the next dock entry.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', false);
+  assert.equal(cursorGuard.active, false);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
+  window.emit('blur');
+  assert.equal(cursorGuard.active, false, 'Window blur releases clipping.');
+  assert.equal(window.focused, false);
+  assert.deepEqual(monitor.restoreFocusCalls, [], 'Cursor guarding never transfers window focus.');
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
+  dock.hide();
+  assert.equal(cursorGuard.active, false, 'Hiding the dock releases clipping.');
+  dock.refreshVisibility();
+  assert.equal(window.visible, true);
+  dock.nativeHitTesting = true;
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:text-input', true);
   assert.equal(window.focused, true);
   monitor.state = null;
   monitor.emit('change', null);
   assert.equal(window.visible, true, 'A focused text editor remains visible during its explicit focus exception.');
+  assert.equal(cursorGuard.active, true, 'Transient CK3 focus loss during text input does not release clipping.');
   window.focused = false;
   window.emit('blur');
+  assert.equal(cursorGuard.active, false, 'The subsequent dock blur releases clipping.');
   assert.equal(window.visible, false, 'Losing the editing surface hides the dock over another application.');
+  dock.nativeHitTesting = previousNativeHitTesting;
 
   monitor.state = game;
   monitor.emit('change', game);
@@ -165,23 +249,42 @@ async function main() {
   monitor.state = moved;
   monitor.emit('change', moved);
   assert.equal(window.bounds.x, 120);
+  dock.nativeHitTesting = true;
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [{ x: 620, y: 0, width: 680, height: 48, cursor: true }]);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
+  const armsBeforeDisplayChange = cursorGuard.armCalls.length;
   screen.emit('display-metrics-changed');
   assert.equal(window.bounds.x, 120);
+  assert.equal(cursorGuard.armCalls.length, armsBeforeDisplayChange, 'An unchanged display does not restart clipping.');
+  const movedAgain = { ...moved, clientBounds: { ...moved.clientBounds, x: 140 } };
+  monitor.state = movedAgain;
+  monitor.emit('change', movedAgain);
+  assert.equal(cursorGuard.active, true, 'A game move re-arms the active guard.');
+  assert.equal(cursorGuard.armCalls.length, armsBeforeDisplayChange + 1);
+  assert.equal(cursorGuard.armCalls.at(-1).bounds.x, 140);
   dock.setPreferences({ position: 'right', collection: 'Court' });
   assert.equal(dock.preferences.position, 'right');
   assert.equal(dock.state.position, 'right');
   dock.setEnabled(false);
   assert.equal(window.visible, false);
+  assert.equal(cursorGuard.active, false, 'Disabling the dock releases clipping.');
   assert.equal(monitor.stopCalls, 1);
   dock.setEnabled(true);
   monitor.state = game;
   monitor.emit('change', game);
   assert.equal(window.visible, true);
+  dock.nativeHitTesting = true;
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [{ x: 620, y: 0, width: 680, height: 48, cursor: true }]);
+  window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
+  assert.equal(cursorGuard.active, true);
   dock.destroy();
+  assert.equal(cursorGuard.active, false, 'Destroying an active dock releases clipping.');
+  assert.equal(cursorGuard.destroyCalls, 1);
   assert.equal(window.destroyed, true);
   assert.equal(monitor.stopCalls, 2);
   assert.equal(screen.listenerCount('display-added'), 0);
-  console.log('Game dock controller tests passed: focus-aware visibility, placement, hit testing, command replies, preferences, and cleanup.');
+  console.log('Game dock controller tests passed: visibility, placement, trusted hover, hit filtering, focus isolation, cursor cleanup, commands, and preferences.');
   } finally {
     dock.destroy();
   }

@@ -95,7 +95,7 @@ if (!electron.app) {
         const image = await window.webContents.capturePage();
         await require('node:fs/promises').writeFile(process.env.CK3_GAME_DOCK_STRIP_SCREENSHOT, image.toPNG());
       }
-      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:(window.innerWidth-680)/2+2,clientY:2}))`);
       let revealedGeometry;
       for (let attempt = 0; attempt < 100; attempt += 1) {
         await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
@@ -467,11 +467,25 @@ if (!electron.app) {
         const image = await window.webContents.capturePage();
         await require('node:fs/promises').writeFile(process.env.CK3_GAME_DOCK_SCREENSHOT, image.toPNG());
       }
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('dockHovered'), true);
+      monitor.state = null;
+      monitor.emit('change', null);
+      assert.equal(window.isVisible(), false);
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('dockHovered'), false, 'Hiding clears the renderer hover latch.');
+      monitor.state = game;
+      monitor.emit('change', game);
+      await delay(40);
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('dockHovered'), true, 'A fresh hover is published after hide/show.');
       monitor.state = null;
       monitor.emit('change', null);
       assert.equal(window.isVisible(), false);
       assert.ok(monitor.restoreFocusCalls.length >= 1);
-      console.log('Game dock runtime passed: sandbox, compact and expanded states, collection search, framing, capture feedback, errors, menus, and focus cleanup.');
+      console.log('Game dock runtime passed: sandbox, states, collection search, framing, capture, errors, menus, hover reset, and focus cleanup.');
     } finally {
       dock.destroy();
     }

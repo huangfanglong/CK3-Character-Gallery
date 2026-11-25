@@ -30,7 +30,7 @@
     "test:capture-shortcuts": "node scripts/test-capture-shortcuts.cjs",
     "test:transfer": "node scripts/test-gallery-transfer.cjs",
     "test:live-link": "node scripts/test-live-dna-codec.cjs && node scripts/test-live-game-catalog.cjs && node scripts/test-live-game-engine.cjs && node scripts/test-live-game-bridge.cjs && node scripts/test-live-game-service.cjs",
-    "test:game-dock": "npm run test:live-link && node scripts/test-windows-game-monitor.cjs && node scripts/test-game-dock.cjs && node scripts/test-game-dock-commands.cjs && node scripts/test-character-records.cjs && node scripts/test-game-dock-service.cjs && node scripts/test-game-dock-workflow.cjs",
+    "test:game-dock": "npm run test:live-link && node scripts/test-windows-game-monitor.cjs && node scripts/test-windows-cursor-guard.cjs && node scripts/test-game-dock.cjs && node scripts/test-game-dock-commands.cjs && node scripts/test-character-records.cjs && node scripts/test-game-dock-service.cjs && node scripts/test-game-dock-workflow.cjs",
     "test:renderer": "node scripts/smoke-renderer.cjs",
     "test": "npm run lint && npm run test:archive && npm run test:portraits && npm run test:playback && npm run test:capture && npm run test:capture-sessions && npm run test:capture-geometry && npm run test:capture-shortcuts && npm run test:transfer && npm run test:game-dock && npm run test:shutdown && npm run test:renderer",
     "package:win": "electron-builder --win --x64 && node scripts/verify-package-licenses.cjs",

@@ -5,6 +5,7 @@ let dockState = { mode: 'compact', collections: [], collection: '', position: 'c
 let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
 let commandSequence = 0;
 let interactive = false;
+let dockHovered = false;
 let drag = null;
 let captureClock = null;
 let textInputActive = false;
@@ -15,14 +16,16 @@ function sendNativeHitRegions() {
   const regions = [];
   for (const element of dockRoot.querySelectorAll('.dock, .popover, .reticle:not(.locked)')) {
     let rect = element.getBoundingClientRect();
-    if (element.classList.contains('dock') && dockState.mode === 'compact' && dockView.revealed) {
-      /* Claim the final bounds as reveal starts, not only after its CSS transition.
-         Otherwise a fast pointer leaves the temporary native region. During collapse,
-         retain the animated bounds instead: native window shapes clip rendering too. */
+    if (element.classList.contains('dock') && dockState.mode === 'compact') {
+      /* Reveal claims the final expanded footprint immediately. Collapse follows the
+         animated bounds, then returns to the visible 280 px resting strip. The extra
+         two rows are an invisible landing margin for the native cursor guard. */
       const available = Math.max(120, window.innerWidth - 24);
-      const width = Math.min(680, available);
-      const x = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
-      const height = dockState.mode === 'compact' ? 48 : Math.max(48, element.scrollHeight);
+      const width = dockView.revealed ? Math.min(680, available) : rect.width;
+      const x = dockView.revealed
+        ? dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2
+        : rect.x;
+      const height = dockView.revealed ? 48 : Math.max(8, rect.height);
       rect = { x, y: 0, width, height };
     }
     if (!(rect.width > 0 && rect.height > 0)) continue;
@@ -35,6 +38,7 @@ function sendNativeHitRegions() {
       y: Math.floor(rect.y) - padding,
       width: Math.ceil(rect.width) + padding * 2,
       height: Math.ceil(rect.height) + padding * 2 + labelSpace,
+      cursor: !element.classList.contains('reticle'),
     });
   }
   dockBridge.setHitRegions(regions);
@@ -212,6 +216,13 @@ function setInteractive(next) {
   if (next === interactive) return;
   interactive = next;
   dockBridge.setInteractive(next);
+}
+
+function setDockHovered(next) {
+  const hovered = Boolean(next);
+  if (hovered === dockHovered) return;
+  dockHovered = hovered;
+  dockBridge.setHover(hovered);
 }
 
 function closeMenus() {
@@ -478,19 +489,20 @@ dockRoot.addEventListener('focusout', () => {
     if (textInputActive) { textInputActive = false; dockBridge.setTextInput(false); }
   }, 0);
 });
-function withinRevealedDock(event) {
-  if (dockState.mode !== 'compact' || !dockView.revealed) return false;
-  const width = Math.min(680, Math.max(0, window.innerWidth - 24));
+function withinCompactDock(event) {
+  if (dockState.mode !== 'compact') return false;
+  const available = Math.max(0, window.innerWidth - 24);
+  const width = dockView.revealed ? Math.min(680, available) : Math.min(280, Math.max(120, available));
   const left = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
-  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < 48;
+  const height = dockView.revealed ? 48 : 8;
+  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < height;
 }
 
 function dockPointerTargets(event) {
   const target = document.elementFromPoint(event.clientX, event.clientY);
-  /* Removing click-through can immediately dispatch another mousemove before the
-     expansion transition has enlarged the DOM hit box. Use the final bounds during
-     that transition so the same pointer cannot collapse its own menu or result. */
-  const overDock = Boolean(target?.closest('.dock')) || withinRevealedDock(event);
+  /* Only the narrow resting strip reveals the dock. Once revealed, the entire
+     expanded footprint remains interactive and protected from game edge-panning. */
+  const overDock = Boolean(target?.closest('.dock')) || withinCompactDock(event);
   return { overDock, overSurface: overDock || Boolean(target?.closest('.reticle')) };
 }
 
@@ -498,16 +510,27 @@ document.addEventListener('mousemove', (event) => {
   if (!event.buttons) dockPointerDowns.clear();
   const targets = dockPointerTargets(event);
   setDockRevealed(targets.overDock);
+  setDockHovered(targets.overDock);
   setInteractive(targets.overSurface);
 });
 document.addEventListener('mouseleave', (event) => {
   /* Windows can emit a synthetic leave at the same coordinates when the native
      click-through flag or dock mode changes. Check the actual expanded controls,
      not only the compact strip, before treating it as a real departure. */
-  if (!drag && !dockPointerTargets(event).overSurface) { setInteractive(false); setDockRevealed(false); }
+  const targets = dockPointerTargets(event);
+  setDockHovered(targets.overDock);
+  if (!drag && !targets.overSurface) { setInteractive(false); setDockRevealed(false); }
 });
-window.addEventListener('blur', () => { dockPointerDowns.clear(); if (!drag) { setInteractive(false); setDockRevealed(false); } });
+window.addEventListener('blur', () => {
+  dockPointerDowns.clear();
+  setDockHovered(false);
+  if (!drag) { setInteractive(false); setDockRevealed(false); }
+});
 dockBridge.onState((nextState) => {
+  if (!nextState.visible) {
+    dockPointerDowns.clear();
+    setDockHovered(false);
+  }
   const input = document.activeElement;
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';

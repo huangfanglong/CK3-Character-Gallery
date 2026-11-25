@@ -1,3 +1,5 @@
+const { WindowsCursorGuard, DOCK_CURSOR_INSET } = require('./windows-cursor-guard.cjs');
+
 const DOCK_POSITIONS = new Set(['left', 'center', 'right']);
 const DOCK_WIDTH = 680;
 const DOCK_RESTING_WIDTH = 280;
@@ -62,12 +64,15 @@ class GameDock {
     this.onDraftVisibilityChange = options.onDraftVisibilityChange || (() => {});
     this.onGameLoss = options.onGameLoss || (() => {});
     this.logger = options.logger || console;
+    this.cursorGuard = options.cursorGuard || new WindowsCursorGuard({ logger: this.logger });
+    this.cursorHoverRequested = false;
     this.preferences = normalizeDockPreferences(options.preferences);
     this.window = null;
     this.ready = false;
     this.editing = false;
     this.nativeHitTesting = false;
     this.hitRegions = [];
+    this.cursorHitRegions = [];
     this.focusReturnHwnd = '';
     this.game = null;
     this.started = false;
@@ -111,6 +116,7 @@ class GameDock {
     this.handleGameChange = (game) => this.setGame(game);
     this.reposition = () => this.positionWindow();
     this.handleBlur = () => {
+      this.releaseCursorGuard();
       if (!this.editing) return;
       this.editing = false;
       this.focusReturnHwnd = '';
@@ -172,6 +178,9 @@ class GameDock {
 
   setGame(game) {
     const previous = this.game;
+    /* Text input can briefly make CK3 lose foreground without an actual game
+       change. Keep the hover session through that transition; blur/exit still release. */
+    if (previous && game && previous.hwnd !== game.hwnd) this.releaseCursorGuard();
     this.game = game || null;
     if (previous && (!game || previous.hwnd !== game.hwnd)) this.onGameLoss(this.state.draftId, previous, game || null);
     this.refreshVisibility();
@@ -184,6 +193,7 @@ class GameDock {
     if (visible) {
       this.ensureWindow();
       this.positionWindow();
+      this.startCursorGuard();
       this.window?.showInactive();
       this.present();
     } else this.hide();
@@ -201,8 +211,18 @@ class GameDock {
     if (!this.window || this.window.isDestroyed()) return;
     const bounds = gameDockBounds(this.game);
     if (!bounds) return;
+    /* ClipCursor uses physical pixels while BrowserWindow bounds are DIPs. Re-arm
+       after a real game/display move, not a transient focus-only game loss. */
+    const current = this.window.getBounds();
+    const moved = ['x', 'y', 'width', 'height'].some((key) => current[key] !== bounds[key]);
+    if (moved && this.cursorGuard.active) this.cursorGuard.release();
     this.window.setBounds(bounds, false);
-    if (this.nativeHitTesting) this.applyHitRegions(this.hitRegions.length ? this.hitRegions : this.initialHitRegions());
+    if (this.nativeHitTesting) {
+      const regions = this.hitRegions.length
+        ? this.hitRegions.map((region) => ({ ...region, cursor: this.cursorHitRegions.includes(region) }))
+        : this.initialHitRegions();
+      this.applyHitRegions(regions);
+    }
     this.present();
   }
 
@@ -210,35 +230,105 @@ class GameDock {
     const gameBounds = gameDockBounds(this.game);
     const windowBounds = this.window?.getBounds();
     if (!gameBounds || !windowBounds) return [{ x: 0, y: 0, width: 1, height: 1 }];
-    const surface = dockSurfaceBounds(gameBounds, 'compact', this.state.position, false);
-    return [{ x: surface.x - gameBounds.x, y: surface.y - gameBounds.y, width: surface.width, height: surface.height }];
+    const resting = dockSurfaceBounds(gameBounds, 'compact', this.state.position, false);
+    /* The extra two physical rows let ClipCursor land at y=6 without leaving the
+       resting native shape. Only the visible 280 px strip can activate the dock. */
+    return [{ x: resting.x - gameBounds.x, y: resting.y - gameBounds.y, width: resting.width, height: DOCK_CURSOR_INSET + 2 }];
+  }
+
+  releaseCursorGuard() {
+    this.cursorHoverRequested = false;
+    this.cursorGuard.release();
+  }
+
+  startCursorGuard() {
+    if (!this.nativeHitTesting || this.destroyed || !this.state.visible || !this.window || this.window.isDestroyed()) return false;
+    if (typeof this.cursorGuard.start !== 'function') return false;
+    return this.cursorGuard.start((point) => this.handleNativeCursorMove(point));
+  }
+
+  handleNativeCursorMove(point) {
+    if (this.destroyed || !this.game || !this.state.visible || !this.window || this.window.isDestroyed()) return false;
+    const dipPoint = this.screen.screenToDipPoint?.(point) || point;
+    const bounds = this.window.getBounds();
+    const x = dipPoint.x - bounds.x;
+    const y = dipPoint.y - bounds.y;
+    const inside = this.cursorHitRegions.some((region) => x >= region.x && x < region.x + region.width && y >= region.y && y < region.y + region.height);
+    if (!inside) {
+      if (this.cursorGuard.active || this.cursorHoverRequested) this.releaseCursorGuard();
+      return false;
+    }
+    /* This runs before Chromium's hover IPC. A fast entry is clipped on its first
+       native mouse message, while points outside the current shape stay in CK3. */
+    return this.setCursorHover(true);
+  }
+
+  setCursorHover(hovered) {
+    this.cursorHoverRequested = Boolean(hovered && this.game && this.state.visible && !this.destroyed);
+    if (!this.cursorHoverRequested) {
+      this.cursorGuard.release();
+      return false;
+    }
+    return this.armCursorGuard();
+  }
+
+  armCursorGuard() {
+    if (this.cursorGuard.active) {
+      this.cursorGuard.check?.();
+      return this.cursorGuard.active;
+    }
+    if (!this.cursorHoverRequested || this.destroyed || !this.state.visible || !this.window || this.window.isDestroyed()) return false;
+    const gameBounds = gameDockBounds(this.game);
+    if (!gameBounds) return false;
+    /* Resting native hit regions extend two rows below the visual strip so the
+       clamped pointer remains inside before the expansion IPC reaches Windows. */
+    const landingInsideDock = this.cursorHitRegions.some((region) => region.y <= DOCK_CURSOR_INSET && region.y + region.height > DOCK_CURSOR_INSET);
+    if (!landingInsideDock) return false;
+    return this.cursorGuard.arm(gameBounds, (point) => {
+      if (!this.cursorHoverRequested || !this.window || this.window.isDestroyed()) return false;
+      const dipPoint = this.screen.screenToDipPoint?.(point) || point;
+      const bounds = this.window.getBounds();
+      const x = dipPoint.x - bounds.x;
+      const y = dipPoint.y - bounds.y;
+      /* Keep the renderer's hover request across a native watchdog exit. If a DOM
+         leave was missed, the next shape publication rechecks the physical pointer
+         and can re-arm on re-entry; a stale request alone never engages clipping. */
+      return this.cursorHitRegions.some((region) => x >= region.x && x < region.x + region.width && y >= region.y && y < region.y + region.height);
+    });
   }
 
   applyHitRegions(regions) {
     if (!this.nativeHitTesting || !this.window || this.window.isDestroyed()) return false;
     const bounds = this.window.getBounds();
     const normalized = [];
+    const cursorRegions = [];
     for (const region of Array.isArray(regions) ? regions.slice(0, 8) : []) {
       if (![region?.x, region?.y, region?.width, region?.height].every(Number.isFinite)) continue;
       const left = Math.max(0, Math.floor(region.x));
       const top = Math.max(0, Math.floor(region.y));
       const right = Math.min(bounds.width, Math.ceil(region.x + region.width));
       const bottom = Math.min(bounds.height, Math.ceil(region.y + region.height));
-      if (right > left && bottom > top) normalized.push({ x: left, y: top, width: right - left, height: bottom - top });
+      if (right <= left || bottom <= top) continue;
+      const normalizedRegion = { x: left, y: top, width: right - left, height: bottom - top };
+      normalized.push(normalizedRegion);
+      if (region.cursor !== false) cursorRegions.push(normalizedRegion);
     }
     this.hitRegions = normalized;
+    this.cursorHitRegions = cursorRegions;
     /* An empty set resets Electron's shape to the entire transparent game window.
        Keep a one-pixel inert region instead while the next renderer state arrives. */
     this.window.setShape(normalized.length ? normalized : [{ x: 0, y: 0, width: 1, height: 1 }]);
+    this.armCursorGuard();
     return true;
   }
 
   ensureWindow() {
     if (this.window && !this.window.isDestroyed()) return;
     this.ready = false;
+    const initialBounds = gameDockBounds(this.game);
     const window = new this.BrowserWindow({
-      width: 800,
-      height: 100,
+      width: initialBounds?.width || 800,
+      height: initialBounds?.height || 100,
       show: false,
       frame: false,
       transparent: true,
@@ -282,6 +372,8 @@ class GameDock {
         this.present();
       } else if (channel === 'game-dock:interactive') {
         if (!this.nativeHitTesting && !this.destroyed) window.setIgnoreMouseEvents(!payload, { forward: true });
+      } else if (channel === 'game-dock:hover') {
+        this.setCursorHover(Boolean(payload));
       } else if (channel === 'game-dock:hit-regions') {
         this.applyHitRegions(payload);
       } else if (channel === 'game-dock:text-input') {
@@ -295,7 +387,13 @@ class GameDock {
     });
     window.on('blur', this.handleBlur);
     window.on('closed', () => {
-      if (this.window === window) { this.window = null; this.ready = false; this.editing = false; }
+      if (this.window === window) {
+        this.releaseCursorGuard();
+        this.cursorGuard.stop?.();
+        this.window = null;
+        this.ready = false;
+        this.editing = false;
+      }
     });
     window.loadFile(this.htmlPath).catch((error) => this.logger.error('Game dock could not load:', error));
   }
@@ -348,18 +446,25 @@ class GameDock {
   }
 
   hide() {
+    this.releaseCursorGuard();
+    this.cursorGuard.stop?.();
     this.editing = false;
     if (this.window && !this.window.isDestroyed()) {
       this.window.setFocusable(false);
       this.window.hide();
     }
     this.state.visible = false;
+    /* A hidden native window may never deliver mouseleave/blur. Publish the hidden
+       state so the renderer clears its deduplicated hover flag before the next show. */
+    this.present();
     this.syncDraftVisibility();
   }
 
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.cursorHoverRequested = false;
+    this.cursorGuard.destroy();
     this.stopListeners();
     this.monitor.stop();
     this.onDraftVisibilityChange(false);

@@ -79,14 +79,20 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │  game-dock.cjs / game-dock-commands.cjs                                      │
 │    - BrowserWindow controller: focus-aware visibility, placement, hit        │
 │      regions, navigation, and normalizer for allow-listed commands/state.    │
-│    - 6 px resting strip; left/center/right; compact 48 / expanded 310 high.  │
+│    - 6 px resting strip; native entry only within its visible 280 px width.  │
+│      Expanded mode protects the full 680 x 48 dock; 48 / 310 high.           │
 │    - Modes: compact, draft, framing, capture, success, error.               │
 │      Latest-only live DNA Undo remains in compact controls for 18 seconds.  │
 │      Capture states: starting, armed, recording, matching,                   │
 │      saving.                                                                 │
+│  windows-cursor-guard.cjs                                                    │
+│    - Low-level mouse hook guards native dock entry before Chromium/CK3 IPC.  │
+│      While over dock/popover regions, ClipCursor holds the pointer 6 px      │
+│      below CK3's top edge; a 16 ms watchdog reasserts the clip and releases  │
+│      exited hovers. Lifecycle exits release it; no game/memory changes.      │
 │  game-dock-preload.cjs                                                       │
-│    - Exposes window.gameDock: ready, command, setInteractive, setHitRegions, │
-│      setTextInput, onState; 25 s command timeout with operation IDs.         │
+│    - Exposes window.gameDock: ready, command, setInteractive, setHover,      │
+│      setHitRegions, setTextInput, onState; 25 s timeout with operation IDs.  │
 │  game-dock.js / game-dock.css / game-dock.html                               │
 │    - Sandboxed, context-isolated dock renderer. CSP allows only 'self'       │
 │      scripts/styles; img/media/connect/object/frame-ancestors are 'none'.    │
@@ -150,7 +156,7 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │                                                                              │
 │  Dock channels exposed by window.gameDock:                                   │
 │    game-dock:ready, game-dock:command (renderer), game-dock:interactive,     │
-│    game-dock:hit-regions, game-dock:text-input;                              │
+│    game-dock:hover, game-dock:hit-regions, game-dock:text-input;             │
 │    game-dock:state / game-dock:result from main.                             │
 │                                                                              │
 │  Boundary rule: renderer/dock code receives only contextBridge methods. Node │

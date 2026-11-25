@@ -201,7 +201,8 @@ if (!electron.app) {
       await window.webContents.executeJavaScript('document.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true, clientX: 24, clientY: 120 }))');
       assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false, 'Leaving the expanded dock must begin its collapse.');
       assert.ok(report.shapes.slice(collapseStart).some((regions) => regions.some((region) => region.height > 8)), 'The native shape clipped the dock to its resting height before the exit transition could render.');
-      await waitFor(() => report.shapes.at(-1)?.every((region) => region.height <= 8), 'Collapsed dock did not reach its resting native shape');
+      await waitFor(() => report.shapes.at(-1)?.every((region) => region.height <= 10 && region.width <= 282), 'Collapsed dock did not reach its resting native shape');
+      assert.ok(report.shapes.at(-1).some((region) => region.width >= 280 && region.width <= 282), 'The collapsed native approach area returns to the narrow resting strip.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height'), 6, 'The collapsed dock did not reach its resting visual height.');
       report.passed = true;
       await snapshot('all native controls passed');
