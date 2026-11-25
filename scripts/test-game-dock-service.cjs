@@ -16,8 +16,10 @@ function fixture(options = {}) {
   };
   const commands = [];
   const cancellations = [];
+  const gameLosses = [];
   const contents = { id: 7, isDestroyed: () => false, send(channel, value) {
     if (channel === 'game-dock:cancel') cancellations.push(value);
+    if (channel === 'game-dock:game-lost') gameLosses.push(value);
     if (channel === 'game-dock:command') {
       commands.push(value);
       if (options.autoRespond !== false) queueMicrotask(() => service.completeRendererResult({ sender: contents, senderFrame: contents.mainFrame }, value.operationId, { ok: true }));
@@ -37,7 +39,7 @@ function fixture(options = {}) {
     rendererCommandTimeoutMs: options.rendererCommandTimeoutMs,
   });
   service.mainWindowWebContentsId = contents.id;
-  return { dock, commands, cancellations, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads };
+  return { dock, commands, cancellations, gameLosses, contents, service, setClipboard(value) { clipboard = value; }, reads: () => reads };
 }
 
 (async () => {
@@ -221,6 +223,16 @@ function fixture(options = {}) {
   assert.equal(trusted.service.completeRendererResult({ sender: trusted.contents, senderFrame: trusted.contents.mainFrame }, 'op-sender-trust', { ok: true }), true);
   assert.equal((await trustedCommand).ok, true);
   trusted.service.destroy();
+
+  const focusReturn = fixture();
+  focusReturn.dock.state.mode = 'success';
+  focusReturn.dock.state.draftId = 'draft-saved';
+  focusReturn.service.notifyGameLoss();
+  assert.equal(focusReturn.gameLosses.length, 0, 'View in gallery must not turn a completed save into a foreground-loss error.');
+  focusReturn.dock.state.mode = 'framing';
+  focusReturn.service.notifyGameLoss();
+  assert.deepEqual(focusReturn.gameLosses, [{ draftId: 'draft-saved', operationIds: [] }], 'An unsaved in-progress capture still receives game-loss handling.');
+  focusReturn.service.destroy();
 
   blocked.service.destroy();
   valid.service.destroy();

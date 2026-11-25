@@ -700,6 +700,9 @@ class GameDockService {
   notifyGameLoss() {
     this.publishLiveTarget(null);
     this.syncClipboardDna(false);
+    /* View in gallery intentionally focuses the app after a completed save. There is
+       no active draft or capture to interrupt, so keep the success state on re-entry. */
+    if (this.dock?.state.mode === 'success') return;
     const contents = this.getMainContents();
     const draftId = this.dock?.state.draftId || '';
     const operationIds = [...this.pendingRenderer].filter(([, request]) => request.draftId === draftId).map(([operationId]) => operationId);
