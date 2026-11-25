@@ -37,8 +37,8 @@ The game dock is a separate, content-protected overlay that appears as a thin 6 
 
 **Quick add and portraits**
 
-1. Copy persistent or Base64 DNA in CK3. **Quick add** becomes available when the dock detects supported clipboard DNA; choose it to create an automatically named character in the selected collection and open the framing controls.
-2. Quick add stays unavailable when the clipboard is empty or contains unrelated text. The dock validates the clipboard again on click so it always uses the latest valid DNA, then you can optionally enter a name and choose **Create & frame portrait** or **Save DNA only**.
+1. Copy persistent or Base64 DNA in CK3. **Quick add** becomes available when the dock detects supported clipboard DNA; choose it to open an editable draft without adding anything to the archive yet.
+2. Enter the character name inline and choose a destination, then choose **Create & frame portrait** or **Save DNA only**. A blank name still receives a unique automatic name. **Cancel** before either save action leaves the archive unchanged. Quick add stays unavailable for empty or unrelated clipboard content and validates the DNA again on click.
 3. Drag the square reticle to position it and drag its corner handles to resize it. **Snapshot** saves a 450 × 450 PNG. **Live portrait** records a 450 × 450 WebM through the same capture and Smart Loop pipeline used by the main app.
 4. Press `Ctrl+Alt+G` while CK3 is focused to start or stop a dock recording. During Smart Loop search, press it again to finish immediately.
 5. A successful quick add offers **View in gallery** and a 12-second **Undo**. Undo refuses to remove the record if it has changed elsewhere.

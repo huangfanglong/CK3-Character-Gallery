@@ -513,8 +513,10 @@ class GameDockService {
       }
       const draftId = this.createId();
       this.draftDna = dna;
-      this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: true, dnaAttached: false, liveImported: false, capture: null, crop: null, error: '', message: 'Creating the character…' });
-      return this.runMutation({ ...command, payload: { ...payload, draftId, dna, collection: this.dock.state.collection, gameHwnd: this.dock.game.hwnd } });
+      /* Quick Add only stages DNA. The editable draft must explicitly save or frame
+         before any archive record exists, so Cancel always leaves the gallery unchanged. */
+      this.dock.update({ mode: 'draft', draftId, characterId: '', characterName: '', dnaReady: true, dnaAttached: false, liveImported: false, capture: null, crop: null, busy: false, error: '', message: 'Name the character, then save its DNA or create and frame a portrait.' });
+      return { ok: true };
     }
     if (MUTATING_COMMANDS.has(type) && this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
     const collection = type === 'create-record' && payload.collection ? payload.collection : this.dock.state.collection;

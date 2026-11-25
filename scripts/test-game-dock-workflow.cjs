@@ -34,10 +34,10 @@ vm.createContext(context);
 for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInContext(fs.readFileSync(require.resolve(`../renderer/${file}`), 'utf8'), context);
 
 (async () => {
-  const created = await context.processGameDockCommand({ operationId: 'op-1', type: 'quick-add', payload: { draftId: 'draft-1', dna: 'valid-dna', collection: 'Court', gameHwnd: '42' } });
+  const created = await context.processGameDockCommand({ operationId: 'op-1', type: 'create-record', payload: { draftId: 'draft-1', name: 'Ragnhild of Jorvik', dna: 'valid-dna', collection: 'Court', gameHwnd: '42' } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const character = context.state.galleries[0].characters[0];
-  assert.equal(character.name, 'Unnamed character');
+  assert.equal(character.name, 'Ragnhild of Jorvik', 'Creation uses the name edited inline in the dock.');
   assert.equal(character.dna, 'valid-dna');
   assert.equal(context.dockUpdates.at(-1).mode, 'framing');
   assert.equal(context.state.activeId, null);
@@ -56,18 +56,18 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
 
   await context.processGameDockCommand({ operationId: 'op-5', type: 'select-for-test', payload: {} }).catch(() => {});
   context.state.modal = 'unrelated editor';
-  const busy = await context.processGameDockCommand({ operationId: 'op-6', type: 'quick-add', payload: { draftId: 'draft-3', dna: 'dna-3', collection: 'Court', gameHwnd: '42' } });
+  const busy = await context.processGameDockCommand({ operationId: 'op-6', type: 'create-record', payload: { draftId: 'draft-3', dna: 'dna-3', collection: 'Court', gameHwnd: '42' } });
   assert.equal(busy.ok, false);
   assert.match(busy.error, /Finish or cancel/);
   assert.equal(context.state.galleries[0].characters.length, 1);
   assert.equal(context.state.modal, 'unrelated editor');
   context.state.modal = null;
 
-  const missing = await context.processGameDockCommand({ operationId: 'op-7', type: 'quick-add', payload: { draftId: 'draft-4', dna: 'dna', collection: 'Deleted', gameHwnd: '42' } });
+  const missing = await context.processGameDockCommand({ operationId: 'op-7', type: 'create-record', payload: { draftId: 'draft-4', dna: 'dna', collection: 'Deleted', gameHwnd: '42' } });
   assert.equal(missing.ok, false);
   assert.equal(context.state.galleries[0].characters.length, 1);
   context.state.captureSession = null;
-  const stale = await context.processGameDockCommand({ operationId: 'op-8', type: 'quick-add', payload: { draftId: 'draft-5', dna: 'dna-5', collection: 'Court', gameHwnd: '42', frame: false } });
+  const stale = await context.processGameDockCommand({ operationId: 'op-8', type: 'create-record', payload: { draftId: 'draft-5', dna: 'dna-5', collection: 'Court', gameHwnd: '42', frame: false } });
   assert.equal(stale.ok, true);
   const previousDraftUndo = await context.processGameDockCommand({ operationId: 'op-9', type: 'undo-create', payload: { draftId: 'draft-2' } });
   assert.equal(previousDraftUndo.ok, false, 'A new quick-add must invalidate the previous draft Undo state.');
@@ -105,7 +105,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
 
   const countBeforeRetry = context.state.galleries[0].characters.length;
   context.startDockLiveCapture = async () => { throw new Error('Capture unavailable'); };
-  const failedStart = await context.processGameDockCommand({ operationId: 'op-13', type: 'quick-add', payload: { draftId: 'draft-7', dna: 'dna-7', collection: 'Court', gameHwnd: '42' } });
+  const failedStart = await context.processGameDockCommand({ operationId: 'op-13', type: 'create-record', payload: { draftId: 'draft-7', dna: 'dna-7', collection: 'Court', gameHwnd: '42' } });
   assert.equal(failedStart.ok, false);
   assert.equal(context.state.galleries[0].characters.length, countBeforeRetry + 1);
   context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };

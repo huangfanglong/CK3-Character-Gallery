@@ -88,13 +88,22 @@ function fixture(options = {}) {
 
   const fast = fixture();
   fast.setClipboard(validDna);
-  await fast.service.handleCommand({ operationId: 'op-fast', type: 'quick-add', payload: {} });
-  assert.equal(fast.commands.length, 1, 'Already copied DNA uses the immediate creation path.');
+  const staged = await fast.service.handleCommand({ operationId: 'op-fast', type: 'quick-add', payload: {} });
+  assert.equal(staged.ok, true);
+  assert.equal(fast.commands.length, 0, 'Quick Add stages DNA without immediately creating an archive record.');
+  assert.equal(fast.dock.state.mode, 'draft');
+  assert.equal(fast.dock.state.characterName, '', 'The dock draft starts with an editable name.');
+  await fast.service.handleCommand({ operationId: 'op-fast-cancel', type: 'cancel-draft', payload: {} });
+  assert.equal(fast.commands.length, 0, 'Cancelling a staged Quick Add cannot touch the archive.');
+  assert.equal(fast.dock.state.mode, 'compact');
+  await fast.service.handleCommand({ operationId: 'op-fast-named-draft', type: 'quick-add', payload: {} });
+  await fast.service.handleCommand({ operationId: 'op-fast-create', type: 'create-record', payload: { name: 'Ragnhild of Jorvik', frame: true } });
+  assert.equal(fast.commands.length, 1, 'Only the explicit create action reaches the archive.');
+  assert.equal(fast.commands[0].payload.name, 'Ragnhild of Jorvik', 'The inline dock name is used for creation.');
   assert.equal(fast.commands[0].payload.dna, validDna);
-  assert.equal(fast.commands[0].payload.draftId, 'draft-1');
-  fast.dock.state.draftId = 'draft-1';
+  assert.equal(fast.commands[0].payload.draftId, 'draft-2');
   assert.equal(fast.service.validateGameHwnd('42'), '42');
-  assert.deepEqual(fast.service.validateCaptureContext({ dockDraftId: 'draft-1', gameHwnd: '42' }), { dockDraftId: 'draft-1', gameHwnd: '42' });
+  assert.deepEqual(fast.service.validateCaptureContext({ dockDraftId: 'draft-2', gameHwnd: '42' }), { dockDraftId: 'draft-2', gameHwnd: '42' });
   assert.equal(fast.service.validateCaptureContext(), null);
   assert.throws(() => fast.service.validateCaptureContext({ dockDraftId: 'old-draft', gameHwnd: '42' }), /no longer active/);
   assert.throws(() => fast.service.validateGameHwnd('99'), /window has changed/);
@@ -144,7 +153,8 @@ function fixture(options = {}) {
   }
   const stalled = fixture({ autoRespond: false });
   stalled.setClipboard(validDna);
-  const creating = stalled.service.handleCommand({ operationId: 'op-stalled', type: 'quick-add', payload: {} });
+  await stalled.service.handleCommand({ operationId: 'op-stalled-stage', type: 'quick-add', payload: {} });
+  const creating = stalled.service.handleCommand({ operationId: 'op-stalled', type: 'create-record', payload: { name: 'Test', frame: true } });
   assert.equal(stalled.commands.length, 1);
   stalled.dock.game = null;
   const cancelled = await stalled.service.handleCommand({ operationId: 'op-cancel', type: 'cancel-draft', payload: {} });
@@ -157,15 +167,18 @@ function fixture(options = {}) {
   assert.equal(stalled.dock.state.mode, 'compact');
   assert.equal(stalled.service.completeRendererResult({ sender: stalled.contents, senderFrame: stalled.contents.mainFrame }, 'op-stalled', { ok: true }), false);
   stalled.dock.game = { hwnd: '42' };
-  const newDraft = stalled.service.handleCommand({ operationId: 'op-new', type: 'quick-add', payload: {} });
-  assert.equal(stalled.commands.length, 2, 'A new draft is not blocked by the retired mutation.');
+  await stalled.service.handleCommand({ operationId: 'op-new-stage', type: 'quick-add', payload: {} });
+  assert.equal(stalled.commands.length, 1, 'A replacement Quick Add draft does not itself create a record.');
+  const newDraft = stalled.service.handleCommand({ operationId: 'op-new', type: 'create-record', payload: { name: 'Test', frame: true } });
+  assert.equal(stalled.commands.length, 2, 'A new create action is not blocked by the retired mutation.');
   stalled.service.completeRendererResult({ sender: stalled.contents, senderFrame: stalled.contents.mainFrame }, 'op-new', { ok: true });
   assert.equal((await newDraft).ok, true);
   stalled.service.destroy();
 
   const capturePending = fixture({ autoRespond: false });
   capturePending.setClipboard(validDna);
-  const creatingCapture = capturePending.service.handleCommand({ operationId: 'op-capture-start', type: 'quick-add', payload: {} });
+  await capturePending.service.handleCommand({ operationId: 'op-capture-stage', type: 'quick-add', payload: {} });
+  const creatingCapture = capturePending.service.handleCommand({ operationId: 'op-capture-start', type: 'create-record', payload: { name: 'Capture', frame: true } });
   capturePending.dock.update({ mode: 'capture', capture: { state: 'starting' } });
   const cancelledCapture = await capturePending.service.handleCommand({ operationId: 'op-capture-cancel', type: 'cancel-capture', payload: {} });
   assert.equal(cancelledCapture.cancelled, true, 'The Preparing capture Cancel button aborts creation instead of being rejected as another mutation.');
@@ -189,7 +202,8 @@ function fixture(options = {}) {
 
   const timedOut = fixture({ autoRespond: false, rendererCommandTimeoutMs: 20 });
   timedOut.setClipboard(validDna);
-  const timeoutResult = await timedOut.service.handleCommand({ operationId: 'op-timeout', type: 'quick-add', payload: {} });
+  await timedOut.service.handleCommand({ operationId: 'op-timeout-stage', type: 'quick-add', payload: {} });
+  const timeoutResult = await timedOut.service.handleCommand({ operationId: 'op-timeout', type: 'create-record', payload: { name: 'Timeout', frame: true } });
   assert.equal(timeoutResult.ok, false);
   assert.match(timeoutResult.error, /did not finish/);
   assert.equal(timedOut.service.pendingRenderer.size, 0);
@@ -199,7 +213,8 @@ function fixture(options = {}) {
 
   const trusted = fixture({ autoRespond: false });
   trusted.setClipboard(validDna);
-  const trustedCommand = trusted.service.handleCommand({ operationId: 'op-sender-trust', type: 'quick-add', payload: {} });
+  await trusted.service.handleCommand({ operationId: 'op-sender-stage', type: 'quick-add', payload: {} });
+  const trustedCommand = trusted.service.handleCommand({ operationId: 'op-sender-trust', type: 'create-record', payload: { name: 'Trusted', frame: true } });
   assert.equal(trusted.service.completeRendererResult({ sender: { id: 999, mainFrame: trusted.contents.mainFrame }, senderFrame: trusted.contents.mainFrame }, 'op-sender-trust', { ok: true }), false, 'A foreign webContents cannot settle a renderer command.');
   assert.equal(trusted.service.completeRendererResult({ sender: trusted.contents, senderFrame: {} }, 'op-sender-trust', { ok: true }), false, 'A child frame cannot settle a renderer command.');
   assert.equal(trusted.service.pendingRenderer.has('op-sender-trust'), true);

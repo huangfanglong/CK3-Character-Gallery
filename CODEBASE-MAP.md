@@ -312,8 +312,8 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │  the foreground CK3 window; hovering unfolds the controls.                   │
 │                                                                              │
 │  Visible compact dock -> 400 ms clipboard eligibility checks -> Quick add    │
-│    revalidates on click -> createCharacterRecord with automatic name.        │
-│   Empty/unrelated clipboard DNA disables the action; no empty draft opens.   │
+│    revalidates on click -> editable draft; Cancel saves no archive record.   │
+│   Explicit Save/Create uses the inline name -> createCharacterRecord.        │
 │                                                                              │
 │  Framing -> drag/reticle and corner handles (crop math shared with the main  │
 │   app) -> Snapshot (450x450 PNG) or Live portrait (450x450 WebM, Smart Loop) │
@@ -442,8 +442,8 @@ Package version: 4.0.0 | Latest changelog release: 4.0.0
 │   frame crop -> buffered VP9 encode -> Smart Loop match/fallback -> remux -> │
 │    capture:finish -> appendPortrait() -> capture:complete.                   │
 │                                                                              │
-│  Dock quick add -> scoped clipboard DNA -> createCharacterRecord -> gallery  │
-│    sync -> framing crop -> Snapshot or Live portrait -> 12-second Undo.      │
+│  Dock quick add -> scoped DNA draft + inline name -> explicit Save/Create -> │
+│    createCharacterRecord -> framing crop -> portrait -> 12-second Undo.      │
 │                                                                              │
 │  Live import/apply -> foreground CK3 target -> worker layout + effective     │
 │   gene catalog -> DNA conversion or verified write -> selection/record sync. │

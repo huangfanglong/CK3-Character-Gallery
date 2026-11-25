@@ -143,6 +143,8 @@ if (!electron.app) {
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock.expanded") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=create-record][data-frame=true]").disabled'), false);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").disabled'), true);
+      assert.equal(createRecordCommands.length, 0, 'Quick Add opens a draft without creating a record.');
+      assert.equal(await window.webContents.executeJavaScript('document.activeElement?.id'), 'character-name', 'The inline character name is focused immediately.');
       const nameRect = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const input=document.querySelector('#character-name');input.value='Ragnhild of Jorvik';const rect=input.getBoundingClientRect();return JSON.stringify({x:rect.x,y:rect.y,height:rect.height});})()`));
       const nameY = Math.round(nameRect.y + nameRect.height / 2);
       const nameStart = Math.round(nameRect.x + 8);
@@ -173,6 +175,7 @@ if (!electron.app) {
       window.webContents.sendInputEvent({ type: 'mouseUp', x: createX, y: createY, button: 'left', clickCount: 1 });
       await delay(80);
       assert.equal(dock.state.characterName, 'Ragnhild of Jorvik');
+      assert.equal(createRecordCommands.at(-1).name, 'Ragnhild of Jorvik', 'Create & frame uses the inline dock name.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=open-collections]").disabled'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("#portrait-reticle") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll(".crop-handle").length'), 4);
@@ -450,11 +453,13 @@ if (!electron.app) {
       await delay(40);
       assert.equal(dock.state.mode, 'compact', 'A late Import failure cannot reopen an error after the toggle.');
       assert.equal(await window.webContents.executeJavaScript('dockView.pending'), false);
+      const beforeCancelledDraftCreates = createRecordCommands.length;
       await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").click()');
       await delay(40);
       assert.equal(dock.state.mode, 'draft', 'Quick Add works after the retired Import completes late.');
       await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=cancel-draft]").click()');
       await delay(40);
+      assert.equal(createRecordCommands.length, beforeCancelledDraftCreates, 'Cancelling a staged Quick Add creates no archive entry.');
       dock.update({ mode: 'compact', liveEnabled: true, busy: false });
 
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-prepare-apply]").click()');
