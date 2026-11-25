@@ -201,8 +201,28 @@ function reticleMarkup() {
 }
 
 let dockHeightAnimation = null;
+let deferredDockRender = false;
+let deferredDockRenderTimer = null;
+
+function scheduleDeferredDockRender() {
+  if (!deferredDockRender || dockPointerDowns.size || deferredDockRenderTimer !== null) return;
+  /* pointerup is followed by mouseup and click in the same input dispatch. Deferring
+     one task preserves the pressed node until Chromium has chosen the click target. */
+  deferredDockRenderTimer = setTimeout(() => {
+    deferredDockRenderTimer = null;
+    if (!dockPointerDowns.size) renderDock();
+  }, 0);
+}
 
 function renderDock() {
+  /* Replacing a pressed button before pointerup makes Chromium dispatch no click.
+     Keep the existing controls for this short interval; command handlers revalidate
+     current state, and the deferred render catches up immediately after the click. */
+  if (dockState.visible && dockPointerDowns.size) {
+    deferredDockRender = true;
+    return;
+  }
+  deferredDockRender = false;
   const mode = dockState.mode;
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
   const expanded = mode !== 'compact';
@@ -463,8 +483,10 @@ dockRoot.addEventListener('click', (event) => {
 dockRoot.addEventListener('pointerdown', (event) => {
   releasedPointerClicks.delete(event.pointerId);
   dockPointerHovers.delete(event.pointerId);
-  if (event.button === 0) dockPointerDowns.add(event.pointerId);
   const input = event.target.closest('.dock-text-input');
+  /* Text fields keep live rendering for search filtering and state updates. Only
+     controls whose pressed element must survive through click dispatch block it. */
+  if (event.button === 0 && !input) dockPointerDowns.add(event.pointerId);
   if (input) {
     /* Native focus must be requested, but Chromium still owns caret placement and
        drag-selection. Cancelling pointerdown made the field look read-only. */
@@ -475,13 +497,19 @@ dockRoot.addEventListener('pointerdown', (event) => {
   }
   beginCrop(event);
 });
+function dockCommandSignature(button) {
+  return JSON.stringify(Object.keys(button?.dataset || {}).sort().map((key) => [key, button.dataset[key]]));
+}
+
 dockRoot.addEventListener('pointermove', (event) => {
   pruneDockPointerState();
   const reticle = event.target.closest('#portrait-reticle');
   if (!event.buttons) {
     const button = event.target.closest('[data-command]');
+    const enabled = button && !button.disabled ? button : null;
     dockPointerHovers.set(event.pointerId, {
-      button: button && !button.disabled ? button : null,
+      button: enabled,
+      signature: enabled ? dockCommandSignature(enabled) : '',
       x: event.clientX, y: event.clientY, until: performance.now() + 750,
     });
     cropHover = reticle ? {
@@ -510,23 +538,26 @@ dockRoot.addEventListener('pointerup', (event) => {
   const now = performance.now();
   pruneDockPointerState(now);
   const hadPointerDown = dockPointerDowns.delete(event.pointerId);
+  scheduleDeferredDockRender();
   const hover = dockPointerHovers.get(event.pointerId);
   dockPointerHovers.delete(event.pointerId);
   cropHover = null;
   void endCrop(event);
   if (hadPointerDown || event.button !== 0) return;
   const button = event.target.closest('[data-command]');
-  if (!button || button.disabled || hover?.button !== button || now > hover.until
+  if (!button || button.disabled || hover?.signature !== dockCommandSignature(button) || now > hover.until
     || Math.abs(event.clientX - hover.x) > 4 || Math.abs(event.clientY - hover.y) > 4) return;
   /* An inactive focusable:false Electron window answers WM_MOUSEACTIVATE with
      MA_NOACTIVATEANDEAT. Dispatch an orphaned release only when this pointer just
-     hovered the same button; a drag that began in CK3 remains game input. */
+     hovered the same logical command and payload. A state render may have replaced
+     its element; a drag that began in CK3 still has no dock hover and remains input. */
   releasedPointerClicks.set(event.pointerId, { x: event.clientX, y: event.clientY, until: now + 750 });
   event.preventDefault();
   void selectCommand(button);
 });
 dockRoot.addEventListener('pointercancel', (event) => {
   dockPointerDowns.delete(event.pointerId);
+  scheduleDeferredDockRender();
   dockPointerHovers.delete(event.pointerId);
   releasedPointerClicks.delete(event.pointerId);
   cropHover = null;
@@ -592,7 +623,10 @@ function dockPointerTargets(event) {
 }
 
 document.addEventListener('mousemove', (event) => {
-  if (!event.buttons) dockPointerDowns.clear();
+  if (!event.buttons) {
+    dockPointerDowns.clear();
+    scheduleDeferredDockRender();
+  }
   const targets = dockPointerTargets(event);
   setDockRevealed(targets.overDock);
   setDockHovered(targets.overDock);
@@ -608,6 +642,7 @@ document.addEventListener('mouseleave', (event) => {
 });
 window.addEventListener('blur', () => {
   dockPointerDowns.clear();
+  scheduleDeferredDockRender();
   setDockHovered(false);
   if (!drag) { setInteractive(false); setDockRevealed(false); }
 });

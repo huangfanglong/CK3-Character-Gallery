@@ -88,22 +88,26 @@ button:disabled { cursor: default; opacity: .42; }
 .dock-bar {
   position: relative;
   z-index: 1;
+  left: 50%;
   display: flex;
   align-items: center;
   gap: 6px;
+  width: min(678px, calc(100vw - 26px));
   height: 46px;
   min-height: 46px;
   padding: 5px 7px;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-5px);
+  /* Keep controls at their final positions while the glass width animates around
+     them. Otherwise a center dock slides its buttons away between down and up. */
+  transform: translate(-50%, -5px);
   visibility: hidden;
   transition: opacity 150ms ease, transform 200ms cubic-bezier(.2, .8, .2, 1), visibility 0s 200ms;
 }
 .dock.revealed .dock-bar, .dock.expanded .dock-bar, .dock:focus-within .dock-bar {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   visibility: visible;
   transition-delay: 40ms;
 }
