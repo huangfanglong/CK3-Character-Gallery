@@ -117,7 +117,7 @@ function mainMarkup(characters) {
   const queryLabel = state.query ? `Results for “${escapeHtml(state.query)}”` : '';
   const visibleLimit = state.visibleLimit || 48;
   const renderedCharacters = characters.slice(0, visibleLimit);
-  const viewLabel = state.filters.favorites ? 'Favorites' : state.filters.dna === 'ready' ? 'DNA ready' : state.filters.dna === 'drafts' ? 'Needs DNA' : 'All faces';
+  const viewLabel = state.filters.favorites ? 'Favorites' : state.filters.dna === 'ready' ? 'DNA ready' : state.filters.dna === 'drafts' ? 'Needs DNA' : 'All';
   const galleryLabel = state.allGalleries ? 'All characters' : state.activeGallery;
   const archiveIndex = state.allGalleries ? 'ALL' : String(state.galleries.findIndex((gallery) => gallery.name === state.activeGallery) + 1).padStart(2, '0');
   const renameActive = !state.allGalleries && !state.preview && state.galleryRenameSource === state.activeGallery;
@@ -136,7 +136,7 @@ function mainMarkup(characters) {
     <section class="library-toolbar" aria-label="Current view"><div class="view-label">${icon('grid')}<strong>${viewLabel}</strong><span>${characters.length}</span></div><div class="view-hint">${state.query ? `Matching “${escapeHtml(state.query)}”` : 'Select a portrait for Quick Look'}<span>↗</span></div></section>
     ${state.view === 'table' ? `<section class="table-view"><div class="table-header"><span>PORTRAIT</span><span>CHARACTER</span><span>TAGS</span><span>STATUS</span><span></span></div>${renderedCharacters.length ? renderedCharacters.map(tableMarkup).join('') : emptyResultsMarkup()}</section>` : `<section class="card-grid ${state.view === 'compact' ? 'compact' : ''} ${state.livingContact ? 'living' : ''}">${renderedCharacters.length ? renderedCharacters.map((character, index) => cardMarkup(character, index, characters.length > 1 && !state.allGalleries && !state.preview && !state.batchMode)).join('') : emptyResultsMarkup()}</section>`}
     ${characters.length > visibleLimit ? `<div class="load-more" data-load-more><span>More portraits appear as you scroll · ${renderedCharacters.length} of ${characters.length}</span></div>` : ''}
-    <footer class="archive-footer"><span><span class="keyboard-dot"></span> Paste an in-game screenshot anywhere to add a portrait</span>></footer>
+    <footer class="archive-footer"><span><span class="keyboard-dot"></span> Paste an in-game screenshot or a CK3 DNA anywhere to add an entry</span>></footer>
     ${commandDockMarkup(characters)}
     ${comparisonTrayMarkup()}
   </main>`;
