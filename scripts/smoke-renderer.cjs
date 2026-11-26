@@ -568,13 +568,16 @@ async function main() {
   await evaluate(`(()=>{getGallery().characters.push({id:${JSON.stringify(filterFixtureIds[0])},name:'Filter Draft Match',title:'',images:[],dna:'',note:'#norse #warrior',tags:['norse','warrior'],created:4,modified:4},{id:${JSON.stringify(filterFixtureIds[1])},name:'Filter Draft Partial',title:'',images:[],dna:'',note:'#norse',tags:['norse'],created:5,modified:5});state.favorites.add(${JSON.stringify(filterFixtureIds[0])});state.favorites.add(${JSON.stringify(filterFixtureIds[1])});render();})()`);
   await evaluate("document.querySelector('[data-action=filters]').click()");
   if (!(await evaluate("Boolean(document.querySelector('#filter-panel'))"))) throw new Error('Filters button did not open the filter panel.');
+  const dnaFilterUi = JSON.parse(await evaluate("JSON.stringify({segments:[...document.querySelectorAll('[data-dna-filter]')].map((button)=>button.textContent.trim()),legacyNav:[...document.querySelectorAll('[data-filter=ready],[data-filter=drafts]')].length})"));
+  if (JSON.stringify(dnaFilterUi.segments) !== JSON.stringify(['All', 'No DNA']) || dnaFilterUi.legacyNav !== 0) throw new Error(`DNA status controls were not the All and No DNA pair (${JSON.stringify(dnaFilterUi)}).`);
   await evaluate("document.querySelector('[data-dna-filter=drafts]').click()");
+  if ((await evaluate("document.querySelector('.view-label strong')?.textContent")) !== 'No DNA') throw new Error('Selecting the No DNA filter did not relabel the current view.');
   await evaluate("document.querySelector('[data-favorite-filter]').click()");
   await evaluate("document.querySelector('[data-filter-tag][value=norse]').click()");
   await evaluate("document.querySelector('[data-filter-tag][value=warrior]').click()");
   const combinedFilterState = JSON.parse(await evaluate("JSON.stringify({visible:[...document.querySelectorAll('.character-card')].map(card=>card.dataset.characterId),count:document.querySelector('.filter-count')?.textContent,footer:document.querySelector('.filter-panel-foot span')?.textContent,dna:state.filters.dna,favorites:state.filters.favorites,tags:[...state.filters.tags].sort()})"));
   if (JSON.stringify(combinedFilterState.visible) !== JSON.stringify([filterFixtureIds[0]])) throw new Error(`Combined filters did not use AND logic (${combinedFilterState.visible.join(', ')}).`);
-  if (combinedFilterState.count !== '4' || combinedFilterState.footer !== '1 match' || combinedFilterState.dna !== 'drafts' || !combinedFilterState.favorites || combinedFilterState.tags.join(',') !== 'norse,warrior') throw new Error('Filter state, badge count, or live match count was incorrect.');
+  if (combinedFilterState.count !== '4' || combinedFilterState.footer !== '1 match' || combinedFilterState.dna !== 'drafts' || !combinedFilterState.favorites || combinedFilterState.tags.join(',') !== 'norse,warrior') throw new Error(`Filter state, badge count, or live match count was incorrect (${JSON.stringify(combinedFilterState)}).`);
   await evaluate("document.querySelector('[data-action=clear-filters]').click()");
   if ((await evaluate("activeFilterCount()")) !== 0 || (await evaluate("Boolean(document.querySelector('.filter-count'))"))) throw new Error('Clear all did not reset every active filter or badge.');
   await evaluate("(()=>{state.query='Filter Draft';render();})()");

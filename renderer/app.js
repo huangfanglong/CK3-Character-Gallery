@@ -131,7 +131,6 @@ function visibleCharacters() {
       characters = characters.filter((character) => `${character.name} ${character.title} ${character.tags.join(' ')}`.toLowerCase().includes(query));
     }
   }
-  if (state.filters.dna === 'ready') characters = characters.filter((character) => character.status === 'ready');
   if (state.filters.dna === 'drafts') characters = characters.filter((character) => character.status === 'draft');
   if (state.filters.favorites) characters = characters.filter((character) => state.favorites.has(character.id));
   if (state.filters.tags.size) {
@@ -570,7 +569,6 @@ function handleDelegatedClick(event) {
     const filter = filterButton.dataset.filter;
     if (filter === 'all') { activateAllCharacters(); return render(); }
     if (filter === 'favorites') state.filters.favorites = !state.filters.favorites;
-    if (filter === 'ready' || filter === 'drafts') state.filters.dna = state.filters.dna === filter ? 'all' : filter;
     state.filterPanelOpen = false;
     return render();
   }
