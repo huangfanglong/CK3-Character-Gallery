@@ -95,7 +95,7 @@ function createHarness() {
   };
   vm.createContext(context);
   const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'live-capture.js'), 'utf8');
-  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview; globalThis.setLiveCaptureLoopSearchSecondsForTest = setLiveCaptureLoopSearchSeconds; globalThis.liveCaptureMatchingStatusForTest = liveCaptureMatchingStatus; globalThis.startDockLiveCaptureForTest = startDockLiveCapture; globalThis.updateDockCaptureCropForTest = updateDockCaptureCrop; globalThis.resetDockCaptureCropForTest = resetDockCaptureCrop; globalThis.startDockCursorlessCaptureForTest = startDockCursorlessCapture; globalThis.stopDockCursorlessCaptureForTest = stopDockCursorlessCapture; globalThis.drawLiveCaptureFrameForTest = drawLiveCaptureFrame;`, context);
+  vm.runInContext(`${source}; globalThis.showLiveCaptureModalForTest = showLiveCaptureModal; globalThis.selectLiveCaptureSourceForTest = selectLiveCaptureSource; globalThis.startLiveCaptureRecordingForTest = startLiveCaptureRecording; globalThis.toggleLiveCaptureForTest = toggleLiveCapture; globalThis.finishLiveCaptureForTest = finishLiveCapture; globalThis.completeLiveCaptureDecisionForTest = completeLiveCaptureDecision; globalThis.cleanupLiveCapturePreviewForTest = cleanupLiveCapturePreview; globalThis.setLiveCaptureLoopSearchSecondsForTest = setLiveCaptureLoopSearchSeconds; globalThis.liveCaptureMatchingStatusForTest = liveCaptureMatchingStatus; globalThis.startDockLiveCaptureForTest = startDockLiveCapture; globalThis.updateDockCaptureCropForTest = updateDockCaptureCrop; globalThis.resetDockCaptureCropForTest = resetDockCaptureCrop; globalThis.startDockCursorlessCaptureForTest = startDockCursorlessCapture; globalThis.stopDockCursorlessCaptureForTest = stopDockCursorlessCapture; globalThis.drawDockCursorlessSnapshotForTest = drawDockCursorlessSnapshot; globalThis.drawLiveCaptureFrameForTest = drawLiveCaptureFrame;`, context);
   return { cancelledAnimationFrames, clearedIntervals, completions, context, finishCalls, intervals, releases, statuses, timeouts };
 }
 
@@ -368,7 +368,7 @@ async function main() {
     cursorlessStartArguments = args;
     const pixels = new Uint8Array(450 * 450 * 4);
     pixels.set([30, 20, 10, 255], 0);
-    cursorlessListener('cursorless-session', { pixels: pixels.buffer, sequence: 1 });
+    cursorlessListener(args[0], { pixels: pixels.buffer, sequence: 1 });
     return { width: 450, height: 450 };
   };
   context.desktop.stopCursorlessCapture = async (sessionId) => { cursorlessStops.push(sessionId); return true; };
@@ -387,6 +387,41 @@ async function main() {
   assert.equal(paintedFrames.length, 1, 'A late native frame cannot repaint a stopped capture.');
   await context.stopDockCursorlessCaptureForTest(nativeCapture);
   assert.deepEqual(cursorlessStops, ['cursorless-session'], 'Native shutdown is idempotent.');
+
+  const snapshotCapture = captureSession();
+  snapshotCapture.dock = true;
+  snapshotCapture.phase = 'ready';
+  snapshotCapture.sessionId = 'cursorless-snapshot';
+  snapshotCapture.crop = { x: 350, y: 0, size: 900 };
+  snapshotCapture.video = { readyState: 2, videoWidth: 1600, videoHeight: 900 };
+  snapshotCapture.canvas = { getContext: () => ({ drawImage: (...args) => encodedDraws.push(args) }) };
+  context.state.captureSession = snapshotCapture;
+  context.drawLiveCaptureFrame = context.drawLiveCaptureFrameForTest;
+  const drawsBeforeSnapshot = encodedDraws.length;
+  assert.equal(await context.drawDockCursorlessSnapshotForTest(snapshotCapture), true);
+  assert.equal(cursorlessStartArguments[0], 'cursorless-snapshot');
+  assert.deepEqual({ ...cursorlessStartArguments[1] }, snapshotCapture.crop);
+  assert.equal(encodedDraws.length, drawsBeforeSnapshot + 1);
+  assert.notEqual(encodedDraws.at(-1)[0], snapshotCapture.video, 'The PNG is painted from the native cursor-free canvas, never the cursored video.');
+  assert.equal(encodedDraws.at(-1)[0].width, 450);
+  assert.equal(snapshotCapture.recordingCursorless, false);
+  assert.equal(snapshotCapture.cursorlessCanvas, null);
+  assert.equal(cursorlessStops.at(-1), 'cursorless-snapshot', 'The native frame worker stops immediately after the snapshot.');
+
+  const workingCursorlessStart = context.desktop.startCursorlessCapture;
+  const failedSnapshot = captureSession();
+  failedSnapshot.dock = true;
+  failedSnapshot.phase = 'ready';
+  failedSnapshot.sessionId = 'cursorless-failed-snapshot';
+  failedSnapshot.crop = { x: 350, y: 0, size: 900 };
+  failedSnapshot.video = { readyState: 2, videoWidth: 1600, videoHeight: 900 };
+  failedSnapshot.canvas = { getContext: () => ({ drawImage: (...args) => encodedDraws.push(args) }) };
+  context.state.captureSession = failedSnapshot;
+  context.desktop.startCursorlessCapture = async () => { throw new Error('Synthetic cursor-free failure'); };
+  const drawsBeforeFailure = encodedDraws.length;
+  await assert.rejects(context.drawDockCursorlessSnapshotForTest(failedSnapshot), /Synthetic cursor-free failure/);
+  assert.equal(encodedDraws.length, drawsBeforeFailure, 'A failed native snapshot cannot fall back to the cursor-containing video.');
+  context.desktop.startCursorlessCapture = workingCursorlessStart;
   context.state.captureSession = null;
   context.document.createElement = originalCreateElement;
 
@@ -423,6 +458,7 @@ async function main() {
   assert.match(appSource, /if \(state\.modal\) \{ event\.preventDefault\(\); runModalAction\('close-modal'\); \}/);
 
   const mainSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.cjs'), 'utf8');
+  assert.match(mainSource, /!\['starting', 'armed'\]\.includes\(capture\.phase\)/, 'The native cursor-free source accepts both armed snapshots and starting recordings.');
   assert.match(mainSource, /event\.sender\.setBackgroundThrottling\(false\);\s+if \(dockContext\)/, 'App capture must keep its recording timer at full rate while CK3 owns focus.');
   assert.match(mainSource, /if \(released && capture\?\.ownerWebContentsId === mainWindowWebContentsId\) \{\s+mainWindow\?\.webContents\.setBackgroundThrottling\(true\);\s+\}/, 'Every completed app or dock capture must restore normal throttling.');
   assert.match(mainSource, /if \(ownerWebContentsId === mainWindowWebContentsId\) mainWindow\?\.webContents\.setBackgroundThrottling\(true\);/, 'Renderer teardown must restore normal throttling for app and dock captures.');

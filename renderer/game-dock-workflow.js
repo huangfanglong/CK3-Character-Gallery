@@ -151,7 +151,7 @@ async function captureDockSnapshot(workflow) {
   await publishDockState({ mode: 'capture', capture: { state: 'saving' }, busy: true, message: 'Saving portrait…', error: '' });
   let selected = null;
   try {
-    if (!drawLiveCaptureFrame(capture)) throw new Error('Wait for a visible CK3 frame, then try Snapshot again.');
+    if (!await drawDockCursorlessSnapshot(capture)) throw new Error('Wait for a visible CK3 frame, then try Snapshot again.');
     selected = await desktop.saveCroppedImage(character.id, { dataUrl: capture.canvas.toDataURL('image/png'), x: 0, y: 0, size: 450 });
     const saved = await appendPortrait(character, selected, 'Portrait and DNA saved.', true);
     if (!saved) throw new Error('The portrait could not be added to the archive.');

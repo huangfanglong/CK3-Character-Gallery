@@ -660,6 +660,20 @@ async function startDockCursorlessCapture(capture) {
   }
 }
 
+async function drawDockCursorlessSnapshot(capture) {
+  const video = capture?.video;
+  if (!capture?.dock || !video?.videoWidth || !video?.videoHeight || !capture.crop) return false;
+  capture.recordingCrop = clampCaptureCrop(capture.crop, video.videoWidth, video.videoHeight);
+  await startDockCursorlessCapture(capture);
+  try {
+    /* Copy the native cursor-free frame into the PNG canvas, then stop its 30 fps
+       worker immediately; a snapshot must never fall back to the cursored video. */
+    return drawLiveCaptureFrame(capture);
+  } finally {
+    await stopDockCursorlessCapture(capture);
+  }
+}
+
 function drawLiveCaptureFrame(capture) {
   if (capture?.recordingCursorless) {
     if (!capture.cursorlessFrameReady || !capture.cursorlessCanvas || !capture.canvas) return false;

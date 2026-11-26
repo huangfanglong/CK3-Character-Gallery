@@ -499,7 +499,7 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut, context) => {
 
 ipcMain.handle('capture:start-cursorless', async (event, sessionId, crop) => {
   const capture = requireCaptureOwner(event, sessionId);
-  if (!capture.dockDraftId || capture.phase !== 'starting') throw new Error('Cursor-free capture is only available while starting a dock recording.');
+  if (!capture.dockDraftId || !['starting', 'armed'].includes(capture.phase)) throw new Error('Cursor-free capture is only available for an active dock snapshot or recording.');
   if (!capture.sourceId.startsWith(`window:${capture.gameHwnd}:`)) throw new Error('The CK3 capture window no longer matches this session.');
   const sender = event.sender;
   try {

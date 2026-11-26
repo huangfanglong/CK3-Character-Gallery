@@ -87,7 +87,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.equal(previousDraftUndo.ok, false, 'A new quick-add must invalidate the previous draft Undo state.');
   assert.equal(context.state.galleries[0].characters.length, 2);
 
-  context.drawLiveCaptureFrame = () => true;
+  context.drawDockCursorlessSnapshot = async (capture) => { capture.usedCursorlessSnapshot = true; return true; };
   context.hasMaximumPortraits = () => false;
   context.desktop.saveCroppedImage = async (characterId, payload) => {
     assert.equal(characterId, context.state.galleries[0].characters.at(-1).id);
@@ -101,9 +101,11 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
     return true;
   };
   context.appendResult = true;
-  context.state.captureSession = { dock: true, dockDraftId: 'draft-5', phase: 'ready', canvas: { toDataURL: () => 'data:image/png;base64,AA==' } };
+  const snapshotCapture = { dock: true, dockDraftId: 'draft-5', phase: 'ready', canvas: { toDataURL: () => 'data:image/png;base64,AA==' } };
+  context.state.captureSession = snapshotCapture;
   const snapshot = await context.processGameDockCommand({ operationId: 'op-10', type: 'snapshot', payload: { draftId: 'draft-5' } });
   assert.equal(snapshot.ok, true);
+  assert.equal(snapshotCapture.usedCursorlessSnapshot, true, 'Dock snapshots use the cursor-free native frame path.');
   assert.equal(context.state.galleries[0].characters.at(-1).images[0], 'dock-portrait.png');
   assert.equal(context.dockUpdates.at(-1).mode, 'success');
 
