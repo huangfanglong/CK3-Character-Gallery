@@ -151,7 +151,7 @@ function framingMarkup() {
   const capture = dockState.capture;
   const opening = dockState.busy || dockView.pending;
   const unavailable = capture || opening ? ' disabled' : '';
-  return `<div class="dock-body" aria-busy="${opening}"><div class="dock-heading"><div><p class="eyebrow">${opening ? 'OPENING CK3 CAPTURE' : 'PORTRAIT FRAMING'}</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Keep character and close quick add">${dockIcon('close')}</button></div><p class="helper">${opening ? 'This may take a few seconds. Keep & close preserves the character if it has already been saved.' : 'Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.'}</p><div class="capture-actions" style="margin-top:14px"><button class="text-button" data-command="reset-crop"${unavailable}>Reset frame</button><span class="spacer"></span><div class="skip-portrait-controls"><button class="text-button" data-command="finish-without-portrait"${unavailable}>Skip portrait</button><label class="loop-search-field" for="dock-loop-search-seconds"><span>Smooth loop search</span><span class="loop-search-value"><input id="dock-loop-search-seconds" class="input dock-text-input" type="number" min="1" max="25" step="1" value="${dockState.loopSearchSeconds || 2}"${unavailable} /><span aria-hidden="true">sec</span></span></label></div><button class="secondary-button" data-command="live-capture"${unavailable}>${dockIcon('record')} Live portrait</button><button class="primary-button" data-command="snapshot"${unavailable}>${dockIcon('camera')} Snapshot</button></div><button class="text-button" data-command="cancel-draft">Keep & close</button></div>`;
+  return `<div class="dock-body" aria-busy="${opening}"><div class="dock-heading"><div><p class="eyebrow">${opening ? 'OPENING CK3 CAPTURE' : 'PORTRAIT FRAMING'}</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Keep character and close quick add">${dockIcon('close')}</button></div><p class="helper">${opening ? 'This may take a few seconds. Keep & close preserves the character if it has already been saved.' : 'Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.'}</p><div class="capture-actions" style="margin-top:14px"><button class="text-button reset-frame-button" data-command="reset-crop"${unavailable}>Reset frame</button><button class="text-button skip-portrait-button" data-command="finish-without-portrait"${unavailable}>Skip portrait</button><button class="secondary-button live-portrait-button" data-command="live-capture"${unavailable}>${dockIcon('record')} Live portrait</button><button class="primary-button snapshot-button" data-command="snapshot"${unavailable}>${dockIcon('camera')} Snapshot</button><button class="text-button keep-close-button" data-command="cancel-draft">Keep & close</button><label class="loop-search-field" for="dock-loop-search-seconds"><span>Smooth loop search</span><span class="loop-search-value"><input id="dock-loop-search-seconds" class="input dock-text-input" type="number" min="1" max="25" step="1" value="${dockState.loopSearchSeconds || 2}"${unavailable} /><span aria-hidden="true">sec</span></span></label></div></div>`;
 }
 
 function captureMarkup() {
@@ -215,28 +215,8 @@ function reticleMarkup() {
 }
 
 let dockHeightAnimation = null;
-let deferredDockRender = false;
-let deferredDockRenderTimer = null;
-
-function scheduleDeferredDockRender() {
-  if (!deferredDockRender || dockPointerDowns.size || deferredDockRenderTimer !== null) return;
-  /* pointerup is followed by mouseup and click in the same input dispatch. Deferring
-     one task preserves the pressed node until Chromium has chosen the click target. */
-  deferredDockRenderTimer = setTimeout(() => {
-    deferredDockRenderTimer = null;
-    if (!dockPointerDowns.size) renderDock();
-  }, 0);
-}
 
 function renderDock() {
-  /* Replacing a pressed button before pointerup makes Chromium dispatch no click.
-     Keep the existing controls for this short interval; command handlers revalidate
-     current state, and the deferred render catches up immediately after the click. */
-  if (dockState.visible && dockPointerDowns.size) {
-    deferredDockRender = true;
-    return;
-  }
-  deferredDockRender = false;
   const mode = dockState.mode;
   const capture = Boolean(dockState.capture) || ['recording', 'matching', 'saving'].includes(mode);
   const expanded = mode !== 'compact' && (mode !== 'framing' || dockView.revealed);
@@ -484,6 +464,7 @@ function nudgeCrop(event) {
 }
 
 const dockPointerDowns = new Set();
+const dockPointerPresses = new Map();
 const dockPointerHovers = new Map();
 const releasedPointerClicks = new Map();
 let cropHover = null;
@@ -506,8 +487,8 @@ dockRoot.addEventListener('click', (event) => {
   pruneDockPointerState();
   const released = releasedPointerClicks.get(event.pointerId);
   if (released && Math.abs(event.clientX - released.x) <= 2 && Math.abs(event.clientY - released.y) <= 2) {
-    /* Some Windows/Chromium combinations still synthesize click after an orphaned
-       pointer-up. Suppress only the click from that same physical pointer. */
+    /* Pointer release already activated this physical click. Chromium may still
+       synthesize its compatibility click, which must not run the command twice. */
     releasedPointerClicks.delete(event.pointerId);
     event.preventDefault();
     return;
@@ -521,10 +502,17 @@ dockRoot.addEventListener('click', (event) => {
 dockRoot.addEventListener('pointerdown', (event) => {
   releasedPointerClicks.delete(event.pointerId);
   dockPointerHovers.delete(event.pointerId);
+  dockPointerPresses.delete(event.pointerId);
   const input = event.target.closest('.dock-text-input');
-  /* Text fields keep live rendering for search filtering and state updates. Only
-     controls whose pressed element must survive through click dispatch block it. */
-  if (event.button === 0 && !input) dockPointerDowns.add(event.pointerId);
+  if (event.button === 0 && !input) {
+    dockPointerDowns.add(event.pointerId);
+    const button = event.target.closest('[data-command]');
+    if (button && !button.disabled) {
+      dockPointerPresses.set(event.pointerId, {
+        signature: dockCommandSignature(button), mode: dockState.mode, draftId: dockState.draftId || '',
+      });
+    }
+  }
   if (input) {
     /* Native focus must be requested, but Chromium still owns caret placement and
        drag-selection. Cancelling pointerdown made the field look read-only. */
@@ -533,8 +521,25 @@ dockRoot.addEventListener('pointerdown', (event) => {
   }
   beginCrop(event);
 });
-function dockCommandSignature(button) {
+function dockCommandPayload(button) {
   return JSON.stringify(Object.keys(button?.dataset || {}).sort().map((key) => [key, button.dataset[key]]));
+}
+
+function dockCommandSignature(button) {
+  const payload = dockCommandPayload(button);
+  /* Duplicate commands such as the two Cancel controls remain distinct. The ordinal
+     is stable across equivalent renders, unlike a DOM node identity. */
+  const peers = [...dockRoot.querySelectorAll('[data-command]')].filter((candidate) => dockCommandPayload(candidate) === payload);
+  return `${payload}|${peers.indexOf(button)}`;
+}
+
+function dockEventTarget(event, selector) {
+  const target = event.target.closest(selector);
+  if (target && dockRoot.contains(target)) return target;
+  /* A state render can detach the original pointer target before release. Resolve
+     the control currently beneath the pointer instead of activating stale markup. */
+  const current = document.elementFromPoint(event.clientX, event.clientY)?.closest(selector);
+  return current && dockRoot.contains(current) ? current : null;
 }
 
 dockRoot.addEventListener('pointermove', (event) => {
@@ -574,35 +579,42 @@ dockRoot.addEventListener('pointerout', (event) => {
 dockRoot.addEventListener('pointerup', (event) => {
   const now = performance.now();
   pruneDockPointerState(now);
-  const hadPointerDown = dockPointerDowns.delete(event.pointerId);
-  scheduleDeferredDockRender();
+  dockPointerDowns.delete(event.pointerId);
+  const press = dockPointerPresses.get(event.pointerId);
+  dockPointerPresses.delete(event.pointerId);
   const hover = dockPointerHovers.get(event.pointerId);
   dockPointerHovers.delete(event.pointerId);
   cropHover = null;
   void endCrop(event);
-  if (hadPointerDown || event.button !== 0) return;
-  /* An inactive focusable:false Electron window answers WM_MOUSEACTIVATE with
-     MA_NOACTIVATEANDEAT. Recover an orphaned release only when this pointer just
-     hovered the same field or command. A drag that began in CK3 remains game input. */
+  if (event.button !== 0) return;
+  /* Windows may eat pointerdown for an inactive focusable:false window. Only that
+     orphaned release needs the recent-hover proof; a drag begun in CK3 has neither
+     a dock press nor a matching dock hover and remains game input. */
   const nearHover = hover && now <= hover.until
     && Math.abs(event.clientX - hover.x) <= 4 && Math.abs(event.clientY - hover.y) <= 4;
-  const input = event.target.closest('.dock-text-input');
-  if (input && nearHover && input.id && hover.inputId === input.id) {
+  const input = dockEventTarget(event, '.dock-text-input');
+  if (!press && input && nearHover && input.id && hover.inputId === input.id) {
     event.preventDefault();
     activateDockTextInput(input, true);
     return;
   }
-  const button = event.target.closest('[data-command]');
-  if (!button || button.disabled || hover?.signature !== dockCommandSignature(button) || !nearHover) return;
-  /* A state render may replace the button between press and release; its logical
-     command and payload are checked rather than its discarded DOM identity. */
+  const button = dockEventTarget(event, '[data-command]');
+  if (!button || button.disabled) return;
+  const signature = dockCommandSignature(button);
+  const completedPress = press && press.signature === signature
+    && press.mode === dockState.mode && press.draftId === (dockState.draftId || '');
+  const recoveredRelease = !press && nearHover && hover?.signature === signature;
+  if (!completedPress && !recoveredRelease) return;
+  /* Activate on the validated release itself. A later state render is then harmless:
+     Chromium is allowed to drop its DOM-dependent click, and the dedupe record above
+     prevents a delivered compatibility click from executing the command again. */
   releasedPointerClicks.set(event.pointerId, { x: event.clientX, y: event.clientY, until: now + 750 });
   event.preventDefault();
   void selectCommand(button);
 });
 dockRoot.addEventListener('pointercancel', (event) => {
   dockPointerDowns.delete(event.pointerId);
-  scheduleDeferredDockRender();
+  dockPointerPresses.delete(event.pointerId);
   dockPointerHovers.delete(event.pointerId);
   releasedPointerClicks.delete(event.pointerId);
   cropHover = null;
@@ -673,7 +685,7 @@ function dockPointerTargets(event) {
 document.addEventListener('mousemove', (event) => {
   if (!event.buttons) {
     dockPointerDowns.clear();
-    scheduleDeferredDockRender();
+    dockPointerPresses.clear();
   }
   const targets = dockPointerTargets(event);
   setDockRevealed(targets.overDock);
@@ -690,13 +702,14 @@ document.addEventListener('mouseleave', (event) => {
 });
 window.addEventListener('blur', () => {
   dockPointerDowns.clear();
-  scheduleDeferredDockRender();
+  dockPointerPresses.clear();
   setDockHovered(false);
   if (!drag) { setInteractive(false); setDockRevealed(false); }
 });
 dockBridge.onState((nextState) => {
   if (!nextState.visible) {
     dockPointerDowns.clear();
+    dockPointerPresses.clear();
     setDockHovered(false);
   }
   const input = document.activeElement;

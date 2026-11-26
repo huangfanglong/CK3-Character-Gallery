@@ -182,10 +182,13 @@ h2 { margin-bottom: 0; font-size: 18px; font-weight: 700; letter-spacing: -.025e
 .destination-button .icon { color: var(--muted); }
 .destination-button:hover { border-color: rgba(108, 92, 231, .45); background: white; }
 .draft-actions, .capture-actions, .success-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.mode-framing .capture-actions { flex-wrap: nowrap; align-items: flex-start; }
-.mode-framing .capture-actions > button { flex: none; }
-.skip-portrait-controls { display: grid; flex: none; justify-items: start; gap: 7px; }
-.loop-search-field { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.mode-framing .capture-actions { display: grid; grid-template-columns: max-content minmax(0, 1fr) repeat(3, max-content); align-items: center; gap: 7px 8px; }
+.reset-frame-button { grid-column: 1; grid-row: 1; }
+.skip-portrait-button { grid-column: 3; grid-row: 1; padding-left: 0; }
+.live-portrait-button { grid-column: 4; grid-row: 1; }
+.snapshot-button { grid-column: 5; grid-row: 1; }
+.keep-close-button { grid-column: 1; grid-row: 2; justify-self: start; }
+.loop-search-field { display: flex; grid-column: 3 / 5; grid-row: 2; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .loop-search-value { display: flex; flex: none; align-items: center; gap: 5px; color: var(--faint); }
 .loop-search-field .input { flex: none; width: 52px; min-height: 29px; border-radius: 8px; padding: 3px 5px; text-align: center; }
 .draft-actions .helper { margin-right: auto; }

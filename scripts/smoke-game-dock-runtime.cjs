@@ -202,15 +202,29 @@ if (!electron.app) {
         const input=document.querySelector('#dock-loop-search-seconds');
         const row=document.querySelector('.loop-search-field').getBoundingClientRect();
         const inputRect=input.getBoundingClientRect();
-        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
-        return JSON.stringify({exists:Boolean(input),disabled:input.disabled,value:input.value,rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:document.querySelector('.loop-search-value > span').getBoundingClientRect().right,inputRight:inputRect.right});
+        const skipButton=document.querySelector('[data-command=finish-without-portrait]');
+        const skip=skipButton.getBoundingClientRect();
+        const skipTextRange=document.createRange();
+        skipTextRange.selectNodeContents(skipButton.firstChild);
+        const skipText=skipTextRange.getBoundingClientRect();
+        const reset=document.querySelector('[data-command=reset-crop]').getBoundingClientRect();
+        const keep=document.querySelector('.keep-close-button').getBoundingClientRect();
+        const live=document.querySelector('[data-command=live-capture]').getBoundingClientRect();
+        const actions=document.querySelector('.mode-framing .capture-actions').getBoundingClientRect();
+        const snapshot=document.querySelector('[data-command=snapshot]').getBoundingClientRect();
+        return JSON.stringify({exists:Boolean(input),disabled:input.disabled,value:input.value,rowTop:row.top,rowLeft:row.left,skipTop:skip.top,skipRight:skip.right,skipBottom:skip.bottom,skipTextLeft:skipText.left,rowRight:row.right,unitRight:document.querySelector('.loop-search-value > span').getBoundingClientRect().right,inputRight:inputRect.right,
+          resetLeft:reset.left,resetBottom:reset.bottom,keepLeft:keep.left,keepTop:keep.top,liveLeft:live.left,liveTop:live.top,actionsLeft:actions.left,actionsRight:actions.right,snapshotRight:snapshot.right});
       })()`));
       assert.equal(initialLoopControl.exists, true);
       assert.equal(initialLoopControl.disabled, false, 'The duration is editable before capture starts.');
       assert.equal(initialLoopControl.value, '2');
       assert.ok(initialLoopControl.rowTop >= initialLoopControl.skipBottom, 'Smooth loop search sits directly beneath Skip portrait.');
-      assert.ok(Math.abs(initialLoopControl.rowLeft - initialLoopControl.skipLeft) <= .5, 'The duration row aligns with the left edge of Skip portrait.');
+      assert.ok(Math.abs(initialLoopControl.rowLeft - initialLoopControl.skipTextLeft) <= .5, 'The Smooth and Skip text aligns.');
       assert.ok(initialLoopControl.inputRight <= initialLoopControl.rowRight + .5 && initialLoopControl.unitRight <= initialLoopControl.rowRight + .5, 'The seconds field and unit stay inside the moved row.');
+      assert.ok(initialLoopControl.keepTop >= initialLoopControl.resetBottom && Math.abs(initialLoopControl.keepLeft - initialLoopControl.resetLeft) <= .5, 'Keep & close sits directly beneath Reset frame.');
+      assert.ok(Math.abs(initialLoopControl.resetLeft - initialLoopControl.actionsLeft) <= .5 && Math.abs(initialLoopControl.keepLeft - initialLoopControl.actionsLeft) <= .5, 'Reset frame and Keep & close remain anchored to the far left.');
+      assert.ok(Math.abs(initialLoopControl.snapshotRight - initialLoopControl.actionsRight) <= .5, 'The Skip, Live portrait, and Snapshot group remains anchored to the far right.');
+      assert.ok(Math.abs(initialLoopControl.liveLeft - initialLoopControl.skipRight - 8) <= .5 && Math.abs(initialLoopControl.liveTop - initialLoopControl.skipTop) <= .5, 'Live portrait sits immediately beside Skip portrait.');
       const loopRect = await window.webContents.executeJavaScript(`document.querySelector('#dock-loop-search-seconds').getBoundingClientRect().toJSON()`);
       const loopTextX = Math.round(loopRect.x + loopRect.width * .55);
       const loopTextY = Math.round(loopRect.y + loopRect.height / 2);
@@ -375,11 +389,15 @@ if (!electron.app) {
       const loopUnitLayout = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
         const row=document.querySelector('.loop-search-field').getBoundingClientRect();
         const unit=document.querySelector('.loop-search-value > span').getBoundingClientRect();
-        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
-        return JSON.stringify({rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:unit.right});
+        const skipButton=document.querySelector('[data-command=finish-without-portrait]');
+        const skip=skipButton.getBoundingClientRect();
+        const skipTextRange=document.createRange();
+        skipTextRange.selectNodeContents(skipButton.firstChild);
+        const skipText=skipTextRange.getBoundingClientRect();
+        return JSON.stringify({rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,skipTextLeft:skipText.left,rowRight:row.right,unitRight:unit.right});
       })()`));
       assert.ok(loopUnitLayout.rowTop >= loopUnitLayout.skipBottom, `Retraction keeps the duration row beneath Skip portrait (${JSON.stringify(loopUnitLayout)}).`);
-      assert.ok(Math.abs(loopUnitLayout.rowLeft - loopUnitLayout.skipLeft) <= .5, `Retraction preserves left alignment with Skip portrait (${JSON.stringify(loopUnitLayout)}).`);
+      assert.ok(Math.abs(loopUnitLayout.rowLeft - loopUnitLayout.skipTextLeft) <= .5, `Retraction preserves the text alignment without changing the action layout (${JSON.stringify(loopUnitLayout)}).`);
       assert.ok(loopUnitLayout.unitRight <= loopUnitLayout.rowRight + .5, `The seconds unit must stay inside the moved row (${JSON.stringify(loopUnitLayout)}).`);
 
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-capture]").click()');

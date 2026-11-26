@@ -239,15 +239,28 @@ if (!electron.app) {
       report.loopSearchLayout = await window.webContents.executeJavaScript(`(()=>{
         const row=document.querySelector('.loop-search-field').getBoundingClientRect();
         const unit=document.querySelector('.loop-search-value > span').getBoundingClientRect();
-        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
+        const reset=document.querySelector('[data-command=reset-crop]').getBoundingClientRect();
+        const keep=document.querySelector('.keep-close-button').getBoundingClientRect();
+        const skipButton=document.querySelector('[data-command=finish-without-portrait]');
+        const skip=skipButton.getBoundingClientRect();
+        const skipTextRange=document.createRange();
+        skipTextRange.selectNodeContents(skipButton.firstChild);
+        const skipText=skipTextRange.getBoundingClientRect();
+        const live=document.querySelector('[data-command=live-capture]').getBoundingClientRect();
         const snapshot=document.querySelector('[data-command=snapshot]').getBoundingClientRect();
-        return {rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:unit.right,snapshotLeft:snapshot.left};
+        const actions=document.querySelector('.mode-framing .capture-actions').getBoundingClientRect();
+        return {rowTop:row.top,rowLeft:row.left,skipTop:skip.top,skipRight:skip.right,skipBottom:skip.bottom,skipTextLeft:skipText.left,rowRight:row.right,unitRight:unit.right,snapshotLeft:snapshot.left,
+          resetLeft:reset.left,resetBottom:reset.bottom,keepLeft:keep.left,keepTop:keep.top,liveLeft:live.left,liveTop:live.top,actionsLeft:actions.left,actionsRight:actions.right,snapshotRight:snapshot.right};
       })()`);
       const layout = report.loopSearchLayout;
       assert.ok(layout.rowTop >= layout.skipBottom, `Smooth loop search must sit beneath Skip portrait (${JSON.stringify(layout)}).`);
-      assert.ok(Math.abs(layout.rowLeft - layout.skipLeft) <= .5, `The duration row must align with the left edge of Skip portrait (${JSON.stringify(layout)}).`);
+      assert.ok(Math.abs(layout.rowLeft - layout.skipTextLeft) <= .5, `The Smooth and Skip text must align (${JSON.stringify(layout)}).`);
       assert.ok(layout.unitRight <= layout.rowRight + .5, `The seconds unit must stay inside the moved row (${JSON.stringify(layout)}).`);
       assert.ok(layout.unitRight < layout.snapshotLeft, `The seconds unit must remain clear of Snapshot (${JSON.stringify(layout)}).`);
+      assert.ok(layout.keepTop >= layout.resetBottom && Math.abs(layout.keepLeft - layout.resetLeft) <= .5, `Keep & close must sit directly beneath Reset frame (${JSON.stringify(layout)}).`);
+      assert.ok(Math.abs(layout.resetLeft - layout.actionsLeft) <= .5 && Math.abs(layout.keepLeft - layout.actionsLeft) <= .5, `Reset frame and Keep & close must remain far left (${JSON.stringify(layout)}).`);
+      assert.ok(Math.abs(layout.snapshotRight - layout.actionsRight) <= .5, `The Skip, Live portrait, and Snapshot group must remain far right (${JSON.stringify(layout)}).`);
+      assert.ok(Math.abs(layout.liveLeft - layout.skipRight - 8) <= .5 && Math.abs(layout.liveTop - layout.skipTop) <= .5, `Live portrait must sit immediately beside Skip portrait (${JSON.stringify(layout)}).`);
       const initialDurationFocus = await clickDurationField();
       assert.equal(initialDurationFocus.active, 'dock-loop-search-seconds', `The initial native duration click must focus the field (${JSON.stringify(initialDurationFocus)}).`);
       await leaveDurationField();
