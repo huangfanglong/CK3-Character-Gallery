@@ -421,7 +421,12 @@ async function main() {
 
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
   assert.match(appSource, /if \(state\.modal\) \{ event\.preventDefault\(\); runModalAction\('close-modal'\); \}/);
-  console.log('Live capture lifecycle test passed: stale work isolation, abortable dock startup, late resource cleanup, accurate recording, and modal cleanup.');
+
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.cjs'), 'utf8');
+  assert.match(mainSource, /event\.sender\.setBackgroundThrottling\(false\);\s+if \(dockContext\)/, 'App capture must keep its recording timer at full rate while CK3 owns focus.');
+  assert.match(mainSource, /if \(released && capture\?\.ownerWebContentsId === mainWindowWebContentsId\) \{\s+mainWindow\?\.webContents\.setBackgroundThrottling\(true\);\s+\}/, 'Every completed app or dock capture must restore normal throttling.');
+  assert.match(mainSource, /if \(ownerWebContentsId === mainWindowWebContentsId\) mainWindow\?\.webContents\.setBackgroundThrottling\(true\);/, 'Renderer teardown must restore normal throttling for app and dock captures.');
+  console.log('Live capture lifecycle test passed: stale work isolation, background capture timing, abortable dock startup, late resource cleanup, accurate recording, and modal cleanup.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

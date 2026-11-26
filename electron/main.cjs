@@ -245,7 +245,7 @@ function releaseCaptureSession(sessionId, terminalStatus = null) {
   const capture = captureSessions.get(sessionId);
   const released = captureSessions.release(sessionId);
   if (released) void cursorlessCapture.stop(sessionId).catch((error) => console.error('Cursor-free capture could not stop:', error));
-  if (released && capture?.dockDraftId && capture.ownerWebContentsId === mainWindowWebContentsId) {
+  if (released && capture?.ownerWebContentsId === mainWindowWebContentsId) {
     mainWindow?.webContents.setBackgroundThrottling(true);
   }
   try {
@@ -261,7 +261,7 @@ function releaseCaptureSessionsByOwner(ownerWebContentsId) {
   captureSessions.releaseByOwner(ownerWebContentsId);
   if (capture?.ownerWebContentsId === ownerWebContentsId) {
     void cursorlessCapture.stop(sessionId).catch((error) => console.error('Cursor-free capture could not stop:', error));
-    if (capture.dockDraftId) mainWindow?.webContents.setBackgroundThrottling(true);
+    if (ownerWebContentsId === mainWindowWebContentsId) mainWindow?.webContents.setBackgroundThrottling(true);
     try { presentCaptureStatus(capture, sessionId, null); }
     catch (error) { console.error('Capture status could not be released:', error); }
   }
@@ -483,8 +483,10 @@ ipcMain.handle('capture:arm', (event, sourceId, shortcut, context) => {
     },
   });
   try {
+    /* Recording is driven from this renderer while CK3 owns focus. Without this
+       exemption Chromium reduces a hidden gallery's 30 fps timer to about 1 fps. */
+    event.sender.setBackgroundThrottling(false);
     if (dockContext) {
-      event.sender.setBackgroundThrottling(false);
       presentCaptureStatus(captureSessions.get(sessionId), sessionId, { state: 'starting' });
     } else {
       const hud = ensureCaptureHud();
