@@ -271,13 +271,37 @@ function handleGameDockGameLoss({ draftId }) {
   void publishDockState({ mode: 'error', busy: false, capture: null, crop: null, error: 'CK3 is no longer in the foreground. The character and DNA are still saved.' });
 }
 
+async function discardGameDockDraft(cancellation = {}) {
+  const draftId = cancellation.draftId || '';
+  const workflow = dockWorkflow?.draftId === draftId ? dockWorkflow : null;
+  /* Retire queued work and abort an active create before removing anything. A late
+     save may still finish on disk, so wait for that exact creation before rollback. */
+  cancelGameDockDraft({ ...cancellation, reason: 'cancelled' });
+  if (!workflow) return false;
+  if (dockWorkflow === workflow) dockWorkflow = null;
+  try { await workflow.creationPromise; }
+  catch { return true; }
+  const character = dockWorkflowCharacter(workflow);
+  if (!character) return true;
+  const removed = await removeCreatedCharacter({
+    characterId: character.id, galleryName: workflow.galleryName, expectedModified: workflow.expectedModified,
+  });
+  await cleanupUnusedPortraits(removed.imagePaths);
+  state.favorites.delete(character.id);
+  state.imageUrls.delete(character.id);
+  return true;
+}
+
 function installGameDockBridge() {
   desktop?.onGameDockCommand?.((command) => {
     void handleGameDockCommand(command)
       .then((result) => desktop.completeGameDockCommand(command.operationId, result))
       .catch((error) => desktop.completeGameDockCommand(command.operationId, { ok: false, error: readableError(error, 'The dock action failed.') }));
   });
-  desktop?.onGameDockCancel?.(cancelGameDockDraft);
+  desktop?.onGameDockCancel?.((cancellation) => {
+    if (cancellation?.reason !== 'discard') { cancelGameDockDraft(cancellation); return; }
+    void discardGameDockDraft(cancellation).catch((error) => showToast(readableError(error, 'The new character could not be removed.'), 'info'));
+  });
   desktop?.onGameDockGameLoss?.(handleGameDockGameLoss);
   desktop?.onGameDockPreferences?.(receiveGameDockPreferences);
   if (desktop?.getGameDockPreferences) {

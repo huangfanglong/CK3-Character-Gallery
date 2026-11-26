@@ -112,6 +112,15 @@ function fixture(options = {}) {
   assert.throws(() => fast.service.validateCaptureContext({ dockDraftId: 'old-draft', gameHwnd: '42' }), /no longer active/);
   assert.throws(() => fast.service.validateGameHwnd('99'), /window has changed/);
 
+  const discarded = fixture();
+  discarded.setClipboard(validDna);
+  await discarded.service.handleCommand({ operationId: 'op-discard-stage', type: 'quick-add', payload: {} });
+  await discarded.service.handleCommand({ operationId: 'op-discard-close', type: 'discard-draft', payload: {} });
+  assert.equal(discarded.commands.length, 0, 'Closing a staged draft never forwards a create command.');
+  assert.deepEqual(discarded.cancellations[0], { draftId: 'draft-1', reason: 'discard', operationIds: [] });
+  assert.equal(discarded.dock.state.mode, 'compact');
+  discarded.service.destroy();
+
   const destination = fixture();
   destination.dock.state.mode = 'draft';
   destination.dock.state.draftId = 'draft-1';

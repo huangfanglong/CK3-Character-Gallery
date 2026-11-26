@@ -188,6 +188,33 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.equal((await queued).cancelled, true);
   assert.equal(context.state.galleries[0].characters.length, beforeQueuedCancel, 'A command cancelled before queue execution never creates a record.');
 
+  const beforeDiscard = context.state.galleries[0].characters.length;
+  const preexisting = [...context.state.galleries[0].characters];
+  const framedDiscard = await context.handleGameDockCommand({ operationId: 'op-discard-framing', type: 'create-record', payload: { draftId: 'draft-discard', name: 'Discard me', dna: 'dna-discard', collection: 'Court', frame: true, gameHwnd: '42' } });
+  assert.equal(framedDiscard.ok, true);
+  assert.equal(context.state.galleries[0].characters.length, beforeDiscard + 1);
+  const discardedCharacter = context.state.galleries[0].characters.at(-1);
+  await context.discardGameDockDraft({ draftId: 'draft-discard', reason: 'discard', operationIds: [] });
+  assert.equal(context.state.galleries[0].characters.length, beforeDiscard, 'The framing X removes the record created by that dock draft.');
+  assert.equal(context.state.galleries[0].characters.includes(discardedCharacter), false);
+  assert.ok(preexisting.every((character) => context.state.galleries[0].characters.includes(character)), 'Discarding a draft preserves every preexisting character.');
+
+  const normalDiscardSave = context.saveLibrary;
+  let finishDiscardedSave = null;
+  context.saveLibrary = () => new Promise((resolve) => { finishDiscardedSave = resolve; });
+  const beforeLateDiscard = context.state.galleries[0].characters.length;
+  const lateDiscardCommand = context.handleGameDockCommand({ operationId: 'op-discard-late-save', type: 'create-record', payload: { draftId: 'draft-discard-late', name: 'Late discard', dna: 'dna-late-discard', collection: 'Court', frame: false, gameHwnd: '42' } });
+  for (let attempt = 0; attempt < 20 && !finishDiscardedSave; attempt += 1) await delayImmediate();
+  assert.equal(typeof finishDiscardedSave, 'function');
+  const lateDiscardedCharacter = context.state.galleries[0].characters.at(-1);
+  const lateDiscard = context.discardGameDockDraft({ draftId: 'draft-discard-late', reason: 'discard', operationIds: ['op-discard-late-save'] });
+  assert.equal((await lateDiscardCommand).cancelled, true, 'The X releases a creation command whose save is still outstanding.');
+  finishDiscardedSave(true);
+  context.saveLibrary = normalDiscardSave;
+  await lateDiscard;
+  assert.equal(context.state.galleries[0].characters.length, beforeLateDiscard, 'A save that finishes after the X is rolled back instead of leaving a character behind.');
+  assert.equal(context.state.galleries[0].characters.includes(lateDiscardedCharacter), false);
+
   vm.runInContext('dockWorkflow = null; dockActiveCreate = null;', context);
   context.state.galleries.push({ name: 'Sidecasts', characters: [] });
   context.state.gameDockPreferences = { collection: 'Sidecasts' };

@@ -1,5 +1,5 @@
 const COMMAND_TYPES = new Set([
-  'quick-add', 'select-collection', 'create-record', 'cancel-draft', 'finish-without-portrait',
+  'quick-add', 'select-collection', 'create-record', 'cancel-draft', 'discard-draft', 'finish-without-portrait',
   'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'crop-change', 'reset-crop', 'set-loop-search',
   'undo-create', 'view-gallery', 'dismiss', 'retry', 'disable-dock', 'set-position',
   'live-import', 'live-prepare-apply', 'live-undo', 'live-cancel', 'live-retry',

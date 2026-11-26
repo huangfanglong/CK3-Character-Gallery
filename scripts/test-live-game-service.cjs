@@ -111,7 +111,9 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
     assert.equal(app.dock.state.liveImported, true);
     assert.equal(app.service.draftDna, app.dna);
     assert.match(app.dock.state.message, /persistent DNA/);
-    await app.service.handleCommand({ operationId: 'cancel-import', type: 'cancel-draft', payload: {} });
+    await app.service.handleCommand({ operationId: 'cancel-import', type: 'discard-draft', payload: {} });
+    assert.equal(app.dock.state.mode, 'compact', 'Closing an imported draft returns to the compact dock.');
+    assert.equal(app.service.draftDna, '', 'Closing an imported draft clears its staged DNA without creating a record.');
 
     app.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 5, dna: app.dna });
     assert.equal(app.dock.state.liveCanApply, true);

@@ -493,6 +493,10 @@ class GameDockService {
     }
     /* Dismissal is local cleanup. It must still work while the dock's name field owns
        Windows focus, or after CK3 loses its foreground window. */
+    if (type === 'discard-draft') {
+      this.resetDraft('discard');
+      return { ok: true, cancelled: true };
+    }
     if (type === 'cancel-draft' || type === 'dismiss' || (type === 'cancel-capture' && this.mutation)) {
       this.resetDraft();
       return { ok: true, cancelled: true };
@@ -643,8 +647,8 @@ class GameDockService {
     if (resetState && this.dock) this.dock.update({ mode: 'compact', draftId: null, characterId: null, characterName: '', dnaReady: false, dnaAttached: false, liveImported: false, capture: null, crop: null, sourceSize: null, message: '', error: '', undoUntil: 0 });
   }
 
-  resetDraft() {
-    this.cancelRendererDraft(this.dock.state.draftId || '');
+  resetDraft(reason = 'cancelled') {
+    this.cancelRendererDraft(this.dock.state.draftId || '', reason);
     this.clearDraft();
     this.clearLiveState();
     void this.liveBridge.cancel().catch(() => {});

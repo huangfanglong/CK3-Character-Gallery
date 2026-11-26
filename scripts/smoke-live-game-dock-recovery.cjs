@@ -190,7 +190,7 @@ async function main() {
     await waitFor(() => dock.state.mode === 'compact', 'The error close button did not dismiss the panel.');
     await nativeClick('[data-command=quick-add]');
     await waitFor(() => dock.state.mode === 'draft', 'Quick Add did not open a draft after File off/on.');
-    await nativeClick('.dock-heading [data-command=cancel-draft]');
+    await nativeClick('.dock-heading [data-command=discard-draft]');
     await waitFor(() => dock.state.mode === 'compact', 'The Quick Add draft did not close.');
 
     assert.doesNotMatch(firstError, /turned off/i, `A fresh worker received Import before its enable handshake: ${firstError}`);

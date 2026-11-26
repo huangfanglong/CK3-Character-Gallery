@@ -80,7 +80,7 @@ if (!electron.app) {
           dock.update({ mode: 'compact', liveTargetName, liveUndoUntil: Date.now() + 18_000, liveApplyId: operationId, message: '', busy: false });
         }
         if (type === 'live-undo') dock.update({ mode: 'compact', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', message: '', busy: false });
-        if (['dismiss', 'cancel-draft', 'finish-without-portrait', 'cancel-capture', 'live-cancel'].includes(type)) {
+        if (['dismiss', 'cancel-draft', 'discard-draft', 'finish-without-portrait', 'cancel-capture', 'live-cancel'].includes(type)) {
           dock.update({ mode: 'compact', capture: null, crop: null, characterId: null, liveUndoUntil: 0, liveRetry: false });
           if (stalledCreate) { stalledCreate({ ok: true, cancelled: true }); stalledCreate = null; }
         }
@@ -622,7 +622,7 @@ if (!electron.app) {
       await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").click()');
       await delay(40);
       assert.equal(dock.state.mode, 'draft', 'Quick Add works after the retired Import completes late.');
-      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=cancel-draft]").click()');
+      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=discard-draft]").click()');
       await delay(40);
       assert.equal(createRecordCommands.length, beforeCancelledDraftCreates, 'Cancelling a staged Quick Add creates no archive entry.');
       dock.update({ mode: 'compact', liveEnabled: true, busy: false });
@@ -648,8 +648,8 @@ if (!electron.app) {
       for (let attempt = 0; attempt < 50 && !stalledCreate; attempt += 1) await delay(20);
       assert.equal(typeof stalledCreate, 'function');
       assert.equal(await window.webContents.executeJavaScript('dockView.pending'), true);
-      assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=cancel-draft]").disabled'), false);
-      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=cancel-draft]").click()');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=discard-draft]").disabled'), false);
+      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=discard-draft]").click()');
       await delay(60);
       assert.equal(dock.state.mode, 'compact');
       assert.equal(await window.webContents.executeJavaScript('dockView.pending'), false, 'Cancel unlocks the dock while creation is outstanding.');
@@ -659,7 +659,7 @@ if (!electron.app) {
       await window.webContents.executeJavaScript('document.querySelector("[data-command=quick-add]").click()');
       await delay(40);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("#character-name").disabled'), false);
-      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=cancel-draft]").click()');
+      await window.webContents.executeJavaScript('document.querySelector(".dock-heading [data-command=discard-draft]").click()');
       await delay(40);
       await window.webContents.executeJavaScript('document.querySelector("[data-command=toggle-menu]").click()');
       assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll("[data-position]").length'), 3);
