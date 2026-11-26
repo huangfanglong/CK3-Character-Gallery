@@ -497,7 +497,8 @@ class GameDockService {
       this.resetDraft();
       return { ok: true, cancelled: true };
     }
-    if (!this.dock.game?.hwnd && type !== 'view-gallery') throw new Error('CK3 is no longer in the foreground.');
+    const editingLoopSearch = type === 'set-loop-search' && this.dock.editing && this.dock.window?.isFocused?.();
+    if (!this.dock.game?.hwnd && type !== 'view-gallery' && !editingLoopSearch) throw new Error('CK3 is no longer in the foreground.');
     if (type === 'quick-add') {
       if (this.mutation) return { ok: false, error: 'Another archive action is still finishing.' };
       /* The visible button is eligibility-gated, but the clipboard can change between

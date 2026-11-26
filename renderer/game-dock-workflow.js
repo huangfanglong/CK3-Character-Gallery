@@ -109,6 +109,7 @@ async function createFromDock(command) {
       crop: capture.crop ? normalizedCaptureCrop(capture.crop, capture.video.videoWidth, capture.video.videoHeight) : null,
       sourceSize: { width: capture.video.videoWidth, height: capture.video.videoHeight },
       shortcut: capture.shortcut,
+      loopSearchSeconds: capture.loopSearchSeconds,
     });
     return { ok: true };
   } catch (error) {
@@ -190,6 +191,13 @@ async function processGameDockCommand(command) {
     if (command.type === 'undo-create') return await undoFromDock(command);
     if (['snapshot', 'live-capture', 'toggle-capture', 'cancel-capture'].includes(command.type)) return await captureFromDock(command);
     if (!dockWorkflow || dockWorkflow.draftId !== command.payload.draftId) throw new Error('This dock draft has expired. Start a new quick-add.');
+    if (command.type === 'set-loop-search') {
+      const capture = state.captureSession;
+      if (!capture?.dock || capture.dockDraftId !== dockWorkflow.draftId || capture.phase !== 'ready') throw new Error('Start framing before changing the smooth loop search.');
+      const loopSearchSeconds = setLiveCaptureLoopSearchSeconds(command.payload.seconds);
+      await publishDockState({ loopSearchSeconds });
+      return { ok: true };
+    }
     if (command.type === 'crop-change') {
       updateDockCaptureCrop(command.payload.crop);
       return { ok: true };

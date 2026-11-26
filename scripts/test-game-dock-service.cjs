@@ -131,6 +131,18 @@ function fixture(options = {}) {
   const response = await blocked.service.handleCommand({ operationId: 'op-hidden', type: 'quick-add', payload: {} });
   assert.equal(response.ok, false);
   assert.equal(blocked.commands.length, 0);
+  Object.assign(blocked.dock.state, { mode: 'framing', draftId: 'draft-1' });
+  blocked.dock.editing = true;
+  blocked.dock.window = { isFocused: () => true };
+  const editingLoopSearch = await blocked.service.handleCommand({ operationId: 'op-loop-search-editing', type: 'set-loop-search', payload: { draftId: 'draft-1', seconds: 7 } });
+  assert.equal(editingLoopSearch.ok, true, 'The duration remains editable while the dock owns temporary text-input focus.');
+  assert.equal(blocked.commands.at(-1).type, 'set-loop-search');
+  assert.equal(blocked.commands.at(-1).payload.seconds, 7);
+  blocked.dock.window.isFocused = () => false;
+  const unfocusedLoopSearch = await blocked.service.handleCommand({ operationId: 'op-loop-search-unfocused', type: 'set-loop-search', payload: { draftId: 'draft-1', seconds: 8 } });
+  assert.equal(unfocusedLoopSearch.ok, false, 'The editing exception ends when the dock loses focus.');
+  assert.match(unfocusedLoopSearch.error, /foreground/);
+  blocked.service.destroy();
   const preferencesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ck3-dock-preferences-'));
   const preferencesPath = path.join(preferencesDirectory, 'ui-settings.json');
   const stored = fixture({ preferencesPath });

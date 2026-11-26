@@ -15,6 +15,10 @@ assert.equal('ignored' in normalizeGameDockCommand({ ...base, type: 'select-coll
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: 'All characters' } }), /destination/i);
 assert.deepEqual(normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: .4, centerY: .6, size: .25 } } }).payload.crop, { centerX: .4, centerY: .6, size: .25 });
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'crop-change', payload: { crop: { centerX: 2, centerY: .6, size: .25 } } }), /crop/i);
+assert.deepEqual(normalizeGameDockCommand({ ...base, type: 'set-loop-search', payload: { draftId: 'draft-1', seconds: 8 } }).payload, { draftId: 'draft-1', seconds: 8 });
+for (const seconds of [0, 26, 1.5, '8', NaN]) assert.throws(() => normalizeGameDockCommand({ ...base, type: 'set-loop-search', payload: { seconds } }), /duration/i);
+assert.equal(normalizeGameDockState({ loopSearchSeconds: 8 }).loopSearchSeconds, 8);
+assert.throws(() => normalizeGameDockState({ loopSearchSeconds: 0 }), /duration/i);
 const state = normalizeGameDockState({ mode: 'draft', collections: ['Court'], collection: 'Court', dnaReady: true, quickAddReady: true, characterName: 'Ragnhild', visible: false, unknown: 'discard' });
 assert.equal(state.mode, 'draft');
 assert.equal(state.dnaReady, true);

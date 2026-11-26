@@ -1,7 +1,7 @@
 const dockRoot = document.querySelector('#game-dock');
 const announcer = document.querySelector('#announcer');
 const dockBridge = window.gameDock;
-let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, sound: true, liveEnabled: false, liveCanApply: false, liveApplySource: '', liveClipboardFormat: '', liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', liveRetry: false, busy: false, commandEpoch: 0 };
+let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, loopSearchSeconds: 2, sound: true, liveEnabled: false, liveCanApply: false, liveApplySource: '', liveClipboardFormat: '', liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', liveRetry: false, busy: false, commandEpoch: 0 };
 let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
 let commandSequence = 0;
 let interactive = false;
@@ -72,6 +72,13 @@ function syncNativeHitRegions() {
 }
 
 function setDockRevealed(next) {
+  if (!next && dockState.mode === 'framing' && textInputActive) {
+    /* Draft text fields pin their panel open, but the framing duration must not
+       defeat pointer-exit retraction. Commit the field, then restore CK3 focus. */
+    document.activeElement?.blur();
+    textInputActive = false;
+    dockBridge.setTextInput(false);
+  }
   const pinned = dockView.picker || Boolean(dockView.menu) || dockView.help || dockView.pending || textInputActive;
   const revealed = Boolean(next || pinned);
   const changed = dockView.revealed !== revealed;
@@ -144,7 +151,7 @@ function framingMarkup() {
   const capture = dockState.capture;
   const opening = dockState.busy || dockView.pending;
   const unavailable = capture || opening ? ' disabled' : '';
-  return `<div class="dock-body" aria-busy="${opening}"><div class="dock-heading"><div><p class="eyebrow">${opening ? 'OPENING CK3 CAPTURE' : 'PORTRAIT FRAMING'}</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Keep character and close quick add">${dockIcon('close')}</button></div><p class="helper">${opening ? 'This may take a few seconds. Keep & close preserves the character if it has already been saved.' : 'Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.'}</p><div class="capture-actions" style="margin-top:14px"><button class="text-button" data-command="reset-crop"${unavailable}>Reset frame</button><span class="spacer"></span><button class="text-button" data-command="finish-without-portrait"${unavailable}>Skip portrait</button><button class="secondary-button" data-command="live-capture"${unavailable}>${dockIcon('record')} Live portrait</button><button class="primary-button" data-command="snapshot"${unavailable}>${dockIcon('camera')} Snapshot</button></div><button class="text-button" data-command="cancel-draft">Keep & close</button></div>`;
+  return `<div class="dock-body" aria-busy="${opening}"><div class="dock-heading"><div><p class="eyebrow">${opening ? 'OPENING CK3 CAPTURE' : 'PORTRAIT FRAMING'}</p><h2>${dockEscape(dockState.characterName || 'New character')}</h2></div><button class="icon-button" data-command="cancel-draft" aria-label="Keep character and close quick add">${dockIcon('close')}</button></div><p class="helper">${opening ? 'This may take a few seconds. Keep & close preserves the character if it has already been saved.' : 'Drag the square to move it. Use its corners to resize. Everything outside remains in CK3.'}</p><div class="capture-actions" style="margin-top:14px"><button class="text-button" data-command="reset-crop"${unavailable}>Reset frame</button><span class="spacer"></span><div class="skip-portrait-controls"><button class="text-button" data-command="finish-without-portrait"${unavailable}>Skip portrait</button><label class="loop-search-field" for="dock-loop-search-seconds"><span>Smooth loop search</span><span class="loop-search-value"><input id="dock-loop-search-seconds" class="input dock-text-input" type="number" min="1" max="25" step="1" value="${dockState.loopSearchSeconds || 2}"${unavailable} /><span aria-hidden="true">sec</span></span></label></div><button class="secondary-button" data-command="live-capture"${unavailable}>${dockIcon('record')} Live portrait</button><button class="primary-button" data-command="snapshot"${unavailable}>${dockIcon('camera')} Snapshot</button></div><button class="text-button" data-command="cancel-draft">Keep & close</button></div>`;
 }
 
 function captureMarkup() {
@@ -372,6 +379,21 @@ async function runCommand(type, payload = {}) {
   }
 }
 
+async function changeDockLoopSearch(input) {
+  const parsed = Math.floor(Number(input.value));
+  const seconds = Number.isFinite(parsed) && parsed >= 1 ? Math.min(25, parsed) : 2;
+  input.value = String(seconds);
+  if (seconds === dockState.loopSearchSeconds) return;
+  dockState.loopSearchSeconds = seconds;
+  /* Do not use runCommand here: ending native text editing on every spinner step
+     returns focus to CK3 and makes the control frustrating to adjust. */
+  const result = await dockBridge.command('set-loop-search', { seconds, draftId: dockState.draftId });
+  if (!result?.ok && !result?.cancelled && dockState.mode === 'framing') {
+    dockState = { ...dockState, mode: 'error', error: result?.error || 'The smooth loop search could not be changed.' };
+    renderDock();
+  }
+}
+
 async function selectCommand(button) {
   const type = button.dataset.command;
   if (type === 'open-collections') {
@@ -466,6 +488,15 @@ const dockPointerHovers = new Map();
 const releasedPointerClicks = new Map();
 let cropHover = null;
 
+function activateDockTextInput(input, select = false) {
+  if (!input || input.disabled) return false;
+  textInputActive = true;
+  dockBridge.setTextInput(true);
+  if (document.activeElement !== input) input.focus({ preventScroll: true });
+  if (select) input.select();
+  return true;
+}
+
 function pruneDockPointerState(now = performance.now()) {
   for (const [pointerId, hover] of dockPointerHovers) if (now > hover.until) dockPointerHovers.delete(pointerId);
   for (const [pointerId, click] of releasedPointerClicks) if (now > click.until) releasedPointerClicks.delete(pointerId);
@@ -497,9 +528,7 @@ dockRoot.addEventListener('pointerdown', (event) => {
   if (input) {
     /* Native focus must be requested, but Chromium still owns caret placement and
        drag-selection. Cancelling pointerdown made the field look read-only. */
-    textInputActive = true;
-    dockBridge.setTextInput(true);
-    if (document.activeElement !== input) input.focus({ preventScroll: true });
+    activateDockTextInput(input);
     return;
   }
   beginCrop(event);
@@ -517,6 +546,7 @@ dockRoot.addEventListener('pointermove', (event) => {
     dockPointerHovers.set(event.pointerId, {
       button: enabled,
       signature: enabled ? dockCommandSignature(enabled) : '',
+      inputId: event.target.closest('.dock-text-input')?.id || '',
       x: event.clientX, y: event.clientY, until: performance.now() + 750,
     });
     cropHover = reticle ? {
@@ -551,13 +581,21 @@ dockRoot.addEventListener('pointerup', (event) => {
   cropHover = null;
   void endCrop(event);
   if (hadPointerDown || event.button !== 0) return;
-  const button = event.target.closest('[data-command]');
-  if (!button || button.disabled || hover?.signature !== dockCommandSignature(button) || now > hover.until
-    || Math.abs(event.clientX - hover.x) > 4 || Math.abs(event.clientY - hover.y) > 4) return;
   /* An inactive focusable:false Electron window answers WM_MOUSEACTIVATE with
-     MA_NOACTIVATEANDEAT. Dispatch an orphaned release only when this pointer just
-     hovered the same logical command and payload. A state render may have replaced
-     its element; a drag that began in CK3 still has no dock hover and remains input. */
+     MA_NOACTIVATEANDEAT. Recover an orphaned release only when this pointer just
+     hovered the same field or command. A drag that began in CK3 remains game input. */
+  const nearHover = hover && now <= hover.until
+    && Math.abs(event.clientX - hover.x) <= 4 && Math.abs(event.clientY - hover.y) <= 4;
+  const input = event.target.closest('.dock-text-input');
+  if (input && nearHover && input.id && hover.inputId === input.id) {
+    event.preventDefault();
+    activateDockTextInput(input, true);
+    return;
+  }
+  const button = event.target.closest('[data-command]');
+  if (!button || button.disabled || hover?.signature !== dockCommandSignature(button) || !nearHover) return;
+  /* A state render may replace the button between press and release; its logical
+     command and payload are checked rather than its discarded DOM identity. */
   releasedPointerClicks.set(event.pointerId, { x: event.clientX, y: event.clientY, until: now + 750 });
   event.preventDefault();
   void selectCommand(button);
@@ -595,6 +633,9 @@ dockRoot.addEventListener('input', (event) => {
     input?.focus();
     input?.setSelectionRange(start, start);
   }
+});
+dockRoot.addEventListener('change', (event) => {
+  if (event.target.id === 'dock-loop-search-seconds') void changeDockLoopSearch(event.target);
 });
 dockRoot.addEventListener('focusin', (event) => {
   if (!event.target.matches('.dock-text-input')) return;
@@ -661,10 +702,12 @@ dockBridge.onState((nextState) => {
   const input = document.activeElement;
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';
+  const preserveLoopSearch = input?.id === 'dock-loop-search-seconds' && nextState.mode === 'framing';
   /* Destination selection publishes a fresh dock state, but it must not replace a
      locally edited draft name with the name originally imported from CK3. */
   const preserveDraftName = dockView.pickerSource === 'draft' && dockState.mode === 'draft' && nextState.mode === 'draft';
   const name = preserveName ? input.value : dockState.characterName;
+  const loopSearchValue = preserveLoopSearch ? input.value : '';
   const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
   const newLiveApply = nextState.mode === 'compact' && Boolean(nextState.liveApplyId) && nextState.liveApplyId !== dockState.liveApplyId;
   if (((Number(nextState.commandEpoch) || 0) !== (Number(dockState.commandEpoch) || 0))
@@ -686,6 +729,10 @@ dockBridge.onState((nextState) => {
     field?.setSelectionRange(selection.start, selection.end, selection.direction);
   }
   if (preservePicker) document.querySelector('#collection-filter')?.focus();
+  if (preserveLoopSearch) {
+    const field = document.querySelector('#dock-loop-search-seconds');
+    if (field) { field.value = loopSearchValue; field.focus({ preventScroll: true }); }
+  }
   if (nextState.message || nextState.error) announcer.textContent = nextState.error || nextState.message;
 });
 dockBridge.ready();

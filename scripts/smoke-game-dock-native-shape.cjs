@@ -74,6 +74,7 @@ if (!electron.app) {
           return { ok: true, cancelled: true };
         }
         if (type === 'set-position') dock.setPreferences({ position: payload.position });
+        if (type === 'set-loop-search') dock.update({ loopSearchSeconds: payload.seconds });
         return { ok: true };
       },
     });
@@ -204,9 +205,75 @@ if (!electron.app) {
       await waitFor(() => report.shapes.at(-1)?.every((region) => region.height <= 10 && region.width <= 282), 'Collapsed dock did not reach its resting native shape');
       assert.ok(report.shapes.at(-1).some((region) => region.width >= 280 && region.width <= 282), 'The collapsed native approach area returns to the narrow resting strip.');
       assert.equal(await window.webContents.executeJavaScript('document.querySelector(".dock").getBoundingClientRect().height'), 6, 'The collapsed dock did not reach its resting visual height.');
+
+      const focusedGame = monitor.state;
+      window.on('focus', () => { monitor.state = null; monitor.emit('change', null); });
+      background.on('focus', () => { monitor.state = focusedGame; monitor.emit('change', focusedGame); });
+      monitor.restoreFocus = () => { background.focus(); return true; };
+      dock.setPreferences({ position: 'center' });
+      const framing = () => ({ mode: 'framing', loopSearchSeconds: 2, crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: bounds.width, height: bounds.height }, capture: null, busy: false });
+      dock.update(framing());
+      const clickDurationField = async () => {
+        const inputRect = await window.webContents.executeJavaScript(`document.querySelector('#dock-loop-search-seconds').getBoundingClientRect().toJSON()`);
+        const inputBounds = window.getBounds();
+        await move(inputBounds.x + inputRect.x + inputRect.width * .55, inputBounds.y + inputRect.y + inputRect.height / 2);
+        await nativeDownUp();
+        await delay(100);
+        return window.webContents.executeJavaScript(`({active:document.activeElement?.id,mode:dockState.mode,textInputActive,value:document.querySelector('#dock-loop-search-seconds')?.value})`);
+      };
+      const clickDurationSpinner = async () => {
+        const inputRect = await window.webContents.executeJavaScript(`document.querySelector('#dock-loop-search-seconds').getBoundingClientRect().toJSON()`);
+        const inputBounds = window.getBounds();
+        await move(inputBounds.x + inputRect.right - 8, inputBounds.y + inputRect.y + inputRect.height * .25);
+        await nativeDownUp();
+        await delay(100);
+      };
+      const leaveDurationField = async () => {
+        const inputBounds = window.getBounds();
+        await move(inputBounds.x + 24, inputBounds.y + 400);
+        await delay(400);
+        assert.equal(await window.webContents.executeJavaScript('dockView.revealed'), false);
+        assert.equal(dock.editing, false, 'Pointer-exit retraction ends temporary native text focus.');
+      };
+      await hover();
+      report.loopSearchLayout = await window.webContents.executeJavaScript(`(()=>{
+        const row=document.querySelector('.loop-search-field').getBoundingClientRect();
+        const unit=document.querySelector('.loop-search-value > span').getBoundingClientRect();
+        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
+        const snapshot=document.querySelector('[data-command=snapshot]').getBoundingClientRect();
+        return {rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:unit.right,snapshotLeft:snapshot.left};
+      })()`);
+      const layout = report.loopSearchLayout;
+      assert.ok(layout.rowTop >= layout.skipBottom, `Smooth loop search must sit beneath Skip portrait (${JSON.stringify(layout)}).`);
+      assert.ok(Math.abs(layout.rowLeft - layout.skipLeft) <= .5, `The duration row must align with the left edge of Skip portrait (${JSON.stringify(layout)}).`);
+      assert.ok(layout.unitRight <= layout.rowRight + .5, `The seconds unit must stay inside the moved row (${JSON.stringify(layout)}).`);
+      assert.ok(layout.unitRight < layout.snapshotLeft, `The seconds unit must remain clear of Snapshot (${JSON.stringify(layout)}).`);
+      const initialDurationFocus = await clickDurationField();
+      assert.equal(initialDurationFocus.active, 'dock-loop-search-seconds', `The initial native duration click must focus the field (${JSON.stringify(initialDurationFocus)}).`);
+      await leaveDurationField();
+      await hover();
+      const resumedDurationFocus = await clickDurationField();
+      assert.equal(resumedDurationFocus.active, 'dock-loop-search-seconds', `The native duration click must work after retraction (${JSON.stringify(resumedDurationFocus)}).`);
+      assert.equal(resumedDurationFocus.mode, 'framing');
+      assert.equal(resumedDurationFocus.textInputActive, true);
+      await clickDurationSpinner();
+      assert.equal(await window.webContents.executeJavaScript('dockState.loopSearchSeconds'), 3, 'The native spinner must still change the duration after retraction.');
+      await clickDurationSpinner();
+      assert.equal(await window.webContents.executeJavaScript('dockState.loopSearchSeconds'), 4, 'Repeated native spinner clicks must remain responsive.');
+      await leaveDurationField();
+      dock.update({ mode: 'compact', crop: null, sourceSize: null, capture: null, busy: false });
+      await delay(80);
+      dock.update({ ...framing(), draftId: 'fresh-framing-session' });
+      await hover();
+      const freshDurationFocus = await clickDurationField();
+      assert.equal(freshDurationFocus.active, 'dock-loop-search-seconds', `A fresh framing session must restore duration editing (${JSON.stringify(freshDurationFocus)}).`);
+      assert.equal(freshDurationFocus.value, '2');
+      await clickDurationSpinner();
+      assert.equal(await window.webContents.executeJavaScript('dockState.loopSearchSeconds'), 3, 'The fresh framing session must accept spinner changes.');
+      report.durationFocus = { initialDurationFocus, resumedDurationFocus, freshDurationFocus };
       report.passed = true;
       await snapshot('all native controls passed');
-      console.log('Native dock input passed: stationary Dismiss, X, Try again, and menu clicks after synthetic mouseleave; pending-error recovery and animated collapse also passed.');
+      console.log('Native dock input passed: reliable buttons, animated collapse, duration editing after retraction and fresh framing, repeated spinner changes, and seconds-unit spacing.');
     } finally {
       const reportPath = path.join(__dirname, '..', 'reference', 'dock-native-shape-verification.json');
       fs.mkdirSync(path.dirname(reportPath), { recursive: true });

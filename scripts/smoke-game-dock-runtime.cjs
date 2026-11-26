@@ -28,7 +28,11 @@ if (!electron.app) {
     monitor.stop = () => {};
     monitor.refresh = () => monitor.state;
     monitor.restoreFocusCalls = [];
-    monitor.restoreFocus = (hwnd) => { monitor.restoreFocusCalls.push(hwnd); return true; };
+    monitor.restoreFocus = (hwnd) => {
+      monitor.restoreFocusCalls.push(hwnd);
+      if (!monitor.state) { monitor.state = game; monitor.emit('change', game); }
+      return true;
+    };
     let dock;
     let stalledCreate = null;
     let stalledOperationId = '';
@@ -47,6 +51,14 @@ if (!electron.app) {
         if (type === 'dismiss') dismissalCount += 1;
         if (type === 'select-collection') { dock.setPreferences({ collection: payload.collection }); dock.update({ collection: payload.collection }); }
         if (type === 'set-position') dock.setPreferences({ position: payload.position });
+        if (type === 'set-loop-search') {
+          if (!dock.game?.hwnd && !(dock.editing && dock.window.isFocused())) {
+            const error = 'CK3 is no longer in the foreground.';
+            dock.update({ mode: 'error', error });
+            return { ok: false, error };
+          }
+          dock.update({ loopSearchSeconds: payload.seconds });
+        }
         if (type === 'quick-add') dock.update({ mode: 'draft', dnaReady: true, characterName: '' });
         if (type === 'create-record') createRecordCommands.push({ operationId, ...payload });
         if (type === 'create-record' && payload.name === 'Stalled capture') {
@@ -73,6 +85,9 @@ if (!electron.app) {
           if (stalledCreate) { stalledCreate({ ok: true, cancelled: true }); stalledCreate = null; }
         }
         return { ok: true };
+      },
+      onGameLoss: () => {
+        if (dock?.state.mode === 'framing') dock.update({ mode: 'error', error: 'CK3 is no longer in the foreground.' });
       },
     });
     try {
@@ -183,10 +198,69 @@ if (!electron.app) {
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=open-collections]").disabled'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("#portrait-reticle") !== null'), true);
       assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll(".crop-handle").length'), 4);
+      const initialLoopControl = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const input=document.querySelector('#dock-loop-search-seconds');
+        const row=document.querySelector('.loop-search-field').getBoundingClientRect();
+        const inputRect=input.getBoundingClientRect();
+        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
+        return JSON.stringify({exists:Boolean(input),disabled:input.disabled,value:input.value,rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:document.querySelector('.loop-search-value > span').getBoundingClientRect().right,inputRight:inputRect.right});
+      })()`));
+      assert.equal(initialLoopControl.exists, true);
+      assert.equal(initialLoopControl.disabled, false, 'The duration is editable before capture starts.');
+      assert.equal(initialLoopControl.value, '2');
+      assert.ok(initialLoopControl.rowTop >= initialLoopControl.skipBottom, 'Smooth loop search sits directly beneath Skip portrait.');
+      assert.ok(Math.abs(initialLoopControl.rowLeft - initialLoopControl.skipLeft) <= .5, 'The duration row aligns with the left edge of Skip portrait.');
+      assert.ok(initialLoopControl.inputRight <= initialLoopControl.rowRight + .5 && initialLoopControl.unitRight <= initialLoopControl.rowRight + .5, 'The seconds field and unit stay inside the moved row.');
+      const loopRect = await window.webContents.executeJavaScript(`document.querySelector('#dock-loop-search-seconds').getBoundingClientRect().toJSON()`);
+      const loopTextX = Math.round(loopRect.x + loopRect.width * .55);
+      const loopTextY = Math.round(loopRect.y + loopRect.height / 2);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: loopTextX, y: loopTextY });
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: loopTextX, y: loopTextY, button: 'left', clickCount: 1 });
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: loopTextX, y: loopTextY, button: 'left', clickCount: 1 });
+      await delay(40);
+      monitor.state = null;
+      monitor.emit('change', null);
+      await delay(40);
+      const firstLoopClick = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({mode:dockState.mode,active:document.activeElement?.id,textInputVisible:dockState.visible,textInputActive})`));
+      assert.equal(firstLoopClick.mode, 'framing', 'The first physical click must not become a CK3 foreground-loss error.');
+      assert.equal(firstLoopClick.active, 'dock-loop-search-seconds');
+      assert.equal(firstLoopClick.textInputVisible, true);
+      assert.equal(firstLoopClick.textInputActive, true);
+      assert.equal(dock.editing, true);
+      assert.equal(window.isFocused(), true);
+      const spinnerX = Math.round(loopRect.right - 8);
+      const spinnerY = Math.round(loopRect.y + loopRect.height * .25);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: spinnerX, y: spinnerY });
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: spinnerX, y: spinnerY, button: 'left', clickCount: 1 });
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: spinnerX, y: spinnerY, button: 'left', clickCount: 1 });
+      await delay(60);
+      assert.equal(dock.state.loopSearchSeconds, 3, 'The native up arrow changes the real dock setting on the first click.');
+      assert.equal(dock.state.mode, 'framing');
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: spinnerX, y: spinnerY, button: 'left', clickCount: 1 });
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: spinnerX, y: spinnerY, button: 'left', clickCount: 1 });
+      await delay(60);
+      assert.equal(dock.state.loopSearchSeconds, 4, 'Repeated spinner clicks remain responsive after state publication.');
+      assert.equal(dock.state.mode, 'framing');
+      await window.webContents.executeJavaScript(`(()=>{const input=document.querySelector('#dock-loop-search-seconds');input.value='8';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+      await delay(50);
+      assert.equal(dock.state.loopSearchSeconds, 8, 'The numeric control updates the dock recording state.');
+      const focusedLoopControl = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({active:document.activeElement?.id,value:document.querySelector('#dock-loop-search-seconds').value,textInputActive})`));
+      assert.equal(focusedLoopControl.active, 'dock-loop-search-seconds', 'State publication preserves numeric-input focus.');
+      assert.equal(focusedLoopControl.value, '8', 'State publication preserves the displayed value.');
+      assert.equal(focusedLoopControl.textInputActive, true, 'Numeric editing retains native text-input behavior.');
+      assert.equal(dock.editing, true, 'Changing the duration does not return native focus to CK3.');
       dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: 1 }, sourceSize: { width: 1600, height: 900 }, capture: null });
-      await delay(30);
-      const overlapHit = await window.webContents.executeJavaScript(`(()=>{const rect=document.querySelector('[data-command=reset-crop]').getBoundingClientRect();return document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)?.closest('[data-command]')?.dataset.command;})()`);
-      assert.equal(overlapHit, 'reset-crop', 'A full-height portrait reticle must not cover the dock controls.');
+      /* Native tests leave the OS pointer outside this new window. Explicitly reveal
+         the framing panel instead of accidentally measuring its inert collapsed body. */
+      await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      for (let attempt = 0; attempt < 100 && !(await window.webContents.executeJavaScript('dockView.revealed && document.querySelector(".dock").classList.contains("expanded") && !dockHeightAnimation')); attempt += 1) await delay(25);
+      const overlapHit = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const rect=document.querySelector('[data-command=reset-crop]').getBoundingClientRect();
+        const x=rect.x+rect.width/2,y=rect.y+rect.height/2,target=document.elementFromPoint(x,y);
+        const dock=document.querySelector('.dock'),reticle=document.querySelector('#portrait-reticle');
+        return JSON.stringify({command:target?.closest('[data-command]')?.dataset.command,target:target?.outerHTML.slice(0,300),point:{x,y},reset:rect.toJSON(),dock:dock.getBoundingClientRect().toJSON(),dockClass:dock.className,reticle:reticle.getBoundingClientRect().toJSON(),active:document.activeElement?.id});
+      })()`));
+      assert.equal(overlapHit.command, 'reset-crop', `A full-height portrait reticle must not cover the dock controls (${JSON.stringify(overlapHit)}).`);
       for (const handle of ['north-west', 'north-east', 'south-east', 'south-west']) {
         dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: 1600, height: 900 }, capture: null });
         await delay(20);
@@ -277,6 +351,36 @@ if (!electron.app) {
       assert.equal(restoredFraming.height, framingHeight);
       assert.equal(restoredFraming.controls, 'visible');
       assert.deepEqual({ crop: restoredFraming.crop, draftId: restoredFraming.draftId, characterId: restoredFraming.characterId, name: restoredFraming.name }, framingSession, 'Re-expansion restores the same framing session and crop.');
+      const resumedLoopRect = await window.webContents.executeJavaScript(`document.querySelector('#dock-loop-search-seconds').getBoundingClientRect().toJSON()`);
+      const resumedX = Math.round(resumedLoopRect.x + resumedLoopRect.width * .55);
+      const resumedY = Math.round(resumedLoopRect.y + resumedLoopRect.height / 2);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: resumedX, y: resumedY });
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: resumedX, y: resumedY, button: 'left', clickCount: 1 });
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: resumedX, y: resumedY, button: 'left', clickCount: 1 });
+      await delay(40);
+      monitor.state = null;
+      monitor.emit('change', null);
+      await delay(40);
+      const resumedLoopFocus = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({active:document.activeElement?.id,mode:dockState.mode,textInputActive})`));
+      assert.equal(resumedLoopFocus.active, 'dock-loop-search-seconds', 'Retraction and re-expansion must not leave the duration field uneditable.');
+      assert.equal(resumedLoopFocus.mode, 'framing');
+      assert.equal(resumedLoopFocus.textInputActive, true);
+      const resumedSpinnerX = Math.round(resumedLoopRect.right - 8);
+      const resumedSpinnerY = Math.round(resumedLoopRect.y + resumedLoopRect.height * .25);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: resumedSpinnerX, y: resumedSpinnerY });
+      window.webContents.sendInputEvent({ type: 'mouseDown', x: resumedSpinnerX, y: resumedSpinnerY, button: 'left', clickCount: 1 });
+      window.webContents.sendInputEvent({ type: 'mouseUp', x: resumedSpinnerX, y: resumedSpinnerY, button: 'left', clickCount: 1 });
+      await delay(60);
+      assert.equal(dock.state.loopSearchSeconds, 9, 'Spinner input still works after the dock is re-expanded.');
+      const loopUnitLayout = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const row=document.querySelector('.loop-search-field').getBoundingClientRect();
+        const unit=document.querySelector('.loop-search-value > span').getBoundingClientRect();
+        const skip=document.querySelector('[data-command=finish-without-portrait]').getBoundingClientRect();
+        return JSON.stringify({rowTop:row.top,rowLeft:row.left,skipBottom:skip.bottom,skipLeft:skip.left,rowRight:row.right,unitRight:unit.right});
+      })()`));
+      assert.ok(loopUnitLayout.rowTop >= loopUnitLayout.skipBottom, `Retraction keeps the duration row beneath Skip portrait (${JSON.stringify(loopUnitLayout)}).`);
+      assert.ok(Math.abs(loopUnitLayout.rowLeft - loopUnitLayout.skipLeft) <= .5, `Retraction preserves left alignment with Skip portrait (${JSON.stringify(loopUnitLayout)}).`);
+      assert.ok(loopUnitLayout.unitRight <= loopUnitLayout.rowRight + .5, `The seconds unit must stay inside the moved row (${JSON.stringify(loopUnitLayout)}).`);
 
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-capture]").click()');
       await delay(50);

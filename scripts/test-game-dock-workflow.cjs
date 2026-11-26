@@ -23,7 +23,11 @@ const context = {
   resetSelection(id = null) { context.state.activeId = id; context.state.focusContext = 'character'; context.state.selectedVariantIndex = null; },
   cleanupUnusedPortraits: async (paths) => { context.deletedImages.push(...paths); return 0; },
   bindCharacterGallery(id) { const gallery = context.state.galleries.find((item) => item.characters.some((character) => character.id === id)); if (gallery) context.state.activeGallery = gallery.name; },
-  startDockLiveCapture: async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; },
+  startDockLiveCapture: async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', loopSearchSeconds: 2, crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; },
+  setLiveCaptureLoopSearchSeconds(value) {
+    context.state.captureSession.loopSearchSeconds = value;
+    return context.state.captureSession.loopSearchSeconds;
+  },
   captureDockSnapshot: async () => true,
   toggleLiveCapture: async () => {},
   releaseDockCapture: async () => { context.state.captureSession = null; },
@@ -40,7 +44,17 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.equal(character.name, 'Ragnhild of Jorvik', 'Creation uses the name edited inline in the dock.');
   assert.equal(character.dna, 'valid-dna');
   assert.equal(context.dockUpdates.at(-1).mode, 'framing');
+  assert.equal(context.dockUpdates.at(-1).loopSearchSeconds, 2, 'Framing publishes the capture session’s current loop-search setting.');
   assert.equal(context.state.activeId, null);
+  const loopSearch = await context.processGameDockCommand({ operationId: 'loop-1', type: 'set-loop-search', payload: { draftId: 'draft-1', seconds: 7 } });
+  assert.equal(loopSearch.ok, true, JSON.stringify(loopSearch));
+  assert.equal(context.state.captureSession.loopSearchSeconds, 7, 'The dock changes the actual recording session setting.');
+  assert.equal(context.dockUpdates.at(-1).loopSearchSeconds, 7, 'The normalized value is published back to the dock.');
+  context.state.captureSession.phase = 'recording';
+  const lockedLoopSearch = await context.processGameDockCommand({ operationId: 'loop-2', type: 'set-loop-search', payload: { draftId: 'draft-1', seconds: 9 } });
+  assert.equal(lockedLoopSearch.ok, false, 'A recording session cannot change its loop-search duration.');
+  assert.equal(context.state.captureSession.loopSearchSeconds, 7);
+  context.state.captureSession.phase = 'ready';
 
   const undo = await context.processGameDockCommand({ operationId: 'op-2', type: 'undo-create', payload: { draftId: 'draft-1' } });
   assert.equal(undo.ok, true);
@@ -108,7 +122,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   const failedStart = await context.processGameDockCommand({ operationId: 'op-13', type: 'create-record', payload: { draftId: 'draft-7', dna: 'dna-7', collection: 'Court', gameHwnd: '42' } });
   assert.equal(failedStart.ok, false);
   assert.equal(context.state.galleries[0].characters.length, countBeforeRetry + 1);
-  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
+  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', loopSearchSeconds: 2, crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
   const retryCharacter = context.state.galleries[0].characters.at(-1);
   const createdModified = retryCharacter.modified;
   retryCharacter.modified += 1;
@@ -143,7 +157,7 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   lateCapture();
   await delayImmediate();
   assert.equal(context.dockUpdates.length, patchesBeforeLateCompletion, 'Late capture completion cannot publish framing after Cancel.');
-  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
+  context.startDockLiveCapture = async (workflow) => { context.state.captureSession = { dock: true, dockDraftId: workflow.draftId, phase: 'ready', loopSearchSeconds: 2, crop: { x: 100, y: 0, size: 500 }, video: { videoWidth: 1000, videoHeight: 500 } }; };
   const retried = await context.handleGameDockCommand({ operationId: 'op-17', type: 'create-record', payload: { draftId: 'draft-8', name: 'Test', dna: 'dna-8', collection: 'Court', gameHwnd: '42' } });
   assert.equal(retried.ok, true);
   assert.equal(context.state.galleries[0].characters.length, stalledCount + 1, 'Retrying the same draft reuses its saved record.');

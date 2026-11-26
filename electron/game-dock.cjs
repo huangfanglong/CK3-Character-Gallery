@@ -70,6 +70,7 @@ class GameDock {
     this.window = null;
     this.ready = false;
     this.editing = false;
+    this.editingGame = null;
     this.nativeHitTesting = false;
     this.hitRegions = [];
     this.cursorHitRegions = [];
@@ -98,6 +99,7 @@ class GameDock {
       crop: null,
       sourceSize: null,
       shortcut: 'CommandOrControl+Alt+G',
+      loopSearchSeconds: 2,
       undoUntil: 0,
       sound: true,
       liveEnabled: this.preferences.liveLink.enabled,
@@ -119,10 +121,17 @@ class GameDock {
     this.handleBlur = () => {
       this.releaseCursorGuard();
       if (!this.editing) return;
+      const draftId = this.state.draftId;
+      const editingGame = this.editingGame;
+      const game = this.game;
       this.editing = false;
+      this.editingGame = null;
       this.focusReturnHwnd = '';
       this.window?.setFocusable(false);
       this.refreshVisibility();
+      /* If Windows already reported another foreground app, this blur is a real
+         departure rather than the dock taking focus for text input. */
+      if (!game) this.onGameLoss(draftId, editingGame, null);
     };
   }
 
@@ -179,11 +188,11 @@ class GameDock {
 
   setGame(game) {
     const previous = this.game;
-    /* Text input can briefly make CK3 lose foreground without an actual game
-       change. Keep the hover session through that transition; blur/exit still release. */
+    /* Text input deliberately makes the dock foreground. Defer workflow cancellation
+       until its blur proves the user actually left the editing surface. */
     if (previous && game && previous.hwnd !== game.hwnd) this.releaseCursorGuard();
     this.game = game || null;
-    if (previous && (!game || previous.hwnd !== game.hwnd)) this.onGameLoss(this.state.draftId, previous, game || null);
+    if (!this.editing && previous && (!game || previous.hwnd !== game.hwnd)) this.onGameLoss(this.state.draftId, previous, game || null);
     this.refreshVisibility();
   }
 
@@ -401,12 +410,14 @@ class GameDock {
 
   setTextInput(active) {
     if (!this.window || this.window.isDestroyed() || !this.state.visible) return false;
+    if (active && !this.editing) this.editingGame = this.game;
     this.editing = active;
     if (active) {
       this.focusReturnHwnd = this.game?.hwnd || this.focusReturnHwnd;
       this.window.setFocusable(true);
       this.window.focus();
     } else {
+      this.editingGame = null;
       const focusReturnHwnd = this.focusReturnHwnd || this.game?.hwnd || '';
       this.focusReturnHwnd = '';
       this.window.setFocusable(false);

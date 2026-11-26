@@ -217,10 +217,12 @@ async function main() {
   monitor.emit('change', null);
   assert.equal(window.visible, true, 'A focused text editor remains visible during its explicit focus exception.');
   assert.equal(cursorGuard.active, true, 'Transient CK3 focus loss during text input does not release clipping.');
+  assert.equal(dock.gameLosses.length, 0, 'Entering a dock text field is not a game-loss event.');
   window.focused = false;
   window.emit('blur');
   assert.equal(cursorGuard.active, false, 'The subsequent dock blur releases clipping.');
   assert.equal(window.visible, false, 'Losing the editing surface hides the dock over another application.');
+  assert.equal(dock.gameLosses.length, 1, 'Alt-Tabbing away from the editing surface still interrupts the workflow.');
   dock.nativeHitTesting = previousNativeHitTesting;
 
   monitor.state = game;
@@ -229,14 +231,14 @@ async function main() {
   monitor.state = null;
   monitor.emit('change', null);
   assert.equal(window.visible, true, 'The editing exception survives the Windows foreground update.');
+  assert.equal(dock.gameLosses.length, 1, 'Repeated text-field focus does not cancel a new framing session.');
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:text-input', false);
   assert.deepEqual(monitor.restoreFocusCalls, ['42'], 'Finishing text entry restores the original CK3 HWND even after the dock became foreground.');
   assert.equal(window.focusable, false);
 
-  assert.equal(dock.gameLosses.length, 2, 'Leaving CK3 must notify the active workflow.');
+  assert.equal(dock.gameLosses.length, 1, 'Returning focus to CK3 is not another game-loss event.');
   assert.equal(dock.gameLosses[0].previous.hwnd, '42');
   assert.equal(dock.gameLosses[0].current, null);
-  assert.equal(dock.gameLosses[1].previous.hwnd, '42');
   window.webContents.emit('ipc-message', foreignFrameEvent, 'game-dock:command', { operationId: 'untrusted', type: 'select-collection', payload: { collection: 'Court' } });
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:command', { operationId: 'operation-1', type: 'select-collection', payload: { collection: 'Court' } });
   await new Promise((resolve) => setImmediate(resolve));
@@ -278,6 +280,10 @@ async function main() {
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hit-regions', [{ x: 620, y: 0, width: 680, height: 48, cursor: true }]);
   window.webContents.emit('ipc-message', trustedEvent, 'game-dock:hover', true);
   assert.equal(cursorGuard.active, true);
+  const lossesBeforeDeparture = dock.gameLosses.length;
+  monitor.state = null;
+  monitor.emit('change', null);
+  assert.equal(dock.gameLosses.length, lossesBeforeDeparture + 1, 'A real foreground departure outside text editing still notifies the workflow.');
   dock.destroy();
   assert.equal(cursorGuard.active, false, 'Destroying an active dock releases clipping.');
   assert.equal(cursorGuard.destroyCalls, 1);

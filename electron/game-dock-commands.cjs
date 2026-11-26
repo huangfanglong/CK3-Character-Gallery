@@ -1,6 +1,6 @@
 const COMMAND_TYPES = new Set([
   'quick-add', 'select-collection', 'create-record', 'cancel-draft', 'finish-without-portrait',
-  'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'crop-change', 'reset-crop',
+  'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'crop-change', 'reset-crop', 'set-loop-search',
   'undo-create', 'view-gallery', 'dismiss', 'retry', 'disable-dock', 'set-position',
   'live-import', 'live-prepare-apply', 'live-undo', 'live-cancel', 'live-retry',
 ]);
@@ -41,6 +41,10 @@ function normalizeGameDockCommand(command) {
     if (!['left', 'center', 'right'].includes(input.position)) throw new Error('The dock position is invalid.');
     payload = { position: input.position };
   } else if (type === 'crop-change') payload = { crop: normalizedCrop(input.crop), draftId: identifier(input.draftId, 'draft') };
+  else if (type === 'set-loop-search') {
+    if (!Number.isInteger(input.seconds) || input.seconds < 1 || input.seconds > 25) throw new Error('The smooth loop search duration is invalid.');
+    payload = { draftId: identifier(input.draftId, 'draft'), seconds: input.seconds };
+  }
   else if (type === 'create-record') {
     const collection = text(input.collection, 'destination');
     if (collection.toLowerCase() === 'all characters') throw new Error('Choose a real destination collection.');
@@ -71,6 +75,10 @@ function normalizeGameDockState(patch) {
     state.position = patch.position;
   }
   if ('shortcut' in patch) state.shortcut = text(patch.shortcut, 'shortcut', 60);
+  if ('loopSearchSeconds' in patch) {
+    if (!Number.isInteger(patch.loopSearchSeconds) || patch.loopSearchSeconds < 1 || patch.loopSearchSeconds > 25) throw new Error('The dock smooth loop search duration is invalid.');
+    state.loopSearchSeconds = patch.loopSearchSeconds;
+  }
   if ('undoUntil' in patch) state.undoUntil = Number.isFinite(patch.undoUntil) ? Math.max(0, patch.undoUntil) : 0;
   if ('crop' in patch) state.crop = patch.crop === null ? null : normalizedCrop(patch.crop);
   if ('sourceSize' in patch) {
