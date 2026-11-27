@@ -452,8 +452,11 @@ function installEventDelegation() {
     setPortraitPlaybackActive(event.target.closest?.('.character-card'), true);
   });
   app.addEventListener('focusout', (event) => {
-    if (event.target.id === 'gallery-name-input') void finishInlineGalleryRename(event.target);
-    if (event.target.id === 'character-name-input') void finishInlineCharacterNameRename(event.target);
+    const input = event.target;
+    /* A render can remove the focused editor while morphChildren is still iterating.
+       Finish after that stack so the rename's own render cannot re-enter DOM mutation. */
+    if (input.id === 'gallery-name-input') queueMicrotask(() => { void finishInlineGalleryRename(input); });
+    if (input.id === 'character-name-input') queueMicrotask(() => { void finishInlineCharacterNameRename(input); });
     const thumb = event.target.closest?.('.variant-thumb');
     if (thumb && !thumb.contains(event.relatedTarget) && !thumb.matches(':hover')) setPortraitPlaybackActive(thumb, false);
     const card = event.target.closest?.('.character-card');
@@ -704,9 +707,9 @@ async function finishInlineGalleryRename(input) {
     focusTitle();
     return;
   }
-  if (!value || state.galleries.some((item) => item !== gallery && item.name.toLowerCase() === value.toLowerCase())) {
+  if (!value || value.length > MAX_COLLECTION_NAME_LENGTH || state.galleries.some((item) => item !== gallery && item.name.toLowerCase() === value.toLowerCase())) {
     delete input.dataset.finished;
-    showToast(value ? 'A collection with that name already exists.' : 'Collection name cannot be empty.', 'info');
+    showToast(!value ? 'Collection name cannot be empty.' : value.length > MAX_COLLECTION_NAME_LENGTH ? `Collection names cannot exceed ${MAX_COLLECTION_NAME_LENGTH} characters.` : 'A collection with that name already exists.', 'info');
     focusWithoutScroll(input);
     input.select();
     return;
@@ -1454,7 +1457,7 @@ function installKeyboardShortcuts() {
       saveLibraryWithToast();
       return;
     }
-    if (command && key === 'd') {
+    if (command && key === 'd' && !editingText) {
       event.preventDefault();
       duplicateSelectedCharacter();
       return;
@@ -1469,7 +1472,7 @@ function installKeyboardShortcuts() {
       navigateQuickLook(event.key === 'ArrowLeft' ? -1 : 1);
       return;
     }
-    if (event.key === 'F2' && !inComparisonTray) {
+    if (event.key === 'F2' && !editingText && !inComparisonTray) {
       event.preventDefault();
       showManageModal();
       return;

@@ -62,9 +62,13 @@ async function transferCharacters(mode, destinationName, characterIds) {
 }
 
 function uniqueCollectionName(baseName) {
-  let name = baseName;
+  const base = baseName.slice(0, MAX_COLLECTION_NAME_LENGTH);
+  let name = base;
   let suffix = 2;
-  while (state.galleries.some((gallery) => gallery.name.toLowerCase() === name.toLowerCase())) name = `${baseName} (${suffix++})`;
+  while (state.galleries.some((gallery) => gallery.name.toLowerCase() === name.toLowerCase())) {
+    const suffixText = ` (${suffix++})`;
+    name = `${base.slice(0, MAX_COLLECTION_NAME_LENGTH - suffixText.length)}${suffixText}`;
+  }
   return name;
 }
 

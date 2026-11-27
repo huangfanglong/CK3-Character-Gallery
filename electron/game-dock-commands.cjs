@@ -1,3 +1,5 @@
+const MAX_COLLECTION_NAME_LENGTH = 120;
+
 const COMMAND_TYPES = new Set([
   'quick-add', 'select-collection', 'create-record', 'cancel-draft', 'discard-draft', 'finish-without-portrait',
   'snapshot', 'live-capture', 'toggle-capture', 'cancel-capture', 'crop-change', 'reset-crop', 'set-loop-search',
@@ -34,7 +36,7 @@ function normalizeGameDockCommand(command) {
   const input = command?.payload && typeof command.payload === 'object' && !Array.isArray(command.payload) ? command.payload : {};
   let payload = {};
   if (type === 'select-collection') {
-    const collection = text(input.collection, 'destination');
+    const collection = text(input.collection, 'destination', MAX_COLLECTION_NAME_LENGTH);
     if (!collection || collection.toLowerCase() === 'all characters') throw new Error('Choose a real destination collection.');
     payload = { collection };
   } else if (type === 'set-position') {
@@ -46,7 +48,7 @@ function normalizeGameDockCommand(command) {
     payload = { draftId: identifier(input.draftId, 'draft'), seconds: input.seconds };
   }
   else if (type === 'create-record') {
-    const collection = text(input.collection, 'destination');
+    const collection = text(input.collection, 'destination', MAX_COLLECTION_NAME_LENGTH);
     if (collection.toLowerCase() === 'all characters') throw new Error('Choose a real destination collection.');
     payload = { draftId: identifier(input.draftId, 'draft'), name: text(input.name, 'name'), frame: input.frame !== false, collection };
   }
@@ -62,11 +64,12 @@ function normalizeGameDockState(patch) {
     state.mode = patch.mode;
   }
   for (const key of ['collection', 'characterName', 'draftId', 'characterId']) {
-    if (key in patch) state[key] = text(patch[key], key, key === 'characterName' ? 120 : 100);
+    const maximum = key === 'collection' ? MAX_COLLECTION_NAME_LENGTH : key === 'characterName' ? 120 : 100;
+    if (key in patch) state[key] = text(patch[key], key, maximum);
   }
   if ('collections' in patch) {
     if (!Array.isArray(patch.collections) || patch.collections.length > 1000) throw new Error('The dock collection list is invalid.');
-    state.collections = [...new Set(patch.collections.map((name) => text(name, 'collection')).filter(Boolean))];
+    state.collections = [...new Set(patch.collections.map((name) => text(name, 'collection', MAX_COLLECTION_NAME_LENGTH)).filter(Boolean))];
   }
   for (const key of ['busy', 'dnaReady', 'quickAddReady', 'dnaAttached', 'sound']) if (key in patch) state[key] = Boolean(patch[key]);
   for (const key of ['message', 'error']) if (key in patch) state[key] = text(patch[key], key, 256);
@@ -104,4 +107,4 @@ function normalizeGameDockState(patch) {
   return state;
 }
 
-module.exports = { normalizeGameDockCommand, normalizeGameDockState };
+module.exports = { MAX_COLLECTION_NAME_LENGTH, normalizeGameDockCommand, normalizeGameDockState };

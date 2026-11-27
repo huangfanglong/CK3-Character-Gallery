@@ -417,6 +417,10 @@ if (!electron.app) {
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=undo-create]").disabled'), false);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".success-actions").textContent'), /View in gallery/);
+      dock.update({ undoUntil: Date.now() + 100 });
+      await delay(650);
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("[data-command=undo-create]").disabled'), true, 'The dock clock disables Quick-add Undo when its deadline expires.');
+      assert.equal(await window.webContents.executeJavaScript('dockState.undoUntil'), 0);
       dock.update({ mode: 'error', error: 'The CK3 window is no longer available.' });
       await delay(30);
       assert.match(await window.webContents.executeJavaScript('document.querySelector(".dock-body").textContent'), /no longer available/);

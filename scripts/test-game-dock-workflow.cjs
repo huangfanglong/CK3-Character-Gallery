@@ -67,6 +67,10 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.equal(context.dockUpdates.at(-1).mode, 'success');
   assert.ok(context.dockUpdates.at(-1).undoUntil > Date.now());
   assert.equal(context.state.galleries[0].characters[0].name, 'DNA only');
+  const expiredUndo = await context.processGameDockCommand({ operationId: 'op-expired-undo', type: 'undo-create', payload: { draftId: 'draft-2', undoUntil: Date.now() - 1 } });
+  assert.equal(expiredUndo.ok, false);
+  assert.match(expiredUndo.error, /expired/);
+  assert.equal(context.state.galleries[0].characters.length, 1, 'An expired Undo cannot delete the committed character.');
 
   await context.processGameDockCommand({ operationId: 'op-5', type: 'select-for-test', payload: {} }).catch(() => {});
   context.state.modal = 'unrelated editor';

@@ -15,6 +15,17 @@ async function writeArchiveFile(file, galleries) {
   }
 }
 
+function validArchive(galleries) {
+  return Array.isArray(galleries) && galleries.every((gallery) => Boolean(gallery)
+    && typeof gallery === 'object' && !Array.isArray(gallery)
+    && typeof gallery.name === 'string' && Boolean(gallery.name.trim())
+    && Array.isArray(gallery.characters)
+    && gallery.characters.every((character) => Boolean(character)
+      && typeof character === 'object' && !Array.isArray(character)
+      && typeof character.id === 'string' && Boolean(character.id)
+      && typeof character.name === 'string'));
+}
+
 async function ensureArchive(directory, options = {}) {
   await fs.mkdir(path.join(directory, 'images'), { recursive: true });
   const file = path.join(directory, 'galleries.json');
@@ -30,7 +41,7 @@ async function ensureArchive(directory, options = {}) {
 
   try {
     const galleries = JSON.parse(source);
-    if (!Array.isArray(galleries)) throw new Error('The archive root must be a collection list.');
+    if (!validArchive(galleries)) throw new Error('The archive must contain valid collections and character records.');
     return { directory, file, galleries, warning: null, recoveryFile: null };
   } catch {
     const timestamp = Number(options.now?.() ?? Date.now());
@@ -49,7 +60,7 @@ async function ensureArchive(directory, options = {}) {
 }
 
 async function saveArchive(directory, galleries) {
-  if (!Array.isArray(galleries)) throw new Error('The archive must contain a collection list.');
+  if (!validArchive(galleries)) throw new Error('The archive must contain valid collections and character records.');
   await fs.mkdir(path.join(directory, 'images'), { recursive: true });
   const file = path.join(directory, 'galleries.json');
   await writeArchiveFile(file, galleries);

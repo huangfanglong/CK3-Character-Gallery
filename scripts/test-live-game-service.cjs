@@ -13,7 +13,7 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
   };
   const dna = liveFixture().process.persistentDna();
   const bridge = {
-    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null, pendingPrepare: null, undoDelay: 20_000,
+    calls: [], enabled: false, failImport: false, failNextEnable: false, pendingImport: null, pendingPrepare: null, pendingConfirm: null, undoDelay: 20_000,
     async setEnabled(value) {
       this.calls.push(['enabled', value]);
       if (value && this.failNextEnable) {
@@ -42,7 +42,11 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       if (this.pendingPrepare) await this.pendingPrepare;
       return { token: '123e4567-e89b-42d3-a456-426614174000', target: { id: 1, name: 'Aella', nameIsKey: true }, report: { geneCount: 24, message: '24 genes mapped. Special appearance entries excluded.' } };
     },
-    async confirmApply() { this.calls.push(['confirm']); return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + this.undoDelay, report: { geneCount: 24, message: '24 genes mapped.' } }; },
+    async confirmApply() {
+      this.calls.push(['confirm']);
+      if (this.pendingConfirm) await this.pendingConfirm;
+      return { target: { id: 1, name: 'Aella' }, undoUntil: Date.now() + this.undoDelay, report: { geneCount: 24, message: '24 genes mapped.' } };
+    },
     async undo() { this.calls.push(['undo']); return { target: { id: 1, name: 'Aella' } }; },
     async cancel() { this.calls.push(['cancel']); return true; }, async close() {},
   };
@@ -284,6 +288,33 @@ function fixture(preferencesPath = '', preferences = { enabled: true, position: 
       rejectCancelledImport?.(new Error('Test cleanup.'));
       await cancelledImport;
       cancelling.service.destroy();
+    }
+
+    const interrupted = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });
+    let rejectConfirmation;
+    let applying;
+    try {
+      await interrupted.service.setLiveLinkChoice(true);
+      interrupted.service.syncSelection({ id: 'card-1', name: 'Archived Aella', modified: 6, dna: interrupted.dna });
+      interrupted.bridge.pendingConfirm = new Promise((_resolve, reject) => { rejectConfirmation = reject; });
+      applying = interrupted.service.handleCommand({ operationId: 'apply-interrupted', type: 'live-prepare-apply', payload: {} });
+      for (let attempt = 0; attempt < 20 && !interrupted.bridge.calls.some(([action]) => action === 'confirm'); attempt += 1) await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(typeof rejectConfirmation, 'function');
+      assert.ok(interrupted.service.liveApply, 'The fixture is paused at the actual confirmed write.');
+      await interrupted.service.setLiveLinkEnabled(false);
+      assert.equal(interrupted.dock.state.liveEnabled, false);
+      assert.equal(interrupted.dock.state.mode, 'error', 'Disabling Live Game Link during a write preserves a visible safety error.');
+      assert.match(interrupted.dock.state.error, /unconfirmed/);
+      rejectConfirmation(new Error('Check the character in CK3 before saving; the final DNA state is unconfirmed.'));
+      const retired = await applying;
+      applying = null;
+      assert.equal(retired.cancelled, true, 'The retired command itself remains cancelled.');
+      assert.equal(interrupted.dock.state.mode, 'error', 'The late rejection cannot clear the interruption warning.');
+      assert.match(interrupted.dock.state.error, /unconfirmed/);
+    } finally {
+      rejectConfirmation?.(new Error('Test cleanup.'));
+      if (applying) await applying;
+      interrupted.service.destroy();
     }
 
     const verifying = fixture('', { enabled: true, position: 'center', collection: 'Court', liveLink: { decision: 'enabled', enabled: true } });

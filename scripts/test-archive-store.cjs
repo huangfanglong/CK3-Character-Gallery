@@ -21,6 +21,17 @@ async function main() {
     await fs.writeFile(path.join(root, 'galleries.json'), JSON.stringify({ invalid: true }));
     const invalidRoot = await ensureArchive(root, { now: () => 123457 });
     assert.deepEqual(invalidRoot.galleries, [{ name: 'Default', characters: [] }]);
+
+    const invalidShape = [{ name: 'Default', records: [] }];
+    await fs.writeFile(path.join(root, 'galleries.json'), JSON.stringify(invalidShape));
+    const invalidCollections = await ensureArchive(root, { now: () => 123458 });
+    assert.deepEqual(invalidCollections.galleries, [{ name: 'Default', characters: [] }]);
+    assert.match(invalidCollections.warning, /recovery copy/);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'galleries.json.corrupt-123458'), 'utf8')), invalidShape);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'galleries.json'), 'utf8')), [{ name: 'Default', characters: [] }]);
+    await assert.rejects(saveArchive(root, invalidShape), /valid collections/);
+    await assert.rejects(saveArchive(root, [{ name: 'Broken character', characters: [{}] }]), /valid collections/);
+
     await saveArchive(root, [{ name: 'Saved', characters: [] }]);
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'galleries.json'), 'utf8')), [{ name: 'Saved', characters: [] }]);
     console.log('Archive store test passed: fresh setup, corrupt-file recovery, invalid-root recovery, warnings, and atomic saves.');

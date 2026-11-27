@@ -29,4 +29,16 @@ assert.throws(() => normalizeGameDockState({ mode: 'admin' }), /mode/i);
 assert.throws(() => normalizeGameDockCommand({ ...base, type: 'live-confirm-apply' }), /not supported/, 'The removed Apply confirmation command must stay dead.');
 assert.throws(() => normalizeGameDockState({ mode: 'live-confirm' }), /mode/i, 'The removed Apply confirmation mode must stay dead.');
 assert.throws(() => normalizeGameDockState({ mode: 'live-result' }), /mode/i, 'The replaced Apply result mode must stay dead.');
+for (const length of [110, 120]) {
+  const collection = 'c'.repeat(length);
+  assert.equal(normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection } }).payload.collection, collection);
+  assert.equal(normalizeGameDockCommand({ ...base, type: 'create-record', payload: { draftId: 'draft-1', collection } }).payload.collection, collection);
+  assert.equal(normalizeGameDockState({ collection }).collection, collection);
+  assert.deepEqual(normalizeGameDockState({ collections: [collection] }).collections, [collection]);
+}
+const overlongCollection = 'c'.repeat(121);
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'select-collection', payload: { collection: overlongCollection } }), /destination/i);
+assert.throws(() => normalizeGameDockCommand({ ...base, type: 'create-record', payload: { draftId: 'draft-1', collection: overlongCollection } }), /destination/i);
+assert.throws(() => normalizeGameDockState({ collection: overlongCollection }), /collection/i);
+assert.throws(() => normalizeGameDockState({ collections: [overlongCollection] }), /collection/i);
 console.log('Game dock command tests passed: allow-listed semantic actions, strict payloads, safe crops, and bounded state.');

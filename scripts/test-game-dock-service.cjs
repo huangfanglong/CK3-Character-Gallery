@@ -135,6 +135,12 @@ function fixture(options = {}) {
   assert.equal(destination.commands[0].payload.dna, validDna);
   destination.service.destroy();
 
+  const undoDeadline = fixture();
+  Object.assign(undoDeadline.dock.state, { mode: 'success', draftId: 'draft-deadline', undoUntil: 123456 });
+  await undoDeadline.service.handleCommand({ operationId: 'op-undo-deadline', type: 'undo-create', payload: { draftId: 'draft-deadline', undoUntil: 1 } });
+  assert.equal(undoDeadline.commands.at(-1).payload.undoUntil, 123456, 'Undo forwards the dock’s authoritative capture-service deadline.');
+  undoDeadline.service.destroy();
+
   const blocked = fixture();
   blocked.dock.game = null;
   const response = await blocked.service.handleCommand({ operationId: 'op-hidden', type: 'quick-add', payload: {} });

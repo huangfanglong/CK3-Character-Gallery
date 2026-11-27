@@ -102,7 +102,9 @@ async function main() {
   const evaluate = async (expression) => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return (await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
+        const response = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+        if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text || 'Renderer evaluation failed.');
+        return response.result.value;
       } catch (error) {
         if (attempt || !/Promise was collected/.test(error.message)) throw error;
       }
@@ -155,6 +157,8 @@ async function main() {
   const recoveryWarning = await evaluate("state.startupWarning || document.querySelector('.archive-warning')?.textContent || ''");
   if (!recoveryWarning.includes('recovery copy')) throw new Error(`Corrupted archive recovery warning was not surfaced (warning: ${recoveryWarning || 'none'}).`);
   await evaluate('state.preview=false');
+  const storedFavorites = JSON.parse(await evaluate(`(()=>{const key='ck3-favorites';const original=localStorage.getItem(key);let result;try{localStorage.setItem(key,'{ malformed');const malformed=[...readStoredFavorites()];localStorage.setItem(key,JSON.stringify(['kept',17,null,false,'also-kept']));const mixed=[...readStoredFavorites()];result={malformed,mixed};}finally{if(original===null)localStorage.removeItem(key);else localStorage.setItem(key,original);}return JSON.stringify({...result,restored:localStorage.getItem(key)===original});})()`));
+  if (storedFavorites.malformed.length || storedFavorites.mixed.join(',') !== 'kept,also-kept' || !storedFavorites.restored) throw new Error(`Stored favorites were not parsed defensively (${JSON.stringify(storedFavorites)}).`);
   fs.rmSync(smokeDataDirectory, { recursive: true, force: true });
   fs.writeFileSync(smokeDataDirectory, 'blocked archive directory');
   if ((await evaluate('saveLibrary()')) !== false) throw new Error('Archive save failure was not reported to the renderer.');
@@ -278,6 +282,14 @@ async function main() {
   await delay(30);
   if (!(await evaluate("getActiveCharacter().name === 'Renamed Inline' && document.querySelector('.quick-name-button span')?.textContent === 'Renamed Inline'"))) throw new Error('Inline Quick Look rename did not save and display the new name.');
   await evaluate("(()=>{getActiveCharacter().name="+JSON.stringify(firstName)+";render()})()");
+  const editingShortcuts = JSON.parse(await evaluate("(()=>{document.querySelector('[data-action=edit-character-name]').click();const input=document.querySelector('#character-name-input');const count=()=>state.galleries.reduce((total,gallery)=>total+gallery.characters.length,0);const before=count();input.dispatchEvent(new KeyboardEvent('keydown',{key:'d',ctrlKey:true,bubbles:true,cancelable:true}));const afterDuplicate=count();input.dispatchEvent(new KeyboardEvent('keydown',{key:'F2',bubbles:true,cancelable:true}));return JSON.stringify({before,afterDuplicate,afterManage:count(),focused:document.activeElement===input,connected:input.isConnected,modal:Boolean(state.modal),editing:state.characterNameRenameSource===getActiveCharacter()?.id});})()"));
+  if (editingShortcuts.before !== editingShortcuts.afterDuplicate || editingShortcuts.before !== editingShortcuts.afterManage || !editingShortcuts.focused || !editingShortcuts.connected || editingShortcuts.modal || !editingShortcuts.editing) throw new Error(`Ctrl+D or F2 interrupted inline character renaming (${JSON.stringify(editingShortcuts)}).`);
+  await evaluate("(()=>{const input=document.querySelector('#character-name-input');input.dataset.cancelled='true';input.blur();})()");
+  await delay(30);
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'F2',bubbles:true,cancelable:true}))");
+  const manageFocus = JSON.parse(await evaluate("(()=>{const input=document.querySelector('#manage-name');return JSON.stringify({open:Boolean(input),focused:document.activeElement===input,start:input?.selectionStart,end:input?.selectionEnd,length:input?.value.length});})()"));
+  if (!manageFocus.open || !manageFocus.focused || manageFocus.start !== 0 || manageFocus.end !== manageFocus.length) throw new Error(`Manage did not focus and select its name editor (${JSON.stringify(manageFocus)}).`);
+  await evaluate("document.querySelector('[data-action=close-modal]').click()");
   const quickFocusTrap = JSON.parse(await evaluate("(()=>{const sheet=document.querySelector('.quick-sheet');const controls=[...sheet.querySelectorAll('button:not(:disabled),input:not(:disabled)')];const first=controls[0];const last=controls.at(-1);last.focus();last.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));return JSON.stringify({first:document.activeElement===first,inside:sheet.contains(document.activeElement)})})()"));
   if (!quickFocusTrap.first || !quickFocusTrap.inside) throw new Error(`Quick Look did not contain keyboard focus (${JSON.stringify(quickFocusTrap)}).`);
   const quickOrder = JSON.parse(await evaluate("JSON.stringify(visibleCharacters().map(character=>character.id))"));
@@ -741,6 +753,23 @@ async function main() {
   await evaluate("document.querySelector('[data-action=close-modal]').click();showImportModal('smoke-folder','Transfer Target');document.querySelector('[data-action=create-import]').click()");
   if (!(await evaluate("document.querySelector('.toast.info')?.textContent.includes('already exists') && Boolean(document.querySelector('#modal-import-name'))"))) throw new Error('Duplicate collection import did not explain the name conflict.');
   await evaluate("document.querySelector('[data-action=close-modal]').click();const source=state.galleries.find(gallery=>gallery.name===window.__originalGalleryName);const target=state.galleries.find(gallery=>gallery.name==='Transfer Target');const moved=target.characters.find(character=>character.id===window.__movedCharacterId);if(moved)source.characters.push(moved);state.galleries=state.galleries.filter(gallery=>gallery!==target);state.activeGallery=window.__originalGalleryName;resetSelection();render()");
+  const longCollectionName = 'L'.repeat(110);
+  const overlongCollectionName = 'O'.repeat(121);
+  const collectionInputContract = JSON.parse(await evaluate(`(()=>{showGalleryModal();const input=document.querySelector('#modal-gallery-name');const maximum=input.maxLength;input.value=${JSON.stringify(overlongCollectionName)};document.querySelector('[data-action=create-gallery]').click();const rejected=Boolean(state.modal)&&!state.galleries.some(gallery=>gallery.name===${JSON.stringify(overlongCollectionName)})&&document.querySelector('.toast.info')?.textContent.includes('120');input.value=${JSON.stringify(longCollectionName)};document.querySelector('[data-action=create-gallery]').click();return JSON.stringify({maximum,rejected});})()`));
+  await delay(30);
+  if (collectionInputContract.maximum !== 120 || !collectionInputContract.rejected || !(await evaluate(`state.activeGallery===${JSON.stringify(longCollectionName)}&&getGallery().characters.length===0`))) throw new Error(`Collection creation did not enforce the shared 120-character limit (${JSON.stringify(collectionInputContract)}).`);
+  const renameLengthGuard = JSON.parse(await evaluate(`(()=>{showRenameGalleryModal();const input=document.querySelector('#rename-gallery-name');const maximum=input.maxLength;input.value=${JSON.stringify(overlongCollectionName)};document.querySelector('[data-action=confirm-rename-gallery]').click();return JSON.stringify({maximum,rejected:state.activeGallery===${JSON.stringify(longCollectionName)}&&Boolean(input)&&document.querySelector('.toast.info')?.textContent.includes('120')});})()`));
+  if (renameLengthGuard.maximum !== 120 || !renameLengthGuard.rejected) throw new Error(`Collection rename accepted an overlong name (${JSON.stringify(renameLengthGuard)}).`);
+  await evaluate("document.querySelector('[data-action=close-modal]').click()");
+  const importLengthGuard = JSON.parse(await evaluate(`(()=>{showImportModal('smoke-folder',${JSON.stringify(longCollectionName)});const input=document.querySelector('#modal-import-name');const maximum=input.maxLength;input.value=${JSON.stringify(overlongCollectionName)};document.querySelector('[data-action=create-import]').click();return JSON.stringify({maximum,rejected:Boolean(state.modal)&&Boolean(input)&&document.querySelector('.toast.info')?.textContent.includes('120')});})()`));
+  if (importLengthGuard.maximum !== 120 || !importLengthGuard.rejected) throw new Error(`Collection import accepted an overlong name (${JSON.stringify(importLengthGuard)}).`);
+  await evaluate("document.querySelector('[data-action=close-modal]').click()");
+  const inlineLengthGuard = JSON.parse(await evaluate(`(async()=>{startInlineGalleryRename();const input=document.querySelector('#gallery-name-input');const maximum=input.maxLength;input.value=${JSON.stringify(overlongCollectionName)};await finishInlineGalleryRename(input);const result={maximum,rejected:state.activeGallery===${JSON.stringify(longCollectionName)}&&document.activeElement===input&&input.dataset.finished!=='true'&&document.querySelector('.toast.info')?.textContent.includes('120')};input.dataset.cancelled='true';input.blur();return JSON.stringify(result);})()`));
+  await delay(30);
+  if (inlineLengthGuard.maximum !== 120 || !inlineLengthGuard.rejected) throw new Error(`Inline collection rename accepted an overlong name (${JSON.stringify(inlineLengthGuard)}).`);
+  const generatedCollectionName = await evaluate(`(()=>{const maximumName='M'.repeat(120);state.galleries.push({name:maximumName,characters:[]});const generated=uniqueCollectionName(maximumName+' Copy');state.galleries=state.galleries.filter(gallery=>gallery.name!==maximumName);return generated;})()`);
+  if (generatedCollectionName.length > 120 || generatedCollectionName === 'M'.repeat(120) || !generatedCollectionName.endsWith('(2)')) throw new Error(`Collection duplication generated an invalid or colliding name (${generatedCollectionName.length}).`);
+  await evaluate(`state.galleries=state.galleries.filter(gallery=>gallery.name!==${JSON.stringify(longCollectionName)});state.activeGallery=window.__originalGalleryName;state.sort='custom';state.galleryRenameSource=null;resetSelection();render()`);
   await evaluate("document.querySelector('.character-card').click()");
   await evaluate("document.querySelector('.character-card').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:500,clientY:300}))");
   if (!(await evaluate("document.querySelector('.context-menu')?.textContent.includes('Manage record') && document.querySelector('.context-menu')?.textContent.includes('Duplicate') && document.querySelector('.context-menu')?.textContent.includes('Delete')"))) throw new Error('Character right-click menu did not expose expected actions.');
@@ -917,7 +946,7 @@ async function main() {
   if (!renderBenchmark.retainedDuringModal) throw new Error('Large archive modal update replaced an unrelated keyed character card.');
   if (renderBenchmark.modalDuration > 1000) throw new Error(`Large archive modal update exceeded the regression ceiling (${renderBenchmark.modalDuration}ms).`);
   if (renderBenchmark.scopedFullMorphs !== 0) throw new Error(`Scoped updates invoked the full application morph ${renderBenchmark.scopedFullMorphs} time(s).`);
-  if (!(await evaluate("(async()=>{const prior=state.modal;let resolve;const pending=runPortraitSourceRequest(()=>new Promise(done=>{resolve=done}));state.modal='<div class=modal-backdrop></div>';resolve({sourceId:'stale-source'});const result=await pending;const preserved=state.modal==='<div class=modal-backdrop></div>';state.modal=prior;render('modal');return result===undefined&&preserved})()"))) throw new Error('A stale portrait request replaced a newer modal workflow.');
+  if (!(await evaluate("(async()=>{const prior=state.modal;let resolve;const pending=runPortraitSourceRequest(()=>new Promise(done=>{resolve=done}));state.modal='<div class=modal-backdrop></div>';await Promise.resolve();resolve({sourceId:'stale-source'});const result=await pending;const preserved=state.modal==='<div class=modal-backdrop></div>';state.modal=prior;render('modal');return result===undefined&&preserved})()"))) throw new Error('A stale portrait request replaced a newer modal workflow.');
   const portraitLoading = JSON.parse(await evaluate(`(async()=>{
     const originalRender=render;const originalVisibleCharacters=visibleCharacters;const originalPromiseAll=Promise.all;
     let pathBatches=0;let filterPasses=0;

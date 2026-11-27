@@ -3,7 +3,7 @@ const globals = require('globals');
 const promise = require('eslint-plugin-promise');
 
 const rendererGlobals = Object.fromEntries([
-  'MAX_PORTRAIT_VARIANTS', 'state', 'resetSelection', 'hasMaximumPortraits', 'modalPreserveAttribute', 'syncPortraitPlayback', 'setPortraitPlaybackActive', 'suppressPortraitFocusPlayback', 'allowPortraitFocusPlayback',
+  'MAX_PORTRAIT_VARIANTS', 'MAX_COLLECTION_NAME_LENGTH', 'readStoredFavorites', 'state', 'resetSelection', 'hasMaximumPortraits', 'modalPreserveAttribute', 'syncPortraitPlayback', 'setPortraitPlaybackActive', 'suppressPortraitFocusPlayback', 'allowPortraitFocusPlayback',
   'DEFAULT_CHARACTER_NAME_COLOR', 'DEFAULT_CHARACTER_TITLE_COLOR', 'DEFAULT_TITLE_GLOW_COLOR', 'CHARACTER_COLOR_PRESETS', 'normalizeAppearanceColor', 'applyCharacterAppearance', 'syncCharacterAppearance', 'showCharacterAppearanceModal', 'trapAppearanceFocus', 'updateAppearanceSelection', 'updateAppearancePreview', 'resetAppearanceEditor', 'saveCharacterAppearance',
   'morphAppContent', 'morphAppRegion', 'prefersReducedMotion', 'capturePortraitMotion', 'animateQuickLookOpen', 'animateQuickLookClose', 'animateQuickLookNavigation', 'captureCommandDockMotion', 'animateCommandDockMotion', 'captureLibraryMotion', 'animateLibraryTransition', 'syncCollectionIndicator', 'captureReorderMotion', 'animateReorderSiblings', 'animateReorderSettle',
   'chromeMarkup', 'contextMenuMarkup', 'cardMarkup', 'tableMarkup', 'sidebarMarkup', 'inspectorMarkup', 'mainMarkup', 'sortControlMarkup', 'filterPanelMarkup', 'emptyResultsMarkup',

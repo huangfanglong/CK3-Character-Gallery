@@ -2,11 +2,17 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
-const { GameDock, dockHitRegions, dockSurfaceBounds, gameDockBounds, normalizeDockPreferences, shouldShowDock } = require('../electron/game-dock.cjs');
+const { GameDock, dockHitRegions, dockSurfaceBounds, gameDockBounds, gameDockWindowBounds, normalizeDockPreferences, shouldShowDock } = require('../electron/game-dock.cjs');
 
 assert.deepEqual(gameDockBounds({ bounds: { x: -20, y: 10, width: 1936, height: 1096 }, clientBounds: { x: -12, y: 42, width: 1920, height: 1032 } }), { x: -12, y: 42, width: 1920, height: 1032 });
 assert.deepEqual(gameDockBounds({ bounds: { x: 0, y: 0, width: 1280, height: 720 } }), { x: 0, y: 0, width: 1280, height: 720 });
 assert.equal(gameDockBounds({ bounds: null }), null);
+const scaledGame = { clientBounds: { x: 120, y: 60, width: 1920, height: 1080 } };
+assert.deepEqual(gameDockWindowBounds(scaledGame, { screenToDipRect(window, rect) {
+  assert.equal(window, null);
+  assert.deepEqual(rect, scaledGame.clientBounds, 'Only the Electron window boundary converts the physical rectangle.');
+  return { x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 };
+} }), { x: 80, y: 40, width: 1280, height: 720 });
 assert.equal(shouldShowDock({ visible: true, minimized: false }, true, false, false), true);
 assert.equal(shouldShowDock(null, true, false, false), false);
 assert.equal(shouldShowDock(null, true, true, true), true);
@@ -16,6 +22,8 @@ assert.deepEqual(normalizeDockPreferences({ enabled: false, position: 'right', c
 assert.deepEqual(normalizeDockPreferences({ enabled: 'no', position: 'invalid', collection: 42 }), { enabled: true, position: 'center', collection: '', liveLink: { decision: 'undecided', enabled: false } });
 assert.deepEqual(normalizeDockPreferences({ liveLink: { decision: 'declined', enabled: true } }).liveLink, { decision: 'declined', enabled: false });
 assert.deepEqual(normalizeDockPreferences({ liveLink: { decision: 'enabled', enabled: true } }).liveLink, { decision: 'enabled', enabled: true });
+assert.equal(normalizeDockPreferences({ collection: 'c'.repeat(120) }).collection.length, 120);
+assert.equal(normalizeDockPreferences({ collection: 'c'.repeat(121) }).collection.length, 120, 'Stored preferences cannot exceed the shared collection limit.');
 const surfaceGame = { x: 100, y: 50, width: 1920, height: 1080 };
 assert.deepEqual(dockSurfaceBounds(surfaceGame), { x: 920, y: 50, width: 280, height: 6 });
 assert.deepEqual(dockSurfaceBounds(surfaceGame, 'compact', 'center', true), { x: 720, y: 50, width: 680, height: 48 });

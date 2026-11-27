@@ -121,7 +121,7 @@ function mainMarkup(characters) {
   const renameActive = !state.allGalleries && !state.preview && state.galleryRenameSource === state.activeGallery;
   const editableGallery = !state.allGalleries && !state.preview;
   const titleMarkup = renameActive
-    ? `<h1 class="gallery-title"><input id="gallery-name-input" class="gallery-title-input" value="${escapeHtml(galleryLabel)}" aria-label="Collection name" aria-describedby="gallery-rename-hint" autocomplete="off" spellcheck="false" /></h1>`
+    ? `<h1 class="gallery-title"><input id="gallery-name-input" class="gallery-title-input" maxlength="${MAX_COLLECTION_NAME_LENGTH}" value="${escapeHtml(galleryLabel)}" aria-label="Collection name" aria-describedby="gallery-rename-hint" autocomplete="off" spellcheck="false" /></h1>`
     : `<h1 class="gallery-title">${editableGallery ? `<button type="button" class="gallery-title-button" data-action="edit-gallery-title" title="Rename collection" aria-label="Rename collection ${escapeHtml(galleryLabel)}"><span>${escapeHtml(galleryLabel)}</span>${icon('edit')}</button>` : escapeHtml(galleryLabel)}</h1>`;
   const subtitleMarkup = renameActive
     ? '<p class="heading-subtitle gallery-rename-hint" id="gallery-rename-hint"><span>Enter or click elsewhere to save</span><i></i><span>Esc to cancel</span></p>'

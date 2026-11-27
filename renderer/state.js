@@ -1,4 +1,14 @@
 const MAX_PORTRAIT_VARIANTS = 5;
+const MAX_COLLECTION_NAME_LENGTH = 120;
+
+function readStoredFavorites() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('ck3-favorites') || '[]');
+    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
 
 const state = {
   galleries: [],
@@ -46,7 +56,7 @@ const state = {
   galleryBatchMode: false,
   selectedGalleryNames: new Set(),
   contextMenu: null,
-  favorites: new Set(JSON.parse(localStorage.getItem('ck3-favorites') || '[]')),
+  favorites: readStoredFavorites(),
 };
 
 function resetSelection(activeId = null) {

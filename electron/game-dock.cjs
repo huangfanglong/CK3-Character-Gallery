@@ -1,4 +1,5 @@
 const { WindowsCursorGuard, DOCK_CURSOR_INSET } = require('./windows-cursor-guard.cjs');
+const { MAX_COLLECTION_NAME_LENGTH } = require('./game-dock-commands.cjs');
 
 const DOCK_POSITIONS = new Set(['left', 'center', 'right']);
 const DOCK_WIDTH = 680;
@@ -16,7 +17,7 @@ function normalizeDockPreferences(preferences = {}) {
   return {
     enabled: typeof preferences.enabled === 'boolean' ? preferences.enabled : true,
     position: DOCK_POSITIONS.has(preferences.position) ? preferences.position : 'center',
-    collection: typeof preferences.collection === 'string' ? preferences.collection.trim().slice(0, 120) : '',
+    collection: typeof preferences.collection === 'string' ? preferences.collection.trim().slice(0, MAX_COLLECTION_NAME_LENGTH) : '',
     liveLink: normalizeLiveLinkPreferences(preferences),
   };
 }
@@ -24,6 +25,13 @@ function normalizeDockPreferences(preferences = {}) {
 function gameDockBounds(game) {
   const bounds = game?.clientBounds || game?.bounds;
   if (![bounds?.x, bounds?.y, bounds?.width, bounds?.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return null;
+  return { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) };
+}
+
+function gameDockWindowBounds(game, screen) {
+  const physical = gameDockBounds(game);
+  if (!physical || typeof screen?.screenToDipRect !== 'function') return physical;
+  const bounds = screen.screenToDipRect(null, physical);
   return { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) };
 }
 
@@ -219,7 +227,7 @@ class GameDock {
 
   positionWindow() {
     if (!this.window || this.window.isDestroyed()) return;
-    const bounds = gameDockBounds(this.game);
+    const bounds = gameDockWindowBounds(this.game, this.screen);
     if (!bounds) return;
     /* ClipCursor uses physical pixels while BrowserWindow bounds are DIPs. Re-arm
        after a real game/display move, not a transient focus-only game loss. */
@@ -237,12 +245,11 @@ class GameDock {
   }
 
   initialHitRegions() {
-    const gameBounds = gameDockBounds(this.game);
-    const windowBounds = this.window?.getBounds();
-    if (!gameBounds || !windowBounds) return [{ x: 0, y: 0, width: 1, height: 1 }];
+    const gameBounds = this.window?.getBounds();
+    if (!gameBounds) return [{ x: 0, y: 0, width: 1, height: 1 }];
     const resting = dockSurfaceBounds(gameBounds, 'compact', this.state.position, false);
-    /* The extra two physical rows let ClipCursor land at y=6 without leaving the
-       resting native shape. Only the visible 280 px strip can activate the dock. */
+    /* The extra two rows let ClipCursor land at y=6 without leaving the resting
+       native shape. Only the visible 280 px strip can activate the dock. */
     return [{ x: resting.x - gameBounds.x, y: resting.y - gameBounds.y, width: resting.width, height: DOCK_CURSOR_INSET + 2 }];
   }
 
@@ -335,7 +342,7 @@ class GameDock {
   ensureWindow() {
     if (this.window && !this.window.isDestroyed()) return;
     this.ready = false;
-    const initialBounds = gameDockBounds(this.game);
+    const initialBounds = gameDockWindowBounds(this.game, this.screen);
     const window = new this.BrowserWindow({
       width: initialBounds?.width || 800,
       height: initialBounds?.height || 100,
@@ -496,6 +503,7 @@ module.exports = {
   dockHitRegions,
   dockSurfaceBounds,
   gameDockBounds,
+  gameDockWindowBounds,
   normalizeDockPreferences,
   shouldShowDock,
 };

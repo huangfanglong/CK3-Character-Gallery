@@ -55,14 +55,14 @@ function showCharacterModal(portraitSource = null, dnaSource = null) {
 }
 
 function showGalleryModal() {
-  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">NEW COLLECTION</p><h2>Add a new collection</h2><label class="modal-label">Collection name<input id="modal-gallery-name" autofocus placeholder="e.g. The Baltic Court" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-gallery">Create collection ${icon('arrow')}</button></div></div></div>`;
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">NEW COLLECTION</p><h2>Add a new collection</h2><label class="modal-label">Collection name<input maxlength="${MAX_COLLECTION_NAME_LENGTH}" id="modal-gallery-name" autofocus placeholder="e.g. The Baltic Court" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-gallery">Create collection ${icon('arrow')}</button></div></div></div>`;
   render('modal'); document.querySelector('#modal-gallery-name')?.focus();
 }
 
 function showRenameGalleryModal() {
   const gallery = getGallery();
   if (!gallery || state.preview) return;
-  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">RENAME COLLECTION</p><h2>Rename ${escapeHtml(gallery.name)}</h2><label class="modal-label">Collection name<input id="rename-gallery-name" value="${escapeHtml(gallery.name)}" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="confirm-rename-gallery">Save name ${icon('check')}</button></div></div></div>`;
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">RENAME COLLECTION</p><h2>Rename ${escapeHtml(gallery.name)}</h2><label class="modal-label">Collection name<input maxlength="${MAX_COLLECTION_NAME_LENGTH}" id="rename-gallery-name" value="${escapeHtml(gallery.name)}" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="confirm-rename-gallery">Save name ${icon('check')}</button></div></div></div>`;
   render('modal'); document.querySelector('#rename-gallery-name')?.focus(); document.querySelector('#rename-gallery-name')?.select();
 }
 
@@ -86,7 +86,7 @@ function showGalleryBatchDeleteConfirmation() {
 
 function showImportModal(folder, suggestedName = '') {
   state.importFolder = folder;
-  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">IMPORT COLLECTION</p><h2>Bring in a court</h2><p class="modal-copy">Portraits, DNA, notes, and collection metadata will be copied into this archive. The original folder stays untouched.</p><label class="modal-label">Collection name<input id="modal-import-name" value="${escapeHtml(suggestedName)}" autofocus placeholder="e.g. House of Wessex" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-import">Import collection ${icon('arrow')}</button></div></div></div>`;
+  state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">IMPORT COLLECTION</p><h2>Bring in a court</h2><p class="modal-copy">Portraits, DNA, notes, and collection metadata will be copied into this archive. The original folder stays untouched.</p><label class="modal-label">Collection name<input maxlength="${MAX_COLLECTION_NAME_LENGTH}" id="modal-import-name" value="${escapeHtml(suggestedName)}" autofocus placeholder="e.g. House of Wessex" /></label><div class="modal-actions"><button class="outline-button" data-action="close-modal">Cancel</button><button class="primary-button" data-action="create-import">Import collection ${icon('arrow')}</button></div></div></div>`;
   render('modal'); document.querySelector('#modal-import-name')?.focus();
 }
 
@@ -121,6 +121,9 @@ function showManageModal() {
   if (!character) return;
   state.modal = `<div class="modal-backdrop"><div class="modal"><button class="modal-close" data-action="close-modal">${icon('close')}</button><p class="eyebrow">MANAGE RECORD</p><h2>${escapeHtml(character.name)}</h2><label class="modal-label">Character name<input id="manage-name" value="${escapeHtml(character.name)}" /></label><button class="appearance-entry" data-action="customize-appearance">${icon('palette')}<span><strong>Customize appearance</strong><small>Name, title, and glow colors</small></span>${icon('arrow')}</button><button class="appearance-entry" data-action="capture-live-portrait"${state.preview ? ' disabled' : ''}>${icon('grid')}<span><strong>Capture live portrait</strong><small>Record an animated CK3 window portrait</small></span>${icon('arrow')}</button><div class="manage-actions"><button class="danger-text" data-action="delete-character">Delete record</button><button class="outline-button" data-action="transfer-character"${state.preview ? ' disabled' : ''}>Move / Copy</button><button class="outline-button" data-action="duplicate-character">Duplicate</button><button class="primary-button" data-action="rename-character">Save name ${icon('check')}</button></div></div></div>`;
   render('modal');
+  const input = document.querySelector('#manage-name');
+  focusWithoutScroll(input);
+  input?.select();
 }
 
 function showTransferCharacterModal(characterIds = [getActiveCharacter()?.id]) {
@@ -219,12 +222,14 @@ async function handleModalAction(name) {
   if (name === 'create-gallery') {
     const input = document.querySelector('#modal-gallery-name'); const nameValue = input?.value.trim();
     if (!nameValue) return input?.focus();
+    if (nameValue.length > MAX_COLLECTION_NAME_LENGTH) { showToast(`Collection names cannot exceed ${MAX_COLLECTION_NAME_LENGTH} characters.`, 'info'); input.focus(); input.select(); return; }
     if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists.', 'info'); return input.focus(); }
     state.galleries.push({ name: nameValue, characters: [] }); state.activeGallery = nameValue; state.allGalleries = false; resetSelection(); clearFilters(false); state.filterPanelOpen = false; state.sort = 'recent'; state.modal = null; cancelBatchSelection(false); render(); if (await saveLibrary()) showToast('Collection created.', 'success');
   }
   if (name === 'confirm-rename-gallery') {
     const gallery = getGallery(); const input = document.querySelector('#rename-gallery-name'); const value = input?.value.trim();
     if (!gallery || !value) return input?.focus();
+    if (value.length > MAX_COLLECTION_NAME_LENGTH) { showToast(`Collection names cannot exceed ${MAX_COLLECTION_NAME_LENGTH} characters.`, 'info'); input.focus(); input.select(); return; }
     if (state.galleries.some((item) => item !== gallery && item.name.toLowerCase() === value.toLowerCase())) { showToast('A collection with that name already exists.', 'info'); return input.focus(); }
     gallery.name = value; gallery.modified = Date.now(); state.activeGallery = value; state.modal = null; render(); if (await saveLibrary()) showToast('Collection renamed.', 'success');
   }
@@ -295,6 +300,7 @@ async function handleModalAction(name) {
   if (name === 'create-import') {
     const input = document.querySelector('#modal-import-name'); const nameValue = input?.value.trim();
     if (!nameValue || !state.importFolder) return input?.focus();
+    if (nameValue.length > MAX_COLLECTION_NAME_LENGTH) { showToast(`Collection names cannot exceed ${MAX_COLLECTION_NAME_LENGTH} characters.`, 'info'); input.focus(); input.select(); return; }
     if (state.galleries.some((gallery) => gallery.name.toLowerCase() === nameValue.toLowerCase())) { showToast('A collection with that name already exists. Choose a different name to import it as a separate collection.', 'info'); return input.focus(); }
     try {
       const imported = await desktop.importGallery(state.importFolder, nameValue);

@@ -161,6 +161,10 @@ class GameDockService {
 
   async applyLivePreference() {
     if (!this.preferences.liveLink.enabled) {
+      /* Retiring the revision intentionally suppresses the rejected request's normal
+         error path. Preserve the safety warning when that request was an active write. */
+      const interruptedWrite = this.mutationKind === 'live'
+        && (Boolean(this.liveApply) || this.lastLiveCommand?.type === 'live-undo');
       this.retireLiveOperations();
       try { await this.liveBridge.setEnabled(false); }
       finally {
@@ -168,6 +172,10 @@ class GameDockService {
            replies remain identity-checked and cannot unlock a newer operation. */
         this.dock?.retirePendingCommands?.();
         this.clearLiveState();
+        if (interruptedWrite) this.dock?.update({
+          mode: 'error', busy: false, liveRetry: false,
+          error: 'Live Game Link was disabled during a DNA write. Check the character in CK3 before saving; the final DNA state is unconfirmed.',
+        });
       }
       return false;
     }
@@ -525,6 +533,9 @@ class GameDockService {
     if (type === 'create-record' && !this.dock.state.collections.includes(collection)) throw new Error('That destination collection no longer exists. Choose another gallery.');
     const enriched = { ...command, payload: { ...payload, draftId: this.dock.state.draftId, collection, gameHwnd: this.dock.game?.hwnd || '' } };
     if (['create-record', 'retry'].includes(type)) enriched.payload.dna = this.draftDna;
+    /* Live-portrait completion publishes its deadline from the capture service. Send
+       that authoritative value with Undo so every creation path enforces expiry. */
+    if (type === 'undo-create') enriched.payload.undoUntil = this.dock.state.undoUntil || 0;
     if (type === 'view-gallery') {
       const result = await this.forward(enriched);
       /* View in gallery is also confirmation of the saved draft. Reset only after

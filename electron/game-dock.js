@@ -268,12 +268,17 @@ function syncCaptureClock() {
   if (captureClock) clearInterval(captureClock);
   captureClock = null;
   const recording = dockState.capture?.startedAt && ['recording', 'matching'].includes(dockState.capture.state);
-  const undo = dockState.liveUndoUntil > Date.now();
-  if (!recording && !undo) return;
+  const quickAddUndo = dockState.undoUntil > Date.now();
+  const liveUndo = dockState.liveUndoUntil > Date.now();
+  if (!recording && !quickAddUndo && !liveUndo) return;
   captureClock = setInterval(() => {
     if (recording) {
       const clock = document.querySelector('#capture-time');
       if (clock) clock.textContent = elapsedLabel(dockState.capture.startedAt);
+    }
+    if (dockState.undoUntil && dockState.undoUntil <= Date.now()) {
+      dockState.undoUntil = 0;
+      renderDock();
     }
     if (dockState.liveUndoUntil) {
       if (dockState.liveUndoUntil <= Date.now()) { dockState.liveUndoUntil = 0; renderDock(); }

@@ -25,7 +25,9 @@ function dockBusyError() {
 }
 
 function dockSuccessState(message = 'Character and DNA saved.') {
-  return { mode: 'success', capture: null, crop: null, sourceSize: null, message, error: '', undoUntil: Date.now() + 12_000, busy: false, dnaReady: true, dnaAttached: true };
+  const undoUntil = Date.now() + 12_000;
+  if (dockWorkflow) dockWorkflow.undoUntil = undoUntil;
+  return { mode: 'success', capture: null, crop: null, sourceSize: null, message, error: '', undoUntil, busy: false, dnaReady: true, dnaAttached: true };
 }
 
 function dockCancellationError() {
@@ -129,6 +131,8 @@ async function createFromDock(command) {
 
 async function undoFromDock(command) {
   if (!dockWorkflow || dockWorkflow.draftId !== command.payload.draftId || !dockWorkflow.characterId) throw new Error('This quick-add is no longer available to undo.');
+  const undoUntil = Number.isFinite(command.payload.undoUntil) ? command.payload.undoUntil : dockWorkflow.undoUntil;
+  if (undoUntil > 0 && undoUntil <= Date.now()) throw new Error('The quick-add Undo window has expired.');
   if (state.modal && !state.captureSession?.dock) throw dockBusyError();
   if (state.captureSession?.dock) await releaseDockCapture();
   const character = dockWorkflowCharacter();
