@@ -381,7 +381,7 @@ async function selectCommand(button) {
     if (nameField) dockState.characterName = nameField.value;
     const opening = !dockView.picker;
     dockView.picker = opening;
-    dockView.pickerSource = opening && button.dataset.picker === 'draft' ? 'draft' : 'bar';
+    dockView.pickerSource = opening && (button.dataset.picker === 'draft' || dockState.mode === 'draft') ? 'draft' : 'bar';
     dockView.menu = '';
     dockView.query = '';
     setDockRevealed(true);

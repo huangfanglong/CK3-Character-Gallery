@@ -600,6 +600,21 @@ if (!electron.app) {
       assert.equal(dock.state.mode, 'success');
       dock.update({ mode: 'compact' });
 
+      await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").click()');
+      await delay(40);
+      await window.webContents.executeJavaScript(`{ document.querySelector('#character-name').value='Aella of the Stepstones (edited)'; document.querySelector('.dock-bar [data-command=open-collections]').click(); }`);
+      await delay(30);
+      assert.equal(await window.webContents.executeJavaScript('dockView.pickerSource'), 'draft', 'The top-bar Destination control belongs to the open draft.');
+      await window.webContents.executeJavaScript(`document.querySelector('[data-collection="The Baltic Court"]').click()`);
+      await delay(40);
+      assert.equal(dock.state.collection, 'The Baltic Court');
+      assert.equal(await window.webContents.executeJavaScript('document.querySelector("#character-name").value'), 'Aella of the Stepstones (edited)', 'Changing destination from the top bar preserves the edited name.');
+      await window.webContents.executeJavaScript('document.querySelector("[data-command=create-record][data-frame=false]").click()');
+      await delay(40);
+      assert.equal(createRecordCommands.at(-1).name, 'Aella of the Stepstones (edited)', 'The top-bar destination flow saves the edited name.');
+      assert.equal(createRecordCommands.at(-1).collection, 'The Baltic Court');
+      dock.update({ mode: 'compact' });
+
       holdNextLiveImport = true;
       await window.webContents.executeJavaScript('document.querySelector("[data-command=live-import]").click()');
       for (let attempt = 0; attempt < 50 && !stalledLiveImport; attempt += 1) await delay(20);
