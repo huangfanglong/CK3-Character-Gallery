@@ -246,7 +246,6 @@ module.exports = {
   MAX_PORTRAIT_BYTES,
   MAX_PORTRAIT_FRAMES,
   PALETTE_SAMPLE_FRAMES,
-  estimateDecodedMemory,
   inspectPortraitSource,
   processPortraitCrop,
 };

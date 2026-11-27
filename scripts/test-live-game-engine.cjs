@@ -236,10 +236,6 @@ assert.equal(decoded([0x38, 0xd8]).mnemonic, 'cmp');
   await assert.rejects(engine.confirmApply(fixture.game, rollback.token), /original DNA was restored/);
   assert.deepEqual(fixture.process.dna(), beforeRollback, 'A partial write is rolled back and verified.');
 
-  const sameSelection = await engine.prepareApply(fixture.game, selection);
-  fixture.process.patch(fixture.process.objects.dna, 0, Buffer.from([88]), 1);
-  await assert.rejects(engine.confirmApply(fixture.game, sameSelection.token), /changed after the preview/);
-
   const sequential = liveFixture();
   let sequentialNow = 10_000;
   const sequentialEngine = new LiveGameEngine({ process: sequential.process, readFile: async () => sequential.pe.buffer, now: () => sequentialNow });

@@ -49,17 +49,6 @@ function dockSurfaceBounds(gameBounds, mode = 'compact', position = 'center', re
   return { x: Math.round(gameBounds.x + 12 + offset), y: Math.round(gameBounds.y), width, height };
 }
 
-function dockHitRegions(gameBounds, mode = 'compact', position = 'center', crop = null, revealed = false) {
-  const surface = dockSurfaceBounds(gameBounds, mode, position, revealed);
-  if (!surface) return [];
-  const regions = [{ x: 0, y: 0, width: surface.width, height: surface.height }];
-  if (crop && ['framing', 'ready'].includes(mode)) {
-    const side = Math.max(1, crop.size);
-    regions.push({ x: Math.round(crop.x), y: Math.round(crop.y), width: Math.round(side), height: Math.round(side) });
-  }
-  return regions;
-}
-
 class GameDock {
   constructor(options) {
     this.BrowserWindow = options.BrowserWindow;
@@ -500,7 +489,6 @@ class GameDock {
 
 module.exports = {
   GameDock,
-  dockHitRegions,
   dockSurfaceBounds,
   gameDockBounds,
   gameDockWindowBounds,

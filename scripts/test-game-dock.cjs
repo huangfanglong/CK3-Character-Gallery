@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
-const { GameDock, dockHitRegions, dockSurfaceBounds, gameDockBounds, gameDockWindowBounds, normalizeDockPreferences, shouldShowDock } = require('../electron/game-dock.cjs');
+const { GameDock, dockSurfaceBounds, gameDockBounds, gameDockWindowBounds, normalizeDockPreferences, shouldShowDock } = require('../electron/game-dock.cjs');
 
 assert.deepEqual(gameDockBounds({ bounds: { x: -20, y: 10, width: 1936, height: 1096 }, clientBounds: { x: -12, y: 42, width: 1920, height: 1032 } }), { x: -12, y: 42, width: 1920, height: 1032 });
 assert.deepEqual(gameDockBounds({ bounds: { x: 0, y: 0, width: 1280, height: 720 } }), { x: 0, y: 0, width: 1280, height: 720 });
@@ -27,8 +27,6 @@ assert.equal(normalizeDockPreferences({ collection: 'c'.repeat(121) }).collectio
 const surfaceGame = { x: 100, y: 50, width: 1920, height: 1080 };
 assert.deepEqual(dockSurfaceBounds(surfaceGame), { x: 920, y: 50, width: 280, height: 6 });
 assert.deepEqual(dockSurfaceBounds(surfaceGame, 'compact', 'center', true), { x: 720, y: 50, width: 680, height: 48 });
-assert.deepEqual(dockHitRegions(surfaceGame), [{ x: 0, y: 0, width: 280, height: 6 }]);
-assert.deepEqual(dockHitRegions(surfaceGame, 'compact', 'center', null, true), [{ x: 0, y: 0, width: 680, height: 48 }]);
 
 class FakeWindow extends EventEmitter {
   constructor(options) {

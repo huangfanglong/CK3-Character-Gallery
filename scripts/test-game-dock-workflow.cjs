@@ -72,7 +72,6 @@ for (const file of ['character-records.js', 'game-dock-workflow.js']) vm.runInCo
   assert.match(expiredUndo.error, /expired/);
   assert.equal(context.state.galleries[0].characters.length, 1, 'An expired Undo cannot delete the committed character.');
 
-  await context.processGameDockCommand({ operationId: 'op-5', type: 'select-for-test', payload: {} }).catch(() => {});
   context.state.modal = 'unrelated editor';
   const busy = await context.processGameDockCommand({ operationId: 'op-6', type: 'create-record', payload: { draftId: 'draft-3', dna: 'dna-3', collection: 'Court', gameHwnd: '42' } });
   assert.equal(busy.ok, false);

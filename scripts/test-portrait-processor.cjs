@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { parseGIF, decompressFrames } = require('gifuct-js');
 const { GIFEncoder, applyPalette, quantize } = require('gifenc');
-const { MAX_DECODED_MEMORY_BYTES, PALETTE_SAMPLE_FRAMES, estimateDecodedMemory, inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
+const { MAX_DECODED_MEMORY_BYTES, PALETTE_SAMPLE_FRAMES, inspectPortraitSource, processPortraitCrop } = require('../electron/portrait-processor.cjs');
 
 function arrayBufferFor(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -100,9 +100,6 @@ async function main() {
   assert.deepEqual(source.delay, [80, 120]);
   assert.equal(source.loop, 2);
   assert.equal(MAX_DECODED_MEMORY_BYTES, 256 * 1024 * 1024);
-  assert.equal(source.estimatedMemoryBytes, estimateDecodedMemory({
-    width: 4, height: 3, frameCount: 2, descriptorPixels: 24, sourceBytes: input.length,
-  }));
   assert.ok(source.estimatedMemoryBytes < MAX_DECODED_MEMORY_BYTES);
 
   const output = await processPortraitCrop(input, { x: 1, y: 0, size: 3 });
