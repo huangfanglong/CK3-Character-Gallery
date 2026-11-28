@@ -34,7 +34,15 @@ async function main() {
 
     await saveArchive(root, [{ name: 'Saved', characters: [] }]);
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'galleries.json'), 'utf8')), [{ name: 'Saved', characters: [] }]);
-    console.log('Archive store test passed: fresh setup, corrupt-file recovery, invalid-root recovery, warnings, and atomic saves.');
+
+    const longName = [{ name: 'L'.repeat(121), characters: [] }, { name: 'Court', characters: [] }];
+    await fs.writeFile(path.join(root, 'galleries.json'), JSON.stringify(longName));
+    const capped = await ensureArchive(root);
+    assert.equal(capped.galleries[0].name, 'L'.repeat(120), 'Collections beyond the shared name limit are shortened on load.');
+    assert.equal(capped.galleries[1].name, 'Court');
+    assert.match(capped.warning, /120 characters/);
+    assert.equal(capped.recoveryFile, null, 'A valid archive is not quarantined over a long name.');
+    console.log('Archive store test passed: fresh setup, corrupt-file recovery, invalid-root recovery, warnings, name capping, and atomic saves.');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

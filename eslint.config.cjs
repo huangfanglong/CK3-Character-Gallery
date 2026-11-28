@@ -63,6 +63,7 @@ module.exports = [
       globals: {
         ...globals.browser,
         displayRectForVideo: 'readonly',
+        dockSurfacePlacement: 'readonly',
         moveCaptureCrop: 'readonly',
         normalizedCaptureCrop: 'readonly',
         resizeCaptureCrop: 'readonly',
@@ -73,7 +74,7 @@ module.exports = [
     },
   },
   {
-    files: ['renderer/capture-geometry.js'],
+    files: ['renderer/capture-geometry.js', 'electron/game-dock-geometry.js'],
     languageOptions: { globals: { module: 'readonly' } },
   },
   {

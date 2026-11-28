@@ -3,6 +3,7 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
 const { GameDock, dockSurfaceBounds, gameDockBounds, gameDockWindowBounds, normalizeDockPreferences, shouldShowDock } = require('../electron/game-dock.cjs');
+const { dockSurfacePlacement } = require('../electron/game-dock-geometry.js');
 
 assert.deepEqual(gameDockBounds({ bounds: { x: -20, y: 10, width: 1936, height: 1096 }, clientBounds: { x: -12, y: 42, width: 1920, height: 1032 } }), { x: -12, y: 42, width: 1920, height: 1032 });
 assert.deepEqual(gameDockBounds({ bounds: { x: 0, y: 0, width: 1280, height: 720 } }), { x: 0, y: 0, width: 1280, height: 720 });
@@ -296,7 +297,77 @@ async function main() {
   assert.equal(window.destroyed, true);
   assert.equal(monitor.stopCalls, 2);
   assert.equal(screen.listenerCount('display-added'), 0);
-  console.log('Game dock controller tests passed: visibility, placement, trusted hover, hit filtering, focus isolation, cursor cleanup, commands, and preferences.');
+
+  /* Regression: a command issued right after dock text input must not race the
+     asynchronous foreground event that repopulates the game. */
+  const quietGuard = { active: false, start() { return true; }, stop() {}, arm() { return true; }, check() {}, release() { return false; }, destroy() {} };
+  const asyncMonitor = new EventEmitter();
+  asyncMonitor.state = game;
+  asyncMonitor.start = () => true;
+  asyncMonitor.stop = () => {};
+  asyncMonitor.restoreFocus = (_hwnd) => {
+    setImmediate(() => { asyncMonitor.state = game; asyncMonitor.emit('change', game); });
+    return true;
+  };
+  const asyncDock = new GameDock({ BrowserWindow: class extends FakeWindow {}, screen, monitor: asyncMonitor, htmlPath: '', preloadPath: '', cursorGuard: quietGuard });
+  asyncDock.start();
+  assert.equal(asyncDock.setTextInput(true), true);
+  asyncMonitor.state = null;
+  asyncMonitor.emit('change', null);
+  assert.equal(asyncDock.game, null, 'The dock owns the foreground while a text field is edited.');
+  asyncDock.setTextInput(false);
+  assert.equal(asyncDock.game?.hwnd, '42', 'A completed focus restore keeps the game as valid command context until the foreground event lands.');
+  assert.equal(asyncDock.state.visible, true, 'The dock no longer hides and rebuilds on text-input exit.');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(asyncDock.game?.hwnd, '42', 'The later foreground event confirms the same game.');
+  asyncDock.destroy();
+
+  /* A failed focus restore must not invent a command context. */
+  const failedMonitor = new EventEmitter();
+  failedMonitor.state = game;
+  failedMonitor.start = () => true;
+  failedMonitor.stop = () => {};
+  failedMonitor.restoreFocus = () => false;
+  const failedDock = new GameDock({ BrowserWindow: class extends FakeWindow {}, screen, monitor: failedMonitor, htmlPath: '', preloadPath: '', cursorGuard: quietGuard });
+  failedDock.start();
+  failedDock.setTextInput(true);
+  failedMonitor.state = null;
+  failedMonitor.emit('change', null);
+  failedDock.setTextInput(false);
+  assert.equal(failedDock.game, null, 'A failed focus restore leaves the game context empty.');
+  assert.equal(failedDock.state.visible, false, 'The dock still hides when focus could not be returned to CK3.');
+  failedDock.destroy();
+
+  /* Regression: a window destroyed mid-command must not throw after the await. */
+  const slowMonitor = new EventEmitter();
+  slowMonitor.state = game;
+  slowMonitor.start = () => true;
+  slowMonitor.stop = () => {};
+  slowMonitor.restoreFocus = () => true;
+  const slowDock = new GameDock({
+    BrowserWindow: class extends FakeWindow {}, screen, monitor: slowMonitor, htmlPath: '', preloadPath: '', cursorGuard: quietGuard,
+    onCommand: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true }), 20)),
+  });
+  slowDock.start();
+  const slowWindow = slowDock.window;
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on('unhandledRejection', onUnhandled);
+  const commandPromise = slowDock.receiveCommand({ operationId: 'op-destroyed', type: 'select-collection' }, slowWindow.webContents.trustedEvent);
+  setTimeout(() => slowWindow.destroy(), 5);
+  await commandPromise;
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  process.removeListener('unhandledRejection', onUnhandled);
+  assert.equal(unhandled.length, 0, `Destroying the dock mid-command must not leak an unhandled rejection (${unhandled}).`);
+  assert.equal(slowWindow.sent.some((entry) => entry.channel === 'game-dock:result'), false, 'No result is sent through a destroyed window.');
+  slowDock.destroy();
+
+  /* Small game windows: the native surface and the renderer strip share geometry. */
+  const narrow = { x: 500, y: 40, width: 260, height: 700 };
+  assert.deepEqual(dockSurfacePlacement(260, 'compact', 'center', true), { x: 12, width: 236 });
+  assert.deepEqual(dockSurfaceBounds(narrow, 'compact', 'center', true), { x: 512, y: 40, width: 236, height: 48 }, 'The revealed surface never exceeds the game window.');
+  assert.deepEqual(dockSurfaceBounds(narrow, 'framing', 'center', false), { x: 512, y: 40, width: 236, height: 310 }, 'The retracted framing strip matches the renderer in narrow windows.');
+  console.log('Game dock controller tests passed: visibility, placement, trusted hover, hit filtering, focus isolation, cursor cleanup, commands, preferences, focus-restore race, destroyed-window commands, and narrow-window geometry.');
   } finally {
     dock.destroy();
   }

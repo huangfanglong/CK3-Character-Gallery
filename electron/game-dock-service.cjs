@@ -396,7 +396,7 @@ class GameDockService {
     this.dock.update(state);
     if (state.collection && state.collection !== this.preferences.collection) this.dock.setPreferences({ collection: state.collection });
     if (state.mode && state.mode !== 'draft') this.setDraftActive(false);
-    if (['compact', 'success'].includes(state.mode) && !state.characterId && this.dock.state.mode === 'compact') this.draftDna = '';
+    if (state.mode === 'compact' && !state.characterId) this.draftDna = '';
     return true;
   }
 
@@ -505,8 +505,24 @@ class GameDockService {
       this.resetDraft('discard');
       return { ok: true, cancelled: true };
     }
-    if (type === 'cancel-draft' || type === 'dismiss' || (type === 'cancel-capture' && this.mutation)) {
+    if (type === 'cancel-draft' || type === 'dismiss') {
       this.resetDraft();
+      return { ok: true, cancelled: true };
+    }
+    if (type === 'cancel-capture' && this.mutation) {
+      /* Cancelling a capture has one outcome whether or not an archive action is
+         still in flight: settle the operation, keep the saved character, and show
+         the same confirmation panel the renderer publishes for a quiet cancel.
+         Without a saved character there is nothing to keep, so reset as before. */
+      const characterId = this.dock.state.characterId;
+      if (!characterId) {
+        this.resetDraft();
+        return { ok: true, cancelled: true };
+      }
+      this.cancelRendererDraft(this.dock.state.draftId || '', 'cancelled');
+      void this.liveBridge.cancel().catch(() => {});
+      this.setDraftActive(false);
+      this.dock.update({ mode: 'success', capture: null, crop: null, sourceSize: null, busy: false, dnaReady: true, dnaAttached: true, undoUntil: Date.now() + 12_000, message: 'Capture cancelled. The character and DNA are still saved.', error: '' });
       return { ok: true, cancelled: true };
     }
     const editingLoopSearch = type === 'set-loop-search' && this.dock.editing && this.dock.window?.isFocused?.();
@@ -642,7 +658,7 @@ class GameDockService {
     try {
       const result = await operation;
       if (result.cancelled || this.mutation !== operation) return { ok: true, cancelled: true };
-      if (result.ok && ['quick-add', 'create-record', 'finish-without-portrait'].includes(command.type)) this.clearDraft(false);
+      if (result.ok && ['create-record', 'finish-without-portrait'].includes(command.type)) this.clearDraft(false);
       return result;
     } finally {
       if (this.mutation === operation) {

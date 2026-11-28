@@ -1,9 +1,8 @@
 const { WindowsCursorGuard, DOCK_CURSOR_INSET } = require('./windows-cursor-guard.cjs');
 const { MAX_COLLECTION_NAME_LENGTH } = require('./game-dock-commands.cjs');
+const { dockSurfacePlacement } = require('./game-dock-geometry.js');
 
 const DOCK_POSITIONS = new Set(['left', 'center', 'right']);
-const DOCK_WIDTH = 680;
-const DOCK_RESTING_WIDTH = 280;
 const DOCK_RESTING_HEIGHT = 6;
 const DOCK_COMPACT_HEIGHT = 48;
 const DOCK_EXPANDED_HEIGHT = 310;
@@ -42,11 +41,11 @@ function shouldShowDock(game, enabled, editing, focused) {
 function dockSurfaceBounds(gameBounds, mode = 'compact', position = 'center', revealed = false) {
   if (!gameBounds) return null;
   const resting = mode === 'compact' && !revealed;
-  const width = resting ? Math.min(DOCK_RESTING_WIDTH, Math.max(120, gameBounds.width - 24)) : Math.min(DOCK_WIDTH, Math.max(280, gameBounds.width - 24));
+  /* Horizontal placement is shared with the renderer's hit regions and hover
+     strip; only the heights intentionally differ per surface. */
+  const placement = dockSurfacePlacement(gameBounds.width, mode, position, revealed);
   const height = resting ? DOCK_RESTING_HEIGHT : mode === 'compact' ? DOCK_COMPACT_HEIGHT : Math.min(DOCK_EXPANDED_HEIGHT, Math.max(160, gameBounds.height - 24));
-  const availableX = gameBounds.width - width - 24;
-  const offset = position === 'left' ? 0 : position === 'right' ? availableX : availableX / 2;
-  return { x: Math.round(gameBounds.x + 12 + offset), y: Math.round(gameBounds.y), width, height };
+  return { x: Math.round(gameBounds.x + placement.x), y: Math.round(gameBounds.y), width: placement.width, height };
 }
 
 class GameDock {
@@ -413,12 +412,18 @@ class GameDock {
       this.window.setFocusable(true);
       this.window.focus();
     } else {
+      const editingGame = this.editingGame;
       this.editingGame = null;
       const focusReturnHwnd = this.focusReturnHwnd || this.game?.hwnd || '';
       this.focusReturnHwnd = '';
       this.window.setFocusable(false);
       this.window.showInactive();
-      if (focusReturnHwnd) this.monitor.restoreFocus(focusReturnHwnd);
+      const restored = focusReturnHwnd ? this.monitor.restoreFocus(focusReturnHwnd) : false;
+      /* The foreground confirmation arrives later via the monitor's out-of-context
+         event. Until it lands, the game focus was just returned to remains the valid
+         command context — otherwise every command from a dock text field races its
+         own text-input IPC and can fail as if CK3 had lost its window. */
+      if (!this.game && restored && editingGame && String(editingGame.hwnd) === String(focusReturnHwnd)) this.game = editingGame;
       this.refreshVisibility();
     }
     return true;
@@ -434,7 +439,7 @@ class GameDock {
     } catch (error) {
       result = { ok: false, error: String(error.message || error).slice(0, 256) };
     }
-    if (!this.window?.isDestroyed()) this.window.webContents.send('game-dock:result', { operationId, ...(result || { ok: true }) });
+    if (this.window && !this.window.isDestroyed()) this.window.webContents.send('game-dock:result', { operationId, ...(result || { ok: true }) });
   }
 
   update(patch) {

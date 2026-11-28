@@ -74,7 +74,6 @@ async function createFromDock(command) {
   const operation = { workflow, controller: new AbortController(), operationId: command.operationId };
   dockActiveCreate = operation;
   workflow.lastCommand = command;
-  workflow.gameHwnd = gameHwnd;
   try {
     let character = dockWorkflowCharacter(workflow);
     if (!character) {

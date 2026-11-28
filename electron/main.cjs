@@ -290,8 +290,9 @@ function captureFailureMessage(value) {
 
 ipcMain.handle('game-dock:renderer-state', (event, patch) => {
   requireTrustedCaptureSender(event);
-  ensureGameDock().updateFromRenderer(patch);
-  return true;
+  /* The renderer needs the real outcome: a rejected patch (e.g. stale draft
+     identity) must not be indistinguishable from an applied one. */
+  return ensureGameDock().updateFromRenderer(patch);
 });
 
 ipcMain.handle('game-dock:renderer-result', (event, operationId, result) => {

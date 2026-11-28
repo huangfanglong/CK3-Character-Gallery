@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { MAX_COLLECTION_NAME_LENGTH } = require('./game-dock-commands.cjs');
 
 const defaultGalleries = () => [{ name: 'Default', characters: [] }];
 
@@ -26,6 +27,19 @@ function validArchive(galleries) {
       && typeof character.name === 'string'));
 }
 
+/* Every other surface enforces the shared collection-name limit; a legacy or
+   hand-edited archive must not smuggle in names the dock and commands reject.
+   Shorten them on load instead of quarantining an otherwise valid archive. */
+function capGalleryNames(galleries) {
+  let capped = false;
+  const normalized = galleries.map((gallery) => {
+    if (gallery.name.length <= MAX_COLLECTION_NAME_LENGTH) return gallery;
+    capped = true;
+    return { ...gallery, name: gallery.name.slice(0, MAX_COLLECTION_NAME_LENGTH) };
+  });
+  return { galleries: normalized, capped };
+}
+
 async function ensureArchive(directory, options = {}) {
   await fs.mkdir(path.join(directory, 'images'), { recursive: true });
   const file = path.join(directory, 'galleries.json');
@@ -40,9 +54,16 @@ async function ensureArchive(directory, options = {}) {
   }
 
   try {
-    const galleries = JSON.parse(source);
-    if (!validArchive(galleries)) throw new Error('The archive must contain valid collections and character records.');
-    return { directory, file, galleries, warning: null, recoveryFile: null };
+    const parsed = JSON.parse(source);
+    if (!validArchive(parsed)) throw new Error('The archive must contain valid collections and character records.');
+    const { galleries, capped } = capGalleryNames(parsed);
+    return {
+      directory,
+      file,
+      galleries,
+      warning: capped ? `Collection names longer than ${MAX_COLLECTION_NAME_LENGTH} characters were shortened on load.` : null,
+      recoveryFile: null,
+    };
   } catch {
     const timestamp = Number(options.now?.() ?? Date.now());
     const recoveryFile = `${file}.corrupt-${timestamp}`;

@@ -2,7 +2,7 @@ const dockRoot = document.querySelector('#game-dock');
 const announcer = document.querySelector('#announcer');
 const dockBridge = window.gameDock;
 let dockState = { mode: 'compact', collections: [], collection: '', position: 'center', visible: false, capture: null, loopSearchSeconds: 2, sound: true, liveEnabled: false, liveCanApply: false, liveApplySource: '', liveClipboardFormat: '', liveSelectedName: '', liveTargetAvailable: false, liveDetectedName: '', liveTargetName: '', liveUndoUntil: 0, liveApplyId: '', liveRetry: false, busy: false, commandEpoch: 0 };
-let dockView = { picker: false, menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
+let dockView = { picker: false, pickerSource: '', menu: '', help: false, query: '', pending: false, pendingCommand: null, revealed: false };
 let commandSequence = 0;
 let interactive = false;
 let dockHovered = false;
@@ -11,6 +11,7 @@ let captureClock = null;
 let textInputActive = false;
 let hitRegionFrame = null;
 let hitRegionTimer = null;
+let lastHitRegionSignature = '';
 
 function positionDraftCollectionPicker() {
   const picker = document.querySelector('.popover.draft-picker');
@@ -35,12 +36,9 @@ function sendNativeHitRegions() {
       /* Reveal claims the final expanded footprint immediately. Compact collapse
          follows its animated bounds; framing immediately releases the departing
          panel so an invisible animated shell cannot intercept CK3 input. */
-      const available = Math.max(120, window.innerWidth - 24);
-      const restingWidth = dockState.mode === 'framing' ? Math.min(280, available) : rect.width;
-      const width = dockView.revealed ? Math.min(680, available) : restingWidth;
-      const x = dockView.revealed || dockState.mode === 'framing'
-        ? dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2
-        : rect.x;
+      const placement = dockSurfacePlacement(window.innerWidth, dockState.mode, dockState.position, dockView.revealed);
+      const width = dockView.revealed || dockState.mode === 'framing' ? placement.width : rect.width;
+      const x = dockView.revealed || dockState.mode === 'framing' ? placement.x : rect.x;
       const height = dockState.mode === 'framing'
         ? dockView.revealed ? Math.max(48, element.scrollHeight) : 8
         : dockView.revealed ? 48 : Math.max(8, rect.height);
@@ -59,6 +57,11 @@ function sendNativeHitRegions() {
       cursor: !element.classList.contains('reticle'),
     });
   }
+  /* Mousemove and reveal transitions recompute regions at pointer rate. Only an
+     actual geometry change justifies the IPC and the native SetWindowRgn. */
+  const signature = JSON.stringify(regions);
+  if (signature === lastHitRegionSignature) return;
+  lastHitRegionSignature = signature;
   dockBridge.setHitRegions(regions);
 }
 
@@ -432,6 +435,12 @@ function beginCrop(event, origin = null) {
   };
 }
 
+function paintCropReticle() {
+  const rect = cropRect();
+  const reticle = document.querySelector('#portrait-reticle');
+  if (reticle && rect) { reticle.style.setProperty('--crop-x', `${rect.x}px`); reticle.style.setProperty('--crop-y', `${rect.y}px`); reticle.style.setProperty('--crop-size', `${rect.size}px`); }
+}
+
 function moveCrop(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const { width, height } = dockState.sourceSize;
@@ -442,9 +451,7 @@ function moveCrop(event) {
     ? resizeCaptureCrop(drag.crop, drag.handle, pointer, width, height, Math.max(32, Math.round(width / 40)))
     : moveCaptureCrop(drag.crop, delta.x, delta.y, width, height);
   dockState.crop = normalizedCaptureCrop(crop, width, height);
-  const rect = cropRect();
-  const reticle = document.querySelector('#portrait-reticle');
-  if (reticle && rect) { reticle.style.setProperty('--crop-x', `${rect.x}px`); reticle.style.setProperty('--crop-y', `${rect.y}px`); reticle.style.setProperty('--crop-size', `${rect.size}px`); }
+  paintCropReticle();
   sendNativeHitRegions();
 }
 
@@ -464,7 +471,10 @@ function nudgeCrop(event) {
   let crop = restoredCaptureCrop(dockState.crop, width, height);
   crop = delta ? moveCaptureCrop(crop, delta[0], delta[1], width, height) : resizeCaptureCropFromCenter(crop, ['+', '='].includes(event.key) ? step * 2 : -step * 2, width, height, Math.max(32, Math.round(width / 40)));
   dockState.crop = normalizedCaptureCrop(crop, width, height);
-  renderDock();
+  /* Update in place like moveCrop: re-rendering would destroy the focused reticle,
+     and the delegated keydown listener never sees keys once focus falls to body. */
+  paintCropReticle();
+  sendNativeHitRegions();
   void runCommand('crop-change', { crop: dockState.crop });
 }
 
@@ -642,6 +652,13 @@ dockRoot.addEventListener('keydown', (event) => {
   }
 });
 dockRoot.addEventListener('input', (event) => {
+  if (event.target.id === 'character-name') {
+    /* Keep the draft name in dockState so every re-render — clicks on panel
+       chrome, state patches, timer renders — rebuilds the field with the typed
+       value instead of discarding it. */
+    dockState.characterName = event.target.value;
+    return;
+  }
   if (event.target.id === 'collection-filter') {
     dockView.query = event.target.value;
     const start = event.target.selectionStart;
@@ -672,11 +689,9 @@ dockRoot.addEventListener('focusout', () => {
 });
 function withinDockStrip(event) {
   if (!['compact', 'framing'].includes(dockState.mode)) return false;
-  const available = Math.max(0, window.innerWidth - 24);
-  const width = dockView.revealed ? Math.min(680, available) : Math.min(280, Math.max(120, available));
-  const left = dockState.position === 'left' ? 12 : dockState.position === 'right' ? window.innerWidth - width - 12 : (window.innerWidth - width) / 2;
+  const placement = dockSurfacePlacement(window.innerWidth, dockState.mode, dockState.position, dockView.revealed);
   const height = dockView.revealed ? 48 : 8;
-  return event.clientX >= left && event.clientX < left + width && event.clientY >= 0 && event.clientY < height;
+  return event.clientX >= placement.x && event.clientX < placement.x + placement.width && event.clientY >= 0 && event.clientY < height;
 }
 
 function dockPointerTargets(event) {
@@ -721,9 +736,12 @@ dockBridge.onState((nextState) => {
   const preserveName = input?.id === 'character-name';
   const preservePicker = input?.id === 'collection-filter';
   const preserveLoopSearch = input?.id === 'dock-loop-search-seconds' && nextState.mode === 'framing';
-  /* Destination selection publishes a fresh dock state, but it must not replace a
-     locally edited draft name with the name originally imported from CK3. */
-  const preserveDraftName = dockView.pickerSource === 'draft' && dockState.mode === 'draft' && nextState.mode === 'draft';
+  /* State renders rebuild the reticle node; keep keyboard nudging alive across them. */
+  const preserveReticle = input?.id === 'portrait-reticle';
+  /* Draft-mode publications carry the main-process name, which is stale while the
+     user types: the inline field only exists in draft mode, so the local value wins
+     for the whole draft, not just while the destination picker is open. */
+  const preserveDraftName = dockState.mode === 'draft' && nextState.mode === 'draft';
   const name = preserveName ? input.value : dockState.characterName;
   const loopSearchValue = preserveLoopSearch ? input.value : '';
   const selection = preserveName ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
@@ -747,6 +765,7 @@ dockBridge.onState((nextState) => {
     field?.setSelectionRange(selection.start, selection.end, selection.direction);
   }
   if (preservePicker) document.querySelector('#collection-filter')?.focus();
+  if (preserveReticle) document.querySelector('#portrait-reticle')?.focus({ preventScroll: true });
   if (preserveLoopSearch) {
     const field = document.querySelector('#dock-loop-search-seconds');
     if (field) { field.value = loopSearchValue; field.focus({ preventScroll: true }); }

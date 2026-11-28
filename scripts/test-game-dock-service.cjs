@@ -217,6 +217,21 @@ function fixture(options = {}) {
   assert.equal(capturePending.dock.state.mode, 'compact');
   capturePending.service.destroy();
 
+  const captureSaved = fixture({ autoRespond: false });
+  captureSaved.setClipboard(validDna);
+  await captureSaved.service.handleCommand({ operationId: 'op-saved-stage', type: 'quick-add', payload: {} });
+  const savingCapture = captureSaved.service.handleCommand({ operationId: 'op-saved-create', type: 'create-record', payload: { name: 'Capture', frame: true } });
+  captureSaved.dock.update({ mode: 'capture', characterId: 'character-1', capture: { state: 'recording', startedAt: 1 } });
+  const cancelledSaved = await captureSaved.service.handleCommand({ operationId: 'op-saved-cancel', type: 'cancel-capture', payload: {} });
+  assert.equal(cancelledSaved.cancelled, true);
+  assert.equal((await savingCapture).cancelled, true, 'The in-flight save settles as cancelled.');
+  assert.equal(captureSaved.dock.state.mode, 'success', 'Cancelling with a saved character lands on the same confirmation panel as a quiet cancel.');
+  assert.match(captureSaved.dock.state.message, /Capture cancelled/);
+  assert.equal(captureSaved.dock.state.characterId, 'character-1', 'Cancellation no longer drops the draft identity.');
+  assert.equal(captureSaved.dock.state.draftId, 'draft-1', 'The draft identity survives cancellation.');
+  assert.ok(captureSaved.dock.state.undoUntil > Date.now(), 'The Undo window is published.');
+  captureSaved.service.destroy();
+
   const framing = fixture();
   framing.dock.state.draftId = 'draft-framing';
   assert.equal(framing.service.updateCapture({ dockDraftId: 'draft-framing' }, { state: 'armed' }), true);
@@ -302,5 +317,5 @@ function fixture(options = {}) {
   blocked.service.destroy();
   valid.service.destroy();
   fast.service.destroy();
-  console.log('Game dock service tests passed: clipboard scoping, forwarding, preferences, focus-independent cancellation, bounded requests, stale-result rejection, and cleanup.');
+  console.log('Game dock service tests passed: clipboard scoping, forwarding, preferences, focus-independent cancellation, saved-character capture cancel, bounded requests, stale-result rejection, and cleanup.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

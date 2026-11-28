@@ -167,6 +167,13 @@ if (!electron.app) {
       const nameRect = JSON.parse(await window.webContents.executeJavaScript(`(()=>{const input=document.querySelector('#character-name');input.value='Ragnhild of Jorvik';const rect=input.getBoundingClientRect();return JSON.stringify({x:rect.x,y:rect.y,height:rect.height});})()`));
       const nameY = Math.round(nameRect.y + nameRect.height / 2);
       const nameStart = Math.round(nameRect.x + 8);
+      await window.webContents.executeJavaScript(`document.querySelector('#character-name').dispatchEvent(new Event('input',{bubbles:true}))`);
+      assert.equal(await window.webContents.executeJavaScript('dockState.characterName'), 'Ragnhild of Jorvik', 'Typing publishes the inline name to dock state.');
+      await window.webContents.executeJavaScript(`document.querySelector('.dock-heading').click()`);
+      await delay(50);
+      const nameAfterChromeClick = JSON.parse(await window.webContents.executeJavaScript(`JSON.stringify({value:document.querySelector('#character-name').value,state:dockState.characterName})`));
+      assert.equal(nameAfterChromeClick.value, 'Ragnhild of Jorvik', `Clicking dock chrome must not wipe the typed name (${JSON.stringify(nameAfterChromeClick)}).`);
+      assert.equal(nameAfterChromeClick.state, 'Ragnhild of Jorvik');
       await window.webContents.executeJavaScript(
         `document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:${nameStart},clientY:${nameY}}))`,
       );
@@ -275,6 +282,24 @@ if (!electron.app) {
         return JSON.stringify({command:target?.closest('[data-command]')?.dataset.command,target:target?.outerHTML.slice(0,300),point:{x,y},reset:rect.toJSON(),dock:dock.getBoundingClientRect().toJSON(),dockClass:dock.className,reticle:reticle.getBoundingClientRect().toJSON(),active:document.activeElement?.id});
       })()`));
       assert.equal(overlapHit.command, 'reset-crop', `A full-height portrait reticle must not cover the dock controls (${JSON.stringify(overlapHit)}).`);
+      dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: 1600, height: 900 }, capture: null, undoUntil: 0 });
+      await delay(30);
+      const nudgeResult = JSON.parse(await window.webContents.executeJavaScript(`(()=>{
+        const reticle=document.querySelector('#portrait-reticle');
+        reticle.focus();
+        const before={...dockState.crop};
+        reticle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+        const afterFirst={...dockState.crop};
+        const sameNode=reticle===document.querySelector('#portrait-reticle');
+        const focused=document.activeElement===reticle;
+        reticle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+        const afterSecond={...dockState.crop};
+        return JSON.stringify({before,afterFirst,afterSecond,sameNode,focused});
+      })()`));
+      assert.ok(nudgeResult.afterFirst.centerX > nudgeResult.before.centerX, `ArrowRight nudges the crop (${JSON.stringify(nudgeResult)}).`);
+      assert.equal(nudgeResult.sameNode, true, 'Nudging no longer rebuilds the reticle.');
+      assert.equal(nudgeResult.focused, true, 'Nudging keeps keyboard focus on the reticle.');
+      assert.ok(nudgeResult.afterSecond.centerX > nudgeResult.afterFirst.centerX, 'A second ArrowRight keeps nudging.');
       for (const handle of ['north-west', 'north-east', 'south-east', 'south-west']) {
         dock.update({ mode: 'framing', crop: { centerX: .5, centerY: .5, size: .35 }, sourceSize: { width: 1600, height: 900 }, capture: null });
         await delay(20);
@@ -696,6 +721,13 @@ if (!electron.app) {
       await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
       await delay(30);
       assert.equal(await window.webContents.executeJavaScript('dockHovered'), true);
+      let shapeApplications = 0;
+      const originalApplyHitRegions = dock.applyHitRegions.bind(dock);
+      dock.applyHitRegions = (...args) => { shapeApplications += 1; return originalApplyHitRegions(...args); };
+      for (let move = 0; move < 20; move += 1) await window.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:window.innerWidth/2,clientY:2}))`);
+      await delay(400);
+      assert.equal(shapeApplications, 0, 'Identical hit regions must not be re-sent to Windows per mousemove.');
+      dock.applyHitRegions = originalApplyHitRegions;
       monitor.state = null;
       monitor.emit('change', null);
       assert.equal(window.isVisible(), false);
@@ -711,7 +743,7 @@ if (!electron.app) {
       monitor.emit('change', null);
       assert.equal(window.isVisible(), false);
       assert.ok(monitor.restoreFocusCalls.length >= 1);
-      console.log('Game dock runtime passed: sandbox, states, collection search, framing, capture, errors, menus, hover reset, and focus cleanup.');
+      console.log('Game dock runtime passed: sandbox, states, collection search, name persistence, framing, reticle nudging, capture, errors, menus, hit-region dedupe, hover reset, and focus cleanup.');
     } finally {
       dock.destroy();
     }
